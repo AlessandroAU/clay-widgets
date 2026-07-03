@@ -9,12 +9,14 @@ typedef enum ClayWidgets_ThemePreset {
     CLAY_WIDGETS_THEME_PRESET_SLATE = 1,
     CLAY_WIDGETS_THEME_PRESET_SAND = 2,
     CLAY_WIDGETS_THEME_PRESET_FOREST = 3,
+    CLAY_WIDGETS_THEME_PRESET_WIN95 = 4,
 } ClayWidgets_ThemePreset;
 
 ClayWidgets_Theme ClayWidgets_DefaultTheme(void);
 ClayWidgets_Theme ClayWidgets_ThemeSlate(void);
 ClayWidgets_Theme ClayWidgets_ThemeSand(void);
 ClayWidgets_Theme ClayWidgets_ThemeForest(void);
+ClayWidgets_Theme ClayWidgets_ThemeWin95(void);
 ClayWidgets_Theme ClayWidgets_ThemeFromPreset(ClayWidgets_ThemePreset preset);
 
 #ifdef CLAY_WIDGETS_IMPLEMENTATION
@@ -111,12 +113,39 @@ ClayWidgets_Theme ClayWidgets_ThemeForest(void) {
     );
 }
 
+// A classic Microsoft Windows (95/98/2000-era) look: the "3D face" gray control
+// surface, black text, a navy selection accent, and square corners. The beveled
+// grey aesthetic depends on sharp rectangles, so this preset zeroes the corner
+// radii that ClayWidgets__BuildTheme sets by default.
+ClayWidgets_Theme ClayWidgets_ThemeWin95(void) {
+    ClayWidgets_Theme theme = ClayWidgets__BuildTheme(
+        (Clay_Color){0, 0, 0, 255},          // textColor        - black
+        (Clay_Color){64, 64, 64, 255},       // textMutedColor   - dim label grey
+        (Clay_Color){192, 192, 192, 255},    // surfaceColor     - 3D face grey
+        (Clay_Color){192, 192, 192, 255},    // surfaceAltColor  - button/tab face
+        (Clay_Color){0, 0, 128, 255},        // accentColor      - navy selection
+        (Clay_Color){0, 0, 128, 90},         // accentMutedColor - navy wash
+        (Clay_Color){128, 128, 128, 255},    // borderColor      - shadow grey
+        (Clay_Color){212, 208, 200, 255},    // hoverColor       - lit face grey
+        (Clay_Color){160, 160, 160, 255},    // pressedColor     - sunken grey
+        (Clay_Color){0, 0, 128, 255}         // focusRingColor   - navy focus
+    );
+
+    // Square, beveled-era corners - the defining trait of the classic look.
+    theme.radiusSm = 0;
+    theme.radiusMd = 0;
+
+    return theme;
+}
+
 ClayWidgets_Theme ClayWidgets_ThemeFromPreset(ClayWidgets_ThemePreset preset) {
     switch (preset) {
         case CLAY_WIDGETS_THEME_PRESET_SAND:
             return ClayWidgets_ThemeSand();
         case CLAY_WIDGETS_THEME_PRESET_FOREST:
             return ClayWidgets_ThemeForest();
+        case CLAY_WIDGETS_THEME_PRESET_WIN95:
+            return ClayWidgets_ThemeWin95();
         case CLAY_WIDGETS_THEME_PRESET_SLATE:
         default:
             return ClayWidgets_ThemeSlate();

@@ -64,6 +64,51 @@ static Clay_String ClayWidgets__StringFromCString(const char *text) {
     return result;
 }
 
+// Formats an integer into one of the context's scratch buffers and returns a
+// Clay_String pointing at it. Valid until the buffer is reused (8 per frame).
+static Clay_String ClayWidgets__ScratchInt(ClayWidgets_Context *ctx, int32_t value) {
+    Clay_String result = {0};
+    if (!ctx) {
+        result.chars = "";
+        result.isStaticallyAllocated = true;
+        return result;
+    }
+
+    char *buf = ctx->textScratch[ctx->textScratchNext % 8];
+    ctx->textScratchNext++;
+
+    char digits[16];
+    int32_t digitCount = 0;
+    uint32_t magnitude;
+    bool negative = value < 0;
+    if (negative) {
+        magnitude = (uint32_t)(-(int64_t)value);
+    } else {
+        magnitude = (uint32_t)value;
+    }
+    if (magnitude == 0) {
+        digits[digitCount++] = '0';
+    }
+    while (magnitude > 0 && digitCount < (int32_t)sizeof(digits)) {
+        digits[digitCount++] = (char)('0' + (magnitude % 10u));
+        magnitude /= 10u;
+    }
+
+    int32_t length = 0;
+    if (negative) {
+        buf[length++] = '-';
+    }
+    for (int32_t i = digitCount - 1; i >= 0; --i) {
+        buf[length++] = digits[i];
+    }
+    buf[length] = '\0';
+
+    result.chars = buf;
+    result.length = length;
+    result.isStaticallyAllocated = false;
+    return result;
+}
+
 static Clay_Color ClayWidgets__MixColor(Clay_Color a, Clay_Color b, float t) {
     float clamped = ClayWidgets__Clamp(t, 0.0f, 1.0f);
     Clay_Color mixed = {
@@ -455,6 +500,8 @@ void ClayWidgets_BeginFrame(
     }
 
     ctx->input = input;
+    ctx->layoutDimensions = layoutSize;
+    ctx->textScratchNext = 0;
     ctx->elapsedTime += input.deltaTime;
     ClayWidgets__AdvanceFocus(ctx);
     ctx->focusCount = 0;

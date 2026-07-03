@@ -17,12 +17,30 @@ Widget layer built on top of Clay with a raylib demo application.
 - Label
 - Heading
 - Separator
+- Image / Icon (tintable textures)
 - Button
 - Checkbox
+- Toggle / switch
 - Radio buttons
+- Tabs (pill and attached styles)
 - Slider
 - Progress bar
 - Text input
+- Combo box (dropdown select)
+- List box (selectable, keyboard-navigable list)
+- Segmented control (joined single-select buttons)
+- Stepper / number input (+/- with min/max/step)
+- Badge / chip / tag (status pills)
+- Menu bar with drop-down menus
+- Right-click context menu
+- Tooltip (hover, delayed)
+- Toast / notification (transient, auto-dismissing)
+- Modal dialog (dimming scrim)
+- Card / group box (titled bordered container)
+- Collapsible / accordion section
+- Tree view (hierarchical expand/collapse)
+- Table / data grid (columns, header, zebra rows, selection)
+- Scroll panel with draggable scroll bar
 
 ## Interaction behavior
 
@@ -94,3 +112,27 @@ mingw32-make raylib-clean
 - `clay-widgets/widgets.h` includes `clay.h` and the sibling split headers, so the Makefile adds `subprojects/clay` to include paths.
 - Text input expects UTF-8 bytes from the platform layer. `main.cpp` converts raylib codepoints to UTF-8 bytes each frame.
 - Keep widget IDs stable across frames for consistent interaction behavior.
+- Image tint transport: this Clay build emits a stray RECTANGLE whenever an
+  element's `backgroundColor` alpha is non-zero, so `image.h` sends the icon
+  tint through the element's `userData` as a packed `0xRRGGBBAA` instead. The
+  raylib renderer decodes it with `ClayWidgets_UnpackTint`.
+
+## Screenshot harness
+
+`main.cpp` accepts flags to render a few frames headless, inject synthetic
+input, capture a PNG (via raylib `TakeScreenshot`, written relative to the
+working directory) and exit. This is used to verify widgets without a human at
+the keyboard:
+
+```
+clay-widgets-demo --shot out.png [--view N] [--frames N] [--theme N]
+                  [--mouse X Y] [--mousedown] [--rightclick] [--scroll DY]
+                  [--mouse2 X Y] [--mousedown2] [--openmodal] [--toast]
+```
+
+- `--view` selects Settings (0), Documents (1) or Tab Plane (2).
+- `--theme` picks a preset (1 Slate, 2 Sand, 3 Forest, 4 Windows).
+- `--mouse`/`--mousedown` inject a pointer and a scripted click (`--rightclick`
+  makes that a right-click, e.g. to open a context menu); `--mouse2`/
+  `--mousedown2` add a second interaction phase (e.g. open a menu, then choose
+  an item).

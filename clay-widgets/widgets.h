@@ -29,6 +29,7 @@ typedef struct ClayWidgets_Input {
     bool pointerDown;
     bool pointerPressed;
     bool pointerReleased;
+    bool pointerRightPressed;
     float scrollX;
     float scrollY;
     float deltaTime;
@@ -91,6 +92,7 @@ typedef struct ClayWidgets_Context {
     ClayWidgets_Theme theme;
     ClayWidgets_MeasureTextFunction measureText;
     void *measureTextUserData;
+    Clay_Dimensions layoutDimensions;
 
     uint32_t activeId;
     uint32_t focusedId;
@@ -116,6 +118,33 @@ typedef struct ClayWidgets_Context {
 
     uint32_t openComboId;
     int32_t comboHighlightIndex;
+
+    uint32_t hoverTooltipId;
+    float hoverTooltipTime;
+
+    uint32_t openMenuId;
+
+    uint32_t openContextMenuId;
+    float contextMenuX;
+    float contextMenuY;
+
+    // Ring of small buffers for dynamic strings (e.g. a stepper's number). Clay
+    // retains text by pointer until render, so these must outlive the layout;
+    // reused across frames, reset at the start of each frame.
+    char textScratch[8][24];
+    uint32_t textScratchNext;
+
+    // Active transient toast: message plus remaining seconds. Counted down by
+    // ClayWidgets_ToastLayer each frame.
+    char toastMessage[160];
+    int32_t toastLength;
+    float toastRemaining;
+    int32_t toastVariant;
+
+    // Column widths captured by BeginTable so TableRow can size its cells to
+    // match the header without the caller passing them again.
+    Clay_SizingAxis tableColWidths[12];
+    int32_t tableColCount;
 } ClayWidgets_Context;
 
 typedef struct ClayWidgets_SliderOptions {
@@ -123,6 +152,12 @@ typedef struct ClayWidgets_SliderOptions {
     float maxValue;
     float step;
 } ClayWidgets_SliderOptions;
+
+typedef struct ClayWidgets_StepperOptions {
+    int32_t minValue;
+    int32_t maxValue;
+    int32_t step;
+} ClayWidgets_StepperOptions;
 
 typedef struct ClayWidgets_TextInputOptions {
     const char *placeholder;
@@ -140,13 +175,28 @@ typedef struct ClayWidgets_ScrollPanelOptions {
 #include "core.h"
 #include "themes.h"
 #include "text.h"
+#include "image.h"
+#include "badge.h"
+#include "card.h"
+#include "collapsible.h"
+#include "tree.h"
 #include "button.h"
 #include "checkbox.h"
+#include "toggle.h"
 #include "radio.h"
+#include "tab.h"
 #include "slider.h"
 #include "progress-bar.h"
 #include "text-input.h"
 #include "combo.h"
+#include "listbox.h"
+#include "segmented.h"
+#include "stepper.h"
+#include "table.h"
+#include "tooltip.h"
+#include "modal.h"
+#include "toast.h"
+#include "menu.h"
 #include "scroll-bar.h"
 #include "scroll-panel.h"
 
