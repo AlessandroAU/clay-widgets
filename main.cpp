@@ -10,7 +10,7 @@
 #include "clay.h"
 
 #define CLAY_WIDGETS_IMPLEMENTATION
-#include "clay-widgets.h"
+#include "clay-widgets/widgets.h"
 
 #include "raylib.h"
 

@@ -28,7 +28,7 @@ $(RAYLIB_LIB):
 $(BUILD_DIR):
 	-mkdir $(BUILD_DIR)
 
-$(OBJ): $(SRC) clay-widgets.h | $(BUILD_DIR)
+$(OBJ): $(SRC) clay-widgets/widgets.h | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -MMD -MP -c $(SRC) -o $(OBJ)
 
 $(APP): $(OBJ) | $(RAYLIB_LIB)

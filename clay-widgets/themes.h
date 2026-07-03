@@ -1,8 +1,8 @@
-#ifndef CLAY_WIDGETS_THEMES_H
-#define CLAY_WIDGETS_THEMES_H
+#ifndef CLAY_WIDGETS_THEMES_DETAIL_H
+#define CLAY_WIDGETS_THEMES_DETAIL_H
 
 #ifndef CLAY_WIDGETS_H
-#error "Include clay-widgets.h before clay-widgets-themes.h"
+#error "Include widgets.h before themes.h"
 #endif
 
 typedef enum ClayWidgets_ThemePreset {

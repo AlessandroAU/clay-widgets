@@ -4,8 +4,9 @@ Widget layer built on top of Clay with a raylib demo application.
 
 ## Project layout
 
-- `clay-widgets.h`: header-only widget library built on Clay.
-- `clay-widgets-themes.h`: extracted theme preset header used by the core widget layer and demo.
+- `clay-widgets/widgets.h`: umbrella header for the widget library built on Clay.
+- `clay-widgets/`: structured header tree with shared core helpers plus one header per widget.
+- `clay-widgets/themes.h`: theme preset header used by the widget layer and demo.
 - `main.cpp`: demo app showing all currently implemented widgets.
 - `Makefile`: builds raylib from source in `subprojects/raylib` and then builds the demo.
 - `subprojects/raylib`: vendored raylib source (git clone).
@@ -90,6 +91,6 @@ mingw32-make raylib-clean
 
 ## Notes
 
-- `clay-widgets.h` includes `clay.h`, so the Makefile adds `subprojects/clay` to include paths.
+- `clay-widgets/widgets.h` includes `clay.h` and the sibling split headers, so the Makefile adds `subprojects/clay` to include paths.
 - Text input expects UTF-8 bytes from the platform layer. `main.cpp` converts raylib codepoints to UTF-8 bytes each frame.
 - Keep widget IDs stable across frames for consistent interaction behavior.
