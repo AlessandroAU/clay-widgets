@@ -38,6 +38,8 @@ typedef struct ClayWidgets_Input {
     bool keyEnd;
     bool keyLeft;
     bool keyRight;
+    bool keyUp;
+    bool keyDown;
     bool keyEnter;
     bool keyEscape;
     bool keyTab;
@@ -91,6 +93,7 @@ typedef struct ClayWidgets_Context {
     uint32_t focusOrder[CLAY_WIDGETS_MAX_FOCUSABLES];
     int32_t focusCount;
     uint32_t textInputId;
+    uint32_t lastHoveredTextInputId;
     int32_t textCursor;
     int32_t textSelectionAnchor;
     float textScrollX;
@@ -102,6 +105,13 @@ typedef struct ClayWidgets_Context {
     float lastClickX;
     float lastClickY;
     bool clickConsumed;
+
+    uint32_t scrollBarDragContainerId;
+    float scrollBarDragStartMouseY;
+    float scrollBarDragStartScrollY;
+
+    uint32_t openComboId;
+    int32_t comboHighlightIndex;
 } ClayWidgets_Context;
 
 typedef struct ClayWidgets_SliderOptions {
@@ -166,6 +176,20 @@ bool ClayWidgets_TextInput(
     ClayWidgets_TextInputOptions options
 );
 
+bool ClayWidgets_Combo(
+    ClayWidgets_Context *ctx,
+    Clay_ElementId id,
+    Clay_String label,
+    const Clay_String *items,
+    int32_t itemCount,
+    int32_t *selectedIndex
+);
+
+void ClayWidgets_ScrollBar(
+    ClayWidgets_Context *ctx,
+    Clay_ElementId scrollContainerId
+);
+
 #ifdef CLAY_WIDGETS_IMPLEMENTATION
 
 #include <math.h>
@@ -179,6 +203,13 @@ static float ClayWidgets__Clamp(float value, float minValue, float maxValue) {
         return maxValue;
     }
     return value;
+}
+
+static bool ClayWidgets__PointInBoundingBox(float x, float y, Clay_BoundingBox box) {
+    return x >= box.x
+        && y >= box.y
+        && x <= (box.x + box.width)
+        && y <= (box.y + box.height);
 }
 
 static int32_t ClayWidgets__StrLenBounded(const char *text, int32_t maxLength) {
@@ -323,17 +354,18 @@ static void ClayWidgets__ClampSelectionToLength(ClayWidgets_Context *ctx, int32_
     ctx->textSelectionAnchor = ClayWidgets__MaxI32(0, ClayWidgets__MinI32(ctx->textSelectionAnchor, length));
 }
 
-static void ClayWidgets__SetCaret(ClayWidgets_Context *ctx, uint32_t id, int32_t offset, bool keepSelection) {
+/* Move the caret to an absolute byte offset. When `extend` is false the
+ * selection collapses to the caret; when true the anchor is left in place so
+ * the selection grows/shrinks. Always resets the blink so the caret is visible
+ * immediately after it moves. The focused input already owns the shared caret
+ * state (see the focus-init block in ClayWidgets_TextInput), so this only
+ * touches cursor/anchor/blink. */
+static void ClayWidgets__MoveCaret(ClayWidgets_Context *ctx, int32_t offset, bool extend) {
     if (!ctx) {
         return;
     }
-    if (ctx->textInputId != id) {
-        ctx->textInputId = id;
-        ctx->textSelectionAnchor = offset;
-        ctx->textScrollX = 0.0f;
-    }
     ctx->textCursor = offset;
-    if (!keepSelection) {
+    if (!extend) {
         ctx->textSelectionAnchor = offset;
     }
     ctx->caretBlinkTime = 0.0f;
@@ -358,6 +390,11 @@ static float ClayWidgets__ClampF32(float value, float minValue, float maxValue) 
     return value;
 }
 
+/* Adjust the horizontal scroll so the caret stays inside the visible content
+ * area. This is the single scroll rule: for an in-bounds pointer the caret it
+ * produces is already visible, so no scroll change happens and the caret cannot
+ * drift; dragging past an edge (or moving the caret with the keyboard past the
+ * edge) scrolls just enough to reveal it. */
 static void ClayWidgets__UpdateTextScroll(
     ClayWidgets_Context *ctx,
     uint32_t id,
@@ -366,9 +403,7 @@ static void ClayWidgets__UpdateTextScroll(
     float availableWidth,
     uint16_t fontId,
     uint16_t fontSize,
-    uint16_t letterSpacing,
-    bool pointerSelecting,
-    float pointerLocalX
+    uint16_t letterSpacing
 ) {
     if (!ctx || ctx->textInputId != id) {
         return;
@@ -381,27 +416,13 @@ static void ClayWidgets__UpdateTextScroll(
     }
 
     float maxScroll = totalWidth - availableWidth;
+    float caretX = ClayWidgets__MeasureWidth(ctx, text, ctx->textCursor, fontId, fontSize, letterSpacing);
     float scrollX = ClayWidgets__ClampF32(ctx->textScrollX, 0.0f, maxScroll);
 
-    if (pointerSelecting) {
-        /* Drive scroll from the pointer, NOT the caret. A pointer that is held
-         * still inside the field produces no scroll change, so the caret cannot
-         * "walk" through a feedback loop (scroll -> caret -> scroll). Only when
-         * the pointer is dragged past a content edge do we auto-scroll to reveal
-         * more text. */
-        if (pointerLocalX < 0.0f) {
-            scrollX += pointerLocalX;
-        } else if (pointerLocalX > availableWidth) {
-            scrollX += (pointerLocalX - availableWidth);
-        }
-    } else {
-        /* Keyboard / programmatic caret movement: keep the caret in view. */
-        float caretX = ClayWidgets__MeasureWidth(ctx, text, ctx->textCursor, fontId, fontSize, letterSpacing);
-        if (caretX < scrollX) {
-            scrollX = caretX;
-        } else if (caretX > scrollX + availableWidth) {
-            scrollX = caretX - availableWidth;
-        }
+    if (caretX < scrollX) {
+        scrollX = caretX;
+    } else if (caretX > scrollX + availableWidth) {
+        scrollX = caretX - availableWidth;
     }
 
     ctx->textScrollX = ClayWidgets__ClampF32(scrollX, 0.0f, maxScroll);
@@ -488,13 +509,12 @@ static bool ClayWidgets__DeleteSelection(char *buffer, int32_t *length, ClayWidg
     ClayWidgets__SelectionRange(ctx, &start, &end);
     memmove(buffer + start, buffer + end, (size_t)(*length - end + 1));
     *length -= (end - start);
-    ClayWidgets__SetCaret(ctx, ctx->textInputId, start, false);
+    ClayWidgets__MoveCaret(ctx, start, false);
     return true;
 }
 
 static bool ClayWidgets__InsertTextAtCaret(
     ClayWidgets_Context *ctx,
-    uint32_t id,
     char *buffer,
     int32_t *length,
     int32_t capacity,
@@ -518,7 +538,7 @@ static bool ClayWidgets__InsertTextAtCaret(
     memmove(buffer + insertAt + toCopy, buffer + insertAt, (size_t)(*length - insertAt + 1));
     memcpy(buffer + insertAt, text, (size_t)toCopy);
     *length += toCopy;
-    ClayWidgets__SetCaret(ctx, id, insertAt + toCopy, false);
+    ClayWidgets__MoveCaret(ctx, insertAt + toCopy, false);
     return true;
 }
 
@@ -632,8 +652,38 @@ void ClayWidgets_BeginFrame(
     ctx->clickConsumed = false;
 
     Clay_SetLayoutDimensions(layoutSize);
-    Clay_SetPointerState((Clay_Vector2){input.mouseX, input.mouseY}, input.pointerDown);
-    Clay_UpdateScrollContainers(enableDragScroll, (Clay_Vector2){input.scrollX, input.scrollY}, input.deltaTime);
+
+    Clay_Vector2 pointerPosition = { input.mouseX, input.mouseY };
+    Clay_Vector2 scrollDelta = { input.scrollX, input.scrollY };
+    Clay_SetPointerState(pointerPosition, input.pointerDown);
+
+    /* A text input uses clip+childOffset to implement horizontal text scrolling.
+     * Clay treats clipped elements as scroll containers, which can steal wheel
+     * routing from the outer panel. When wheel-scrolling over the active text
+     * field, temporarily route scroll hit-testing to just outside the field so
+     * the parent scroll panel receives vertical wheel input. */
+    bool rerouteWheelToParent = false;
+    uint32_t wheelTargetTextInputId = ctx->textInputId != 0 ? ctx->textInputId : ctx->lastHoveredTextInputId;
+    if (scrollDelta.y != 0.0f && wheelTargetTextInputId != 0) {
+        Clay_ElementId activeFieldId = Clay_GetElementIdWithIndex(CLAY_STRING("ClayWidgetsTextInputField"), wheelTargetTextInputId);
+        Clay_ElementData activeFieldData = Clay_GetElementData(activeFieldId);
+        if (activeFieldData.found && ClayWidgets__PointInBoundingBox(pointerPosition.x, pointerPosition.y, activeFieldData.boundingBox)) {
+            rerouteWheelToParent = true;
+            Clay_Vector2 reroutedPointer = pointerPosition;
+            reroutedPointer.y = activeFieldData.boundingBox.y - 1.0f;
+            if (reroutedPointer.y < 0.0f) {
+                reroutedPointer.y = 0.0f;
+            }
+            Clay_SetPointerState(reroutedPointer, input.pointerDown);
+        }
+    }
+
+    Clay_UpdateScrollContainers(enableDragScroll, scrollDelta, input.deltaTime);
+
+    if (rerouteWheelToParent) {
+        Clay_SetPointerState(pointerPosition, input.pointerDown);
+    }
+
     Clay_BeginLayout();
 }
 
@@ -761,9 +811,11 @@ bool ClayWidgets_Checkbox(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_Stri
                     .width = CLAY_SIZING_FIXED(20),
                     .height = CLAY_SIZING_FIXED(20),
                 },
+                .padding = CLAY_PADDING_ALL(1),
             },
-            .backgroundColor = *value ? ctx->theme.accentColor : ctx->theme.surfaceAltColor,
+            .backgroundColor = ctx->theme.surfaceAltColor,
             .cornerRadius = CLAY_CORNER_RADIUS(ctx->theme.radiusSm),
+            .clip = { .horizontal = true, .vertical = true },
             .border = {
                 .color = (focused || over) ? ctx->theme.focusRingColor : ctx->theme.borderColor,
                 .width = { .left = 1, .right = 1, .top = 1, .bottom = 1 },
@@ -776,19 +828,18 @@ bool ClayWidgets_Checkbox(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_Stri
                             .width = CLAY_SIZING_GROW(0),
                             .height = CLAY_SIZING_GROW(0),
                         },
-                        .padding = CLAY_PADDING_ALL(5),
+                        .padding = CLAY_PADDING_ALL(3),
+                        .childAlignment = { .x = CLAY_ALIGN_X_CENTER, .y = CLAY_ALIGN_Y_CENTER },
                     },
+                    .backgroundColor = ctx->theme.accentColor,
+                    .cornerRadius = CLAY_CORNER_RADIUS(ctx->theme.radiusSm > 0 ? ctx->theme.radiusSm - 1 : 0),
+                    .clip = { .horizontal = true, .vertical = true },
                 }) {
-                    CLAY_AUTO_ID({
-                        .layout = {
-                            .sizing = {
-                                .width = CLAY_SIZING_GROW(0),
-                                .height = CLAY_SIZING_GROW(0),
-                            },
-                        },
-                        .backgroundColor = (Clay_Color){240, 248, 255, 255},
-                        .cornerRadius = CLAY_CORNER_RADIUS(2),
-                    }) {}
+                    CLAY_TEXT(CLAY_STRING("X"), {
+                        .textColor = (Clay_Color){240, 248, 255, 255},
+                        .fontId = ctx->theme.fontBody,
+                        .fontSize = 14,
+                    });
                 }
             }
         }
@@ -983,9 +1034,11 @@ void ClayWidgets_ProgressBar(
         CLAY_AUTO_ID({
             .layout = {
                 .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_FIXED(12) },
+                .padding = CLAY_PADDING_ALL(1),
             },
             .backgroundColor = ctx->theme.surfaceAltColor,
             .cornerRadius = CLAY_CORNER_RADIUS(6),
+            .clip = { .horizontal = true, .vertical = true },
             .border = {
                 .color = ctx->theme.borderColor,
                 .width = { .left = 1, .right = 1, .top = 1, .bottom = 1 },
@@ -996,10 +1049,29 @@ void ClayWidgets_ProgressBar(
                     .sizing = { .width = CLAY_SIZING_PERCENT(t), .height = CLAY_SIZING_GROW(0) },
                 },
                 .backgroundColor = ctx->theme.accentColor,
-                .cornerRadius = CLAY_CORNER_RADIUS(6),
+                .cornerRadius = CLAY_CORNER_RADIUS(5),
             }) {}
         }
     }
+}
+
+/* Convert a screen-space mouse X into a byte offset in `buffer`. `contentOriginX`
+ * is the screen X of the first glyph when unscrolled; `scrollX` is the current
+ * horizontal scroll. Both the press and drag paths use the *same* reference,
+ * which is what keeps the caret from drifting under a stationary cursor. */
+static int32_t ClayWidgets__CursorFromMouse(
+    ClayWidgets_Context *ctx,
+    const char *buffer,
+    int32_t length,
+    float mouseX,
+    float contentOriginX,
+    float scrollX,
+    uint16_t fontId,
+    uint16_t fontSize,
+    uint16_t letterSpacing
+) {
+    float localX = (mouseX - contentOriginX) + scrollX;
+    return ClayWidgets__FindCursorFromLocalX(ctx, buffer, length, localX, fontId, fontSize, letterSpacing);
 }
 
 bool ClayWidgets_TextInput(
@@ -1016,100 +1088,103 @@ bool ClayWidgets_TextInput(
 
     int32_t length = ClayWidgets__StrLenBounded(buffer, capacity - 1);
     bool changed = false;
-    bool over = Clay_PointerOver(id);
-    bool focused = ClayWidgets__RegisterFocusable(ctx, id, over);
+
     const uint16_t fontId = ctx->theme.fontBody;
     const uint16_t fontSize = ctx->theme.fontSizeBody;
     const uint16_t letterSpacing = 0;
-    const float fieldHeight = (float)(ctx->theme.fontSizeBody + (int32_t)ctx->theme.spacing.md + 8);
     const float horizontalInset = (float)ctx->theme.spacing.sm;
-    const float verticalInset = (float)ctx->theme.spacing.sm;
+    const float fieldHeight = (float)(ctx->theme.fontSizeBody + (int32_t)ctx->theme.spacing.md + 8);
     Clay_ElementId fieldId = Clay_GetElementIdWithIndex(CLAY_STRING("ClayWidgetsTextInputField"), id.id);
     Clay_ElementId textContentId = Clay_GetElementIdWithIndex(CLAY_STRING("ClayWidgetsTextInputContent"), id.id);
 
-    if (ctx->input.pointerPressed && !over && focused) {
-        ctx->focusedId = 0;
-        focused = false;
+    /* ------------------------------------------------------------------ */
+    /* Focus                                                              */
+    /* ------------------------------------------------------------------ */
+    bool over = Clay_PointerOver(id);
+    if (over) {
+        ctx->lastHoveredTextInputId = id.id;
     }
+    ClayWidgets__RegisterFocusable(ctx, id, over); /* focuses on press-over, feeds Tab order */
+    if (ctx->input.pointerPressed && !over && ctx->focusedId == id.id) {
+        ctx->focusedId = 0; /* clicking elsewhere blurs */
+    }
+    bool focused = (ctx->focusedId == id.id);
 
-    focused = (ctx->focusedId == id.id);
-
+    /* First frame of focus: park the caret at the end, no selection. */
     if (focused && ctx->textInputId != id.id) {
-        ClayWidgets__SetCaret(ctx, id.id, length, false);
+        ctx->textInputId = id.id;
+        ctx->textCursor = length;
+        ctx->textSelectionAnchor = length;
+        ctx->textScrollX = 0.0f;
+        ctx->textPointerSelecting = false;
+        ctx->caretBlinkTime = 0.0f;
+    }
+    /* The caret/selection are shared context state owned by whichever input is
+     * focused. Only clamp against THIS field's length when this field owns the
+     * caret, otherwise an unfocused (and possibly shorter) field would drag the
+     * focused field's caret back to its own length. */
+    if (ctx->textInputId == id.id) {
+        ClayWidgets__ClampSelectionToLength(ctx, length);
     }
 
-    ClayWidgets__ClampSelectionToLength(ctx, length);
-
-    Clay_Dimensions lineMetrics = ClayWidgets__MeasureSlice(ctx, "Ag", 2, fontId, fontSize, letterSpacing);
-    float textHeight = lineMetrics.height > 0.0f ? lineMetrics.height : (float)fontSize;
-    float textOffsetY = verticalInset + ClayWidgets__MaxI32(0, (int32_t)((fieldHeight - verticalInset * 2.0f - textHeight) * 0.5f));
-    float availableTextWidth = 0.0f;
-    float textScrollX = focused ? ctx->textScrollX : 0.0f;
-    float textOffsetX = horizontalInset - textScrollX;
-    float pointerTextOffsetX = textOffsetX;
-
-    {
-        Clay_ElementData previousFieldData = Clay_GetElementData(fieldId);
-        Clay_ElementData previousTextData = Clay_GetElementData(textContentId);
-        if (previousFieldData.found) {
-            availableTextWidth = previousFieldData.boundingBox.width - horizontalInset * 2.0f;
-        }
-        if (previousFieldData.found && previousTextData.found) {
-            pointerTextOffsetX = previousTextData.boundingBox.x - previousFieldData.boundingBox.x;
-            textOffsetY = previousTextData.boundingBox.y - previousFieldData.boundingBox.y;
-        }
+    /* ------------------------------------------------------------------ */
+    /* Geometry (from the previous frame's resolved layout)               */
+    /* ------------------------------------------------------------------ */
+    Clay_ElementData fieldData = Clay_GetElementData(fieldId);
+    float availableWidth = fieldData.found ? (fieldData.boundingBox.width - horizontalInset * 2.0f) : 0.0f;
+    if (availableWidth <= 0.0f) {
+        availableWidth = 1.0f;
     }
+    /* Screen X of the first glyph when the text is not scrolled. The visible
+     * glyph at scroll S sits at contentOriginX - S. */
+    float contentOriginX = fieldData.found ? (fieldData.boundingBox.x + horizontalInset) : 0.0f;
 
-    if (availableTextWidth <= 0.0f) {
-        availableTextWidth = 1.0f;
-    }
+    /* ------------------------------------------------------------------ */
+    /* Pointer selection                                                  */
+    /* ------------------------------------------------------------------ */
+    if (focused && fieldData.found) {
+        if (ctx->input.pointerPressed && over) {
+            int32_t hit = ClayWidgets__CursorFromMouse(ctx, buffer, length, ctx->input.mouseX, contentOriginX, ctx->textScrollX, fontId, fontSize, letterSpacing);
+            bool isDoubleClick = ClayWidgets__WasDoubleClick(ctx, id.id);
+            ClayWidgets__RecordClick(ctx, id.id);
 
-    /* NOTE: The scroll offset is intentionally NOT updated here. Hit-testing
-     * below uses the previous frame's on-screen layout (pointerTextOffsetX for
-     * a press, the current textOffsetX for a drag), which reflects what the
-     * user actually sees. The scroll is recomputed after all pointer and
-     * keyboard input has moved the caret, just before rendering, so the text,
-     * caret, and selection highlight stay consistent within a single frame. */
-
-    if (focused && (ctx->input.pointerPressed || (ctx->input.pointerDown && ctx->textPointerSelecting))) {
-        Clay_ElementData fieldData = Clay_GetElementData(fieldId);
-        if (fieldData.found) {
-            float hitTestOffsetX = ctx->input.pointerPressed ? pointerTextOffsetX : textOffsetX;
-            float localX = ctx->input.mouseX - (fieldData.boundingBox.x + hitTestOffsetX);
-            int32_t cursorFromPointer = ClayWidgets__FindCursorFromLocalX(ctx, buffer, length, localX, fontId, fontSize, letterSpacing);
-            if (ctx->input.pointerPressed && over) {
-                bool isDoubleClick = ClayWidgets__WasDoubleClick(ctx, id.id);
-                ClayWidgets__RecordClick(ctx, id.id);
-                if (isDoubleClick && length > 0) {
-                    int32_t wordStart = 0;
-                    int32_t wordEnd = 0;
-                    ClayWidgets__FindWordBounds(buffer, length, cursorFromPointer, &wordStart, &wordEnd);
-                    if (wordEnd > wordStart) {
-                        ctx->textInputId = id.id;
-                        ctx->textSelectionAnchor = wordStart;
-                        ctx->textCursor = wordEnd;
-                        ctx->textPointerSelecting = false;
-                        ctx->caretBlinkTime = 0.0f;
-                    } else {
-                        ClayWidgets__SetCaret(ctx, id.id, cursorFromPointer, ctx->input.shiftDown);
-                        ctx->textPointerSelecting = true;
-                    }
-                } else {
-                    ClayWidgets__SetCaret(ctx, id.id, cursorFromPointer, ctx->input.shiftDown);
-                    ctx->textPointerSelecting = true;
-                }
-            } else if (ctx->input.pointerDown && ctx->textPointerSelecting) {
-                ctx->textCursor = cursorFromPointer;
-                ctx->caretBlinkTime = 0.0f;
+            int32_t wordStart = 0;
+            int32_t wordEnd = 0;
+            if (isDoubleClick && length > 0) {
+                ClayWidgets__FindWordBounds(buffer, length, hit, &wordStart, &wordEnd);
             }
+
+            if (wordEnd > wordStart) {
+                /* Double-click landed on a word: select it, no drag. */
+                ctx->textSelectionAnchor = wordStart;
+                ctx->textCursor = wordEnd;
+                ctx->textPointerSelecting = false;
+                ctx->caretBlinkTime = 0.0f;
+            } else {
+                /* Single click (or shift-click to extend): place/extend caret
+                 * and begin a drag-select. */
+                ClayWidgets__MoveCaret(ctx, hit, ctx->input.shiftDown);
+                ctx->textPointerSelecting = true;
+            }
+        } else if (ctx->input.pointerDown && ctx->textPointerSelecting) {
+            int32_t hit = ClayWidgets__CursorFromMouse(ctx, buffer, length, ctx->input.mouseX, contentOriginX, ctx->textScrollX, fontId, fontSize, letterSpacing);
+            ClayWidgets__MoveCaret(ctx, hit, true); /* extend selection while dragging */
         }
     }
-
     if (ctx->input.pointerReleased) {
         ctx->textPointerSelecting = false;
     }
 
+    /* ------------------------------------------------------------------ */
+    /* Keyboard                                                           */
+    /* ------------------------------------------------------------------ */
     if (focused) {
+        bool extend = ctx->input.shiftDown;
+        bool hadSelection = ClayWidgets__HasSelection(ctx);
+        int32_t selStart = 0;
+        int32_t selEnd = 0;
+        ClayWidgets__SelectionRange(ctx, &selStart, &selEnd);
+
         if (ctx->input.keySelectAll && length > 0) {
             ctx->textSelectionAnchor = 0;
             ctx->textCursor = length;
@@ -1117,31 +1192,36 @@ bool ClayWidgets_TextInput(
         }
 
         if (ctx->input.keyLeft) {
-            int32_t nextCursor = ClayWidgets__Utf8PrevBoundary(buffer, ctx->textCursor);
-            ClayWidgets__SetCaret(ctx, id.id, nextCursor, ctx->input.shiftDown);
+            /* Collapse to the left edge of an existing selection, else step. */
+            int32_t target = (hadSelection && !extend)
+                ? selStart
+                : ClayWidgets__Utf8PrevBoundary(buffer, ctx->textCursor);
+            ClayWidgets__MoveCaret(ctx, target, extend);
         }
 
         if (ctx->input.keyRight) {
-            int32_t nextCursor = ClayWidgets__Utf8NextBoundary(buffer, length, ctx->textCursor);
-            ClayWidgets__SetCaret(ctx, id.id, nextCursor, ctx->input.shiftDown);
+            int32_t target = (hadSelection && !extend)
+                ? selEnd
+                : ClayWidgets__Utf8NextBoundary(buffer, length, ctx->textCursor);
+            ClayWidgets__MoveCaret(ctx, target, extend);
         }
 
         if (ctx->input.keyHome) {
-            ClayWidgets__SetCaret(ctx, id.id, 0, ctx->input.shiftDown);
+            ClayWidgets__MoveCaret(ctx, 0, extend);
         }
 
         if (ctx->input.keyEnd) {
-            ClayWidgets__SetCaret(ctx, id.id, length, ctx->input.shiftDown);
+            ClayWidgets__MoveCaret(ctx, length, extend);
         }
 
         if (ctx->input.keyBackspace) {
             if (ClayWidgets__DeleteSelection(buffer, &length, ctx)) {
                 changed = true;
             } else if (ctx->textCursor > 0) {
-                int32_t deleteFrom = ClayWidgets__Utf8PrevBoundary(buffer, ctx->textCursor);
-                memmove(buffer + deleteFrom, buffer + ctx->textCursor, (size_t)(length - ctx->textCursor + 1));
-                length -= (ctx->textCursor - deleteFrom);
-                ClayWidgets__SetCaret(ctx, id.id, deleteFrom, false);
+                int32_t from = ClayWidgets__Utf8PrevBoundary(buffer, ctx->textCursor);
+                memmove(buffer + from, buffer + ctx->textCursor, (size_t)(length - ctx->textCursor + 1));
+                length -= (ctx->textCursor - from);
+                ClayWidgets__MoveCaret(ctx, from, false);
                 changed = true;
             }
         }
@@ -1150,15 +1230,16 @@ bool ClayWidgets_TextInput(
             if (ClayWidgets__DeleteSelection(buffer, &length, ctx)) {
                 changed = true;
             } else if (ctx->textCursor < length) {
-                int32_t deleteTo = ClayWidgets__Utf8NextBoundary(buffer, length, ctx->textCursor);
-                memmove(buffer + ctx->textCursor, buffer + deleteTo, (size_t)(length - deleteTo + 1));
-                length -= (deleteTo - ctx->textCursor);
+                int32_t to = ClayWidgets__Utf8NextBoundary(buffer, length, ctx->textCursor);
+                memmove(buffer + ctx->textCursor, buffer + to, (size_t)(length - to + 1));
+                length -= (to - ctx->textCursor);
+                ctx->caretBlinkTime = 0.0f;
                 changed = true;
             }
         }
 
         if (ctx->input.textUtf8 && ctx->input.textUtf8Length > 0) {
-            if (ClayWidgets__InsertTextAtCaret(ctx, id.id, buffer, &length, capacity, ctx->input.textUtf8, ctx->input.textUtf8Length)) {
+            if (ClayWidgets__InsertTextAtCaret(ctx, buffer, &length, capacity, ctx->input.textUtf8, ctx->input.textUtf8Length)) {
                 changed = true;
             }
         }
@@ -1166,7 +1247,7 @@ bool ClayWidgets_TextInput(
         if (ctx->input.keyEnter && options.clearOnEnter && length > 0) {
             buffer[0] = '\0';
             length = 0;
-            ClayWidgets__SetCaret(ctx, id.id, 0, false);
+            ClayWidgets__MoveCaret(ctx, 0, false);
             changed = true;
         }
 
@@ -1177,25 +1258,21 @@ bool ClayWidgets_TextInput(
         }
     }
 
-    /* Update the horizontal scroll now that pointer and keyboard input have
-     * finished moving the caret. Doing this after input (rather than before)
-     * keeps the rendered text, caret, and selection highlight aligned to the
-     * final caret position, preventing the one-frame jump that occurred when
-     * clicking into a scrolled (long) field. */
+    /* ------------------------------------------------------------------ */
+    /* Scroll so the caret is visible (only after all caret movement)     */
+    /* ------------------------------------------------------------------ */
     if (focused) {
-        bool pointerSelecting = ctx->input.pointerDown && ctx->textPointerSelecting;
-        float pointerLocalX = 0.0f;
-        if (pointerSelecting) {
-            Clay_ElementData fieldData = Clay_GetElementData(fieldId);
-            if (fieldData.found) {
-                pointerLocalX = ctx->input.mouseX - (fieldData.boundingBox.x + horizontalInset);
-            } else {
-                pointerSelecting = false;
-            }
-        }
-        ClayWidgets__UpdateTextScroll(ctx, id.id, buffer, length, availableTextWidth, fontId, fontSize, letterSpacing, pointerSelecting, pointerLocalX);
-        textScrollX = ctx->textScrollX;
-        textOffsetX = horizontalInset - textScrollX;
+        ClayWidgets__UpdateTextScroll(ctx, id.id, buffer, length, availableWidth, fontId, fontSize, letterSpacing);
+    }
+
+    float textScrollX = focused ? ctx->textScrollX : 0.0f;
+    float textOffsetX = horizontalInset - textScrollX;
+
+    Clay_Dimensions lineMetrics = ClayWidgets__MeasureSlice(ctx, "Ag", 2, fontId, fontSize, letterSpacing);
+    float textHeight = lineMetrics.height > 0.0f ? lineMetrics.height : (float)fontSize;
+    float textOffsetY = (fieldHeight - textHeight) * 0.5f;
+    if (textOffsetY < 0.0f) {
+        textOffsetY = 0.0f;
     }
 
     Clay_String displayText;
@@ -1207,6 +1284,10 @@ bool ClayWidgets_TextInput(
         displayText = ClayWidgets__StringFromCString("");
     }
 
+    /* ------------------------------------------------------------------ */
+    /* Render: field with floating selection (z0), text (z1), caret (z2). */
+    /* All three are offset by the same textOffsetX so they stay aligned. */
+    /* ------------------------------------------------------------------ */
     CLAY(id, {
         .layout = {
             .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_FIT(0, 0) },
@@ -1226,79 +1307,52 @@ bool ClayWidgets_TextInput(
             .layout = {
                 .sizing = {
                     .width = CLAY_SIZING_GROW(0),
-                    .height = CLAY_SIZING_FIXED((float)(ctx->theme.fontSizeBody + (int32_t)ctx->theme.spacing.md + 8)),
+                    .height = CLAY_SIZING_FIXED(fieldHeight),
                 },
                 .padding = CLAY_PADDING_ALL(ctx->theme.spacing.sm),
                 .childAlignment = { .x = CLAY_ALIGN_X_LEFT, .y = CLAY_ALIGN_Y_CENTER },
             },
             .backgroundColor = focused ? ctx->theme.hoverColor : ctx->theme.surfaceAltColor,
             .cornerRadius = CLAY_CORNER_RADIUS(ctx->theme.radiusSm),
+            .clip = { .horizontal = true, .vertical = true, .childOffset = { -textScrollX, 0.0f } },
             .border = {
                 .color = focused ? ctx->theme.focusRingColor : ctx->theme.borderColor,
                 .width = { .left = 1, .right = 1, .top = 1, .bottom = 1 },
             },
         }) {
+            /* Render text, selection, caret as regular children that respect clipping */
             if (focused && ClayWidgets__HasSelection(ctx) && length > 0) {
-                int32_t selectionStart = 0;
-                int32_t selectionEnd = 0;
-                ClayWidgets__SelectionRange(ctx, &selectionStart, &selectionEnd);
-                float selectionX = ClayWidgets__MeasureWidth(ctx, buffer, selectionStart, fontId, fontSize, letterSpacing);
-                float selectionWidth = ClayWidgets__MeasureWidth(ctx, buffer, selectionEnd, fontId, fontSize, letterSpacing) - selectionX;
-                if (selectionWidth > 0.0f) {
-                    CLAY(CLAY_IDI_LOCAL("SelectionHighlight", 0), {
+                int32_t selStart = 0;
+                int32_t selEnd = 0;
+                ClayWidgets__SelectionRange(ctx, &selStart, &selEnd);
+                float startX = ClayWidgets__MeasureWidth(ctx, buffer, selStart, fontId, fontSize, letterSpacing);
+                float endX = ClayWidgets__MeasureWidth(ctx, buffer, selEnd, fontId, fontSize, letterSpacing);
+                float selWidth = endX - startX;
+                if (selWidth > 0.0f) {
+                    CLAY_AUTO_ID({
                         .layout = {
                             .sizing = {
-                                .width = CLAY_SIZING_FIXED(selectionWidth),
+                                .width = CLAY_SIZING_FIXED(selWidth),
                                 .height = CLAY_SIZING_FIXED(textHeight),
                             },
+                            .childAlignment = { .x = CLAY_ALIGN_X_LEFT, .y = CLAY_ALIGN_Y_CENTER },
                         },
                         .backgroundColor = ctx->theme.accentMutedColor,
                         .cornerRadius = CLAY_CORNER_RADIUS(3),
-                        .floating = {
-                            .offset = { .x = textOffsetX + selectionX, .y = textOffsetY },
-                            .zIndex = 1,
-                            .attachPoints = {
-                                .element = CLAY_ATTACH_POINT_LEFT_TOP,
-                                .parent = CLAY_ATTACH_POINT_LEFT_TOP,
-                            },
-                            .pointerCaptureMode = CLAY_POINTER_CAPTURE_MODE_PASSTHROUGH,
-                            .attachTo = CLAY_ATTACH_TO_PARENT,
-                            .clipTo = CLAY_CLIP_TO_ATTACHED_PARENT,
-                        },
                     }) {}
                 }
             }
 
-            CLAY(textContentId, {
-                .layout = {
-                    .sizing = {
-                        .width = CLAY_SIZING_FIT(0, 0),
-                        .height = CLAY_SIZING_FIT(0, 0),
-                    },
-                },
-                .floating = {
-                    .offset = { .x = textOffsetX, .y = textOffsetY },
-                    .zIndex = 0,
-                    .attachPoints = {
-                        .element = CLAY_ATTACH_POINT_LEFT_TOP,
-                        .parent = CLAY_ATTACH_POINT_LEFT_TOP,
-                    },
-                    .pointerCaptureMode = CLAY_POINTER_CAPTURE_MODE_PASSTHROUGH,
-                    .attachTo = CLAY_ATTACH_TO_PARENT,
-                    .clipTo = CLAY_CLIP_TO_ATTACHED_PARENT,
-                },
-            }) {
-                CLAY_TEXT(displayText, {
-                    .textColor = (length > 0) ? ctx->theme.textColor : ctx->theme.textMutedColor,
-                    .fontId = fontId,
-                    .fontSize = fontSize,
-                    .wrapMode = CLAY_TEXT_WRAP_NONE,
-                });
-            }
+            CLAY_TEXT(displayText, {
+                .textColor = (length > 0) ? ctx->theme.textColor : ctx->theme.textMutedColor,
+                .fontId = fontId,
+                .fontSize = fontSize,
+                .wrapMode = CLAY_TEXT_WRAP_NONE,
+            });
 
             if (focused && ((int32_t)(ctx->caretBlinkTime * 2.0f) % 2 == 0)) {
                 float caretX = ClayWidgets__MeasureWidth(ctx, buffer, ctx->textCursor, fontId, fontSize, letterSpacing);
-                CLAY(CLAY_IDI_LOCAL("Caret", 0), {
+                CLAY_AUTO_ID({
                     .layout = {
                         .sizing = {
                             .width = CLAY_SIZING_FIXED(1),
@@ -1306,23 +1360,389 @@ bool ClayWidgets_TextInput(
                         },
                     },
                     .backgroundColor = ctx->theme.textColor,
-                    .floating = {
-                        .offset = { .x = textOffsetX + caretX, .y = textOffsetY },
-                        .zIndex = 2,
-                        .attachPoints = {
-                            .element = CLAY_ATTACH_POINT_LEFT_TOP,
-                            .parent = CLAY_ATTACH_POINT_LEFT_TOP,
-                        },
-                        .pointerCaptureMode = CLAY_POINTER_CAPTURE_MODE_PASSTHROUGH,
-                        .attachTo = CLAY_ATTACH_TO_PARENT,
-                        .clipTo = CLAY_CLIP_TO_ATTACHED_PARENT,
-                    },
                 }) {}
             }
         }
     }
 
     return changed;
+}
+
+bool ClayWidgets_Combo(
+    ClayWidgets_Context *ctx,
+    Clay_ElementId id,
+    Clay_String label,
+    const Clay_String *items,
+    int32_t itemCount,
+    int32_t *selectedIndex
+) {
+    if (!ctx || !items || itemCount <= 0 || !selectedIndex) {
+        return false;
+    }
+
+    bool changed = false;
+    Clay_ElementId triggerId = Clay_GetElementIdWithIndex(CLAY_STRING("ClayWidgetsComboTrigger"), id.id);
+    Clay_ElementId dropdownId = Clay_GetElementIdWithIndex(CLAY_STRING("ClayWidgetsComboDropdown"), id.id);
+
+    bool triggerOver = Clay_PointerOver(triggerId);
+    bool anyOver = Clay_PointerOver(id) || triggerOver || Clay_PointerOver(dropdownId);
+    bool focused = ClayWidgets__RegisterFocusable(ctx, id, anyOver);
+    bool isOpen = (ctx->openComboId == id.id);
+
+    /* Close if focus moved to a different widget */
+    if (isOpen && !focused && ctx->focusedId != 0) {
+        ctx->openComboId = 0;
+        isOpen = false;
+    }
+
+    /* Escape closes the dropdown */
+    if (isOpen && focused && ctx->input.keyEscape) {
+        ctx->openComboId = 0;
+        isOpen = false;
+    }
+
+    /* Close if pointer pressed outside the trigger and dropdown */
+    if (isOpen && ctx->input.pointerPressed) {
+        if (!Clay_PointerOver(triggerId) && !Clay_PointerOver(dropdownId)) {
+            ctx->openComboId = 0;
+            isOpen = false;
+        }
+    }
+
+    /* Toggle open on trigger click */
+    if (ClayWidgets__ConsumeClick(ctx, triggerOver)) {
+        if (isOpen) {
+            ctx->openComboId = 0;
+            isOpen = false;
+        } else {
+            ctx->openComboId = id.id;
+            ctx->comboHighlightIndex = (*selectedIndex >= 0 && *selectedIndex < itemCount)
+                ? *selectedIndex : 0;
+            isOpen = true;
+        }
+    }
+
+    /* Open with Enter key when focused and closed */
+    if (focused && !isOpen && ClayWidgets__ActivateFocused(ctx, id)) {
+        ctx->openComboId = id.id;
+        ctx->comboHighlightIndex = (*selectedIndex >= 0 && *selectedIndex < itemCount)
+            ? *selectedIndex : 0;
+        isOpen = true;
+    }
+
+    /* Keyboard navigation inside open dropdown */
+    if (focused && isOpen) {
+        if (ctx->input.keyUp) {
+            ctx->comboHighlightIndex = ctx->comboHighlightIndex > 0
+                ? ctx->comboHighlightIndex - 1 : itemCount - 1;
+        }
+        if (ctx->input.keyDown) {
+            ctx->comboHighlightIndex = ctx->comboHighlightIndex < itemCount - 1
+                ? ctx->comboHighlightIndex + 1 : 0;
+        }
+        if (ctx->input.keyEnter) {
+            if (ctx->comboHighlightIndex >= 0 && ctx->comboHighlightIndex < itemCount) {
+                *selectedIndex = ctx->comboHighlightIndex;
+                changed = true;
+            }
+            ctx->openComboId = 0;
+            isOpen = false;
+        }
+    }
+
+    /* Item click selection */
+    if (isOpen) {
+        for (int32_t i = 0; i < itemCount; i++) {
+            Clay_ElementId itemId = Clay_GetElementIdWithIndex(
+                CLAY_STRING("ClayWidgetsComboItem"),
+                (uint32_t)((uint64_t)id.id * 1000003u + (uint32_t)i)
+            );
+            bool itemOver = Clay_PointerOver(itemId);
+            if (itemOver) {
+                ctx->comboHighlightIndex = i;
+            }
+            if (ClayWidgets__ConsumeClick(ctx, itemOver)) {
+                *selectedIndex = i;
+                ctx->openComboId = 0;
+                isOpen = false;
+                changed = true;
+                break;
+            }
+        }
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Geometry from previous frame                                        */
+    /* ------------------------------------------------------------------ */
+    Clay_ElementData triggerData = Clay_GetElementData(triggerId);
+    float dropdownMinWidth = triggerData.found ? triggerData.boundingBox.width : 0.0f;
+
+    const float fieldHeight = (float)(ctx->theme.fontSizeBody + (int32_t)ctx->theme.spacing.md + 8);
+    float r = (float)ctx->theme.radiusSm;
+
+    Clay_String displayText = (*selectedIndex >= 0 && *selectedIndex < itemCount)
+        ? items[*selectedIndex]
+        : CLAY_STRING("Select...");
+
+    Clay_Color triggerBg = ctx->theme.surfaceAltColor;
+    if (triggerOver || isOpen) {
+        triggerBg = ctx->theme.hoverColor;
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Render                                                              */
+    /* ------------------------------------------------------------------ */
+    CLAY(id, {
+        .layout = {
+            .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_FIT(0, 0) },
+            .childGap = ctx->theme.spacing.xs,
+            .layoutDirection = CLAY_TOP_TO_BOTTOM,
+        },
+    }) {
+        if (label.length > 0 && label.chars) {
+            CLAY_TEXT(label, {
+                .textColor = ctx->theme.textMutedColor,
+                .fontId = ctx->theme.fontBody,
+                .fontSize = ctx->theme.fontSizeSmall,
+            });
+        }
+
+        CLAY(triggerId, {
+            .layout = {
+                .sizing = {
+                    .width = CLAY_SIZING_GROW(0),
+                    .height = CLAY_SIZING_FIXED(fieldHeight),
+                },
+                .padding = (Clay_Padding){
+                    .left = ctx->theme.spacing.sm,
+                    .right = ctx->theme.spacing.sm,
+                    .top = 0,
+                    .bottom = 0,
+                },
+                .childGap = ctx->theme.spacing.sm,
+                .childAlignment = { .x = CLAY_ALIGN_X_LEFT, .y = CLAY_ALIGN_Y_CENTER },
+                .layoutDirection = CLAY_LEFT_TO_RIGHT,
+            },
+            .backgroundColor = triggerBg,
+            .cornerRadius = isOpen
+                ? (Clay_CornerRadius){ r, r, 0.0f, 0.0f }
+                : (Clay_CornerRadius){ r, r, r, r },
+            .border = {
+                .color = (focused || isOpen) ? ctx->theme.focusRingColor : ctx->theme.borderColor,
+                .width = { .left = 1, .right = 1, .top = 1, .bottom = 1 },
+            },
+        }) {
+            CLAY_AUTO_ID({
+                .layout = {
+                    .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_FIT(0, 0) },
+                },
+            }) {
+                CLAY_TEXT(displayText, {
+                    .textColor = ctx->theme.textColor,
+                    .fontId = ctx->theme.fontBody,
+                    .fontSize = ctx->theme.fontSizeBody,
+                    .wrapMode = CLAY_TEXT_WRAP_NONE,
+                });
+            }
+            CLAY_TEXT(CLAY_STRING("v"), {
+                .textColor = ctx->theme.textMutedColor,
+                .fontId = ctx->theme.fontBody,
+                .fontSize = ctx->theme.fontSizeBody,
+            });
+        }
+
+        /* Dropdown popup (floats below the trigger) */
+        if (isOpen) {
+            CLAY(dropdownId, {
+                .layout = {
+                    .sizing = {
+                        .width = CLAY_SIZING_FIT(dropdownMinWidth, 0),
+                        .height = CLAY_SIZING_FIT(0, 0),
+                    },
+                    .childGap = 0,
+                    .layoutDirection = CLAY_TOP_TO_BOTTOM,
+                },
+                .backgroundColor = ctx->theme.surfaceAltColor,
+                .cornerRadius = (Clay_CornerRadius){ 0.0f, 0.0f, r, r },
+                .floating = {
+                    .parentId = triggerId.id,
+                    .zIndex = 10,
+                    .attachPoints = {
+                        .element = CLAY_ATTACH_POINT_LEFT_TOP,
+                        .parent = CLAY_ATTACH_POINT_LEFT_BOTTOM,
+                    },
+                    .attachTo = CLAY_ATTACH_TO_ELEMENT_WITH_ID,
+                },
+                .border = {
+                    .color = ctx->theme.focusRingColor,
+                    .width = { .left = 1, .right = 1, .top = 0, .bottom = 1 },
+                },
+            }) {
+                for (int32_t i = 0; i < itemCount; i++) {
+                    Clay_ElementId itemId = Clay_GetElementIdWithIndex(
+                        CLAY_STRING("ClayWidgetsComboItem"),
+                        (uint32_t)((uint64_t)id.id * 1000003u + (uint32_t)i)
+                    );
+                    bool itemOver = Clay_PointerOver(itemId);
+                    bool isHighlighted = (i == ctx->comboHighlightIndex);
+                    bool isSelected = (i == *selectedIndex);
+
+                    Clay_Color itemBg = ctx->theme.surfaceAltColor;
+                    if (itemOver || isHighlighted) {
+                        itemBg = ctx->theme.hoverColor;
+                    } else if (isSelected) {
+                        itemBg = ctx->theme.accentMutedColor;
+                    }
+
+                    CLAY(itemId, {
+                        .layout = {
+                            .sizing = {
+                                .width = CLAY_SIZING_GROW(0),
+                                .height = CLAY_SIZING_FIT(0, 0),
+                            },
+                            .padding = CLAY_PADDING_ALL(ctx->theme.spacing.sm),
+                            .childAlignment = { .x = CLAY_ALIGN_X_LEFT, .y = CLAY_ALIGN_Y_CENTER },
+                        },
+                        .backgroundColor = itemBg,
+                    }) {
+                        CLAY_TEXT(items[i], {
+                            .textColor = ctx->theme.textColor,
+                            .fontId = ctx->theme.fontBody,
+                            .fontSize = ctx->theme.fontSizeBody,
+                            .wrapMode = CLAY_TEXT_WRAP_NONE,
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    return changed;
+}
+
+void ClayWidgets_ScrollBar(
+    ClayWidgets_Context *ctx,
+    Clay_ElementId scrollContainerId
+) {
+    if (!ctx) {
+        return;
+    }
+
+    Clay_ScrollContainerData scrollData = Clay_GetScrollContainerData(scrollContainerId);
+    if (!scrollData.found || !scrollData.scrollPosition) {
+        return;
+    }
+
+    float containerHeight = scrollData.scrollContainerDimensions.height;
+    float contentHeight = scrollData.contentDimensions.height;
+
+    if (containerHeight <= 0.0f || contentHeight <= 0.0f) {
+        return;
+    }
+
+    /* Calculate scroll bar dimensions */
+    float scrollableHeight = contentHeight - containerHeight;
+    if (scrollableHeight <= 0.0f) {
+        return; /* No scrolling needed */
+    }
+
+    const float trackWidth = 8.0f;
+    const float trackPadding = 1.0f;
+    float trackInnerHeight = containerHeight - trackPadding * 2.0f;
+    if (trackInnerHeight <= 1.0f) {
+        return;
+    }
+
+    float scrollProgress = ClayWidgets__Clamp((-scrollData.scrollPosition->y) / scrollableHeight, 0.0f, 1.0f);
+    float scrollBarHeight = (containerHeight / contentHeight) * trackInnerHeight;
+    scrollBarHeight = ClayWidgets__Clamp(scrollBarHeight, 10.0f, trackInnerHeight);
+    float thumbTravel = trackInnerHeight - scrollBarHeight;
+    float scrollBarY = scrollProgress * thumbTravel;
+
+    /* Render scrollbar as bordered track + inner thumb to avoid 1px overflow. */
+    Clay_ElementId scrollBarTrackId = Clay_GetElementIdWithIndex(CLAY_STRING("ClayWidgetsScrollBarTrack"), scrollContainerId.id);
+    Clay_ElementId scrollBarId = Clay_GetElementIdWithIndex(CLAY_STRING("ClayWidgetsScrollBarThumb"), scrollContainerId.id);
+    bool overThumb = Clay_PointerOver(scrollBarId);
+
+    if (ctx->input.pointerPressed && overThumb) {
+        ctx->activeId = scrollBarId.id;
+        ctx->scrollBarDragContainerId = scrollContainerId.id;
+        ctx->scrollBarDragStartMouseY = ctx->input.mouseY;
+        ctx->scrollBarDragStartScrollY = scrollData.scrollPosition->y;
+    }
+
+    bool draggingThumb = ctx->input.pointerDown
+        && ctx->activeId == scrollBarId.id
+        && ctx->scrollBarDragContainerId == scrollContainerId.id;
+
+    if (draggingThumb) {
+        if (thumbTravel > 0.0f) {
+            float mouseDeltaY = ctx->input.mouseY - ctx->scrollBarDragStartMouseY;
+            float newScrollY = ctx->scrollBarDragStartScrollY - (mouseDeltaY / thumbTravel) * scrollableHeight;
+            scrollData.scrollPosition->y = ClayWidgets__Clamp(newScrollY, -scrollableHeight, 0.0f);
+
+            scrollProgress = ClayWidgets__Clamp((-scrollData.scrollPosition->y) / scrollableHeight, 0.0f, 1.0f);
+            scrollBarY = scrollProgress * thumbTravel;
+        }
+    }
+
+    if (ctx->input.pointerReleased && ctx->activeId == scrollBarId.id) {
+        ctx->activeId = 0;
+        ctx->scrollBarDragContainerId = 0;
+        ctx->scrollBarDragStartMouseY = 0.0f;
+        ctx->scrollBarDragStartScrollY = 0.0f;
+    }
+
+    CLAY(scrollBarTrackId, {
+        .layout = {
+            .sizing = {
+                .width = CLAY_SIZING_FIXED(trackWidth),
+                .height = CLAY_SIZING_FIXED(containerHeight),
+            },
+            .padding = CLAY_PADDING_ALL((uint16_t)trackPadding),
+            .childGap = 0,
+            .layoutDirection = CLAY_TOP_TO_BOTTOM,
+        },
+        .backgroundColor = ctx->theme.surfaceAltColor,
+        .cornerRadius = CLAY_CORNER_RADIUS(4),
+        .floating = {
+            .offset = { .x = 3.0f, .y = 0.0f },
+            .parentId = scrollContainerId.id,
+            .zIndex = 100,
+            .attachPoints = {
+                .element = CLAY_ATTACH_POINT_RIGHT_TOP,
+                .parent = CLAY_ATTACH_POINT_RIGHT_TOP,
+            },
+            .attachTo = CLAY_ATTACH_TO_ELEMENT_WITH_ID,
+        },
+        .clip = { .horizontal = true, .vertical = true },
+        .border = {
+            .color = ctx->theme.borderColor,
+            .width = { .left = 1, .right = 1, .top = 1, .bottom = 1 },
+        },
+    }) {
+        if (scrollBarY > 0.0f) {
+            CLAY_AUTO_ID({
+                .layout = {
+                    .sizing = {
+                        .width = CLAY_SIZING_GROW(0),
+                        .height = CLAY_SIZING_FIXED(scrollBarY),
+                    },
+                },
+            }) {}
+        }
+
+        CLAY(scrollBarId, {
+            .layout = {
+                .sizing = {
+                    .width = CLAY_SIZING_GROW(0),
+                    .height = CLAY_SIZING_FIXED(scrollBarHeight),
+                },
+            },
+            .backgroundColor = draggingThumb ? ctx->theme.accentColor : (overThumb ? ctx->theme.accentMutedColor : ctx->theme.borderColor),
+            .cornerRadius = CLAY_CORNER_RADIUS(3),
+        }) {}
+    }
 }
 
 #endif

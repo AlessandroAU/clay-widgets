@@ -272,6 +272,15 @@ int main() {
     int applyCount = 0;
     char statusLine[128] = "Ready";
 
+    static const Clay_String comboItems[] = {
+        CLAY_STRING("Debug"),
+        CLAY_STRING("Release"),
+        CLAY_STRING("Release with Debug Info"),
+        CLAY_STRING("Minimum Size"),
+    };
+    static const int32_t comboItemCount = (int32_t)(sizeof(comboItems) / sizeof(comboItems[0]));
+    int32_t selectedBuildConfig = 1;
+
     while (!WindowShouldClose()) {
         float dt = GetFrameTime();
 
@@ -304,6 +313,8 @@ int main() {
         input.keyEnd = IsKeyPressed(KEY_END);
         input.keyLeft = IsKeyPressed(KEY_LEFT);
         input.keyRight = IsKeyPressed(KEY_RIGHT);
+        input.keyUp = IsKeyPressed(KEY_UP);
+        input.keyDown = IsKeyPressed(KEY_DOWN);
         input.keyEnter = IsKeyPressed(KEY_ENTER);
         input.keyEscape = IsKeyPressed(KEY_ESCAPE);
         input.keyTab = IsKeyPressed(KEY_TAB);
@@ -379,6 +390,7 @@ int main() {
                             selectedTheme = CLAY_WIDGETS_THEME_PRESET_SLATE;
                             masterVolume = 0.35f;
                             uiScale = 1.0f;
+                            selectedBuildConfig = 1;
                             std::strncpy(nameBuffer, "Clay User", sizeof(nameBuffer));
                             nameBuffer[sizeof(nameBuffer) - 1] = '\0';
                             std::strncpy(projectBuffer, "clay-widgets", sizeof(projectBuffer));
@@ -407,6 +419,15 @@ int main() {
                         projectBuffer,
                         static_cast<int32_t>(sizeof(projectBuffer)),
                         ClayWidgets_TextInputOptions{"workspace identifier", false}
+                    );
+
+                    ClayWidgets_Combo(
+                        &ui,
+                        CLAY_ID("BuildConfigCombo"),
+                        CLAY_STRING("Build configuration"),
+                        comboItems,
+                        comboItemCount,
+                        &selectedBuildConfig
                     );
 
                     if (ClayWidgets_Button(&ui, CLAY_ID("PingButton"), CLAY_STRING("Increment Counter"))) {
@@ -458,6 +479,8 @@ int main() {
                         uiScale / 1.5f,
                         CLAY_STRING("Scale calibration")
                     );
+
+                    ClayWidgets_ScrollBar(&ui, CLAY_ID("LeftPanel"));
                 }
 
                 CLAY(CLAY_ID("RightPanel"), {
@@ -469,55 +492,50 @@ int main() {
                     },
                     .backgroundColor = ui.theme.surfaceAltColor,
                     .cornerRadius = CLAY_CORNER_RADIUS(10),
-                    .clip = { .vertical = true, .childOffset = Clay_GetScrollOffset() },
                 }) {
                     ClayWidgets_Label(&ui, CLAY_STRING("Live State"));
 
-                    char line[256] = {};
-                    std::snprintf(line, sizeof(line), "Button clicks: %d", clickCount);
-                    ClayWidgets_Label(&ui, ClayStringFromCString(line));
+                    CLAY(CLAY_ID("RightPanelScrollView"), {
+                        .layout = {
+                            .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_GROW(0) },
+                            .childGap = 8,
+                            .layoutDirection = CLAY_TOP_TO_BOTTOM,
+                        },
+                        .clip = { .vertical = true, .childOffset = Clay_GetScrollOffset() },
+                    }) {
+                        char stateLines[14][256] = {};
+                        int stateLineCount = 0;
+                        std::snprintf(stateLines[stateLineCount++], sizeof(stateLines[0]), "Button clicks: %d", clickCount);
+                        std::snprintf(stateLines[stateLineCount++], sizeof(stateLines[0]), "Apply count: %d", applyCount);
+                        std::snprintf(stateLines[stateLineCount++], sizeof(stateLines[0]), "Feature A: %s", featureA ? "ON" : "OFF");
+                        std::snprintf(stateLines[stateLineCount++], sizeof(stateLines[0]), "Feature B: %s", featureB ? "ON" : "OFF");
+                        std::snprintf(stateLines[stateLineCount++], sizeof(stateLines[0]), "Notifications: %s", notificationsEnabled ? "ON" : "OFF");
+                        std::snprintf(stateLines[stateLineCount++], sizeof(stateLines[0]), "Profile: %d", selectedProfile);
 
-                    std::snprintf(line, sizeof(line), "Apply count: %d", applyCount);
-                    ClayWidgets_Label(&ui, ClayStringFromCString(line));
+                        const char *themeName = "Slate";
+                        if (selectedTheme == CLAY_WIDGETS_THEME_PRESET_SAND) {
+                            themeName = "Sand";
+                        } else if (selectedTheme == CLAY_WIDGETS_THEME_PRESET_FOREST) {
+                            themeName = "Forest";
+                        }
+                        std::snprintf(stateLines[stateLineCount++], sizeof(stateLines[0]), "Theme: %s", themeName);
+                        std::snprintf(stateLines[stateLineCount++], sizeof(stateLines[0]), "Volume: %.2f", masterVolume);
+                        std::snprintf(stateLines[stateLineCount++], sizeof(stateLines[0]), "UI Scale: %.2f", uiScale);
+                        std::snprintf(stateLines[stateLineCount++], sizeof(stateLines[0]), "Name: %s", nameBuffer);
+                        std::snprintf(stateLines[stateLineCount++], sizeof(stateLines[0]), "Project: %s", projectBuffer);
 
-                    std::snprintf(line, sizeof(line), "Feature A: %s", featureA ? "ON" : "OFF");
-                    ClayWidgets_Label(&ui, ClayStringFromCString(line));
+                        const char *buildConfigName = (selectedBuildConfig >= 0 && selectedBuildConfig < comboItemCount)
+                            ? comboItems[selectedBuildConfig].chars : "(none)";
+                        std::snprintf(stateLines[stateLineCount++], sizeof(stateLines[0]), "Build config: %s", buildConfigName);
+                        std::snprintf(stateLines[stateLineCount++], sizeof(stateLines[0]), "Focused widget id: %u", ui.focusedId);
+                        std::snprintf(stateLines[stateLineCount++], sizeof(stateLines[0]), "Status: %s", statusLine);
 
-                    std::snprintf(line, sizeof(line), "Feature B: %s", featureB ? "ON" : "OFF");
-                    ClayWidgets_Label(&ui, ClayStringFromCString(line));
+                        for (int i = 0; i < stateLineCount; ++i) {
+                            ClayWidgets_Label(&ui, ClayStringFromCString(stateLines[i]));
+                        }
 
-                    std::snprintf(line, sizeof(line), "Notifications: %s", notificationsEnabled ? "ON" : "OFF");
-                    ClayWidgets_Label(&ui, ClayStringFromCString(line));
-
-                    std::snprintf(line, sizeof(line), "Profile: %d", selectedProfile);
-                    ClayWidgets_Label(&ui, ClayStringFromCString(line));
-
-                    const char *themeName = "Slate";
-                    if (selectedTheme == CLAY_WIDGETS_THEME_PRESET_SAND) {
-                        themeName = "Sand";
-                    } else if (selectedTheme == CLAY_WIDGETS_THEME_PRESET_FOREST) {
-                        themeName = "Forest";
+                        ClayWidgets_ScrollBar(&ui, CLAY_ID("RightPanelScrollView"));
                     }
-                    std::snprintf(line, sizeof(line), "Theme: %s", themeName);
-                    ClayWidgets_Label(&ui, ClayStringFromCString(line));
-
-                    std::snprintf(line, sizeof(line), "Volume: %.2f", masterVolume);
-                    ClayWidgets_Label(&ui, ClayStringFromCString(line));
-
-                    std::snprintf(line, sizeof(line), "UI Scale: %.2f", uiScale);
-                    ClayWidgets_Label(&ui, ClayStringFromCString(line));
-
-                    std::snprintf(line, sizeof(line), "Name: %s", nameBuffer);
-                    ClayWidgets_Label(&ui, ClayStringFromCString(line));
-
-                    std::snprintf(line, sizeof(line), "Project: %s", projectBuffer);
-                    ClayWidgets_Label(&ui, ClayStringFromCString(line));
-
-                    std::snprintf(line, sizeof(line), "Focused widget id: %u", ui.focusedId);
-                    ClayWidgets_Label(&ui, ClayStringFromCString(line));
-
-                    std::snprintf(line, sizeof(line), "Status: %s", statusLine);
-                    ClayWidgets_Label(&ui, ClayStringFromCString(line));
                 }
             }
         }
