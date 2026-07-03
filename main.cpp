@@ -153,7 +153,10 @@ static void RenderClayCommands(Clay_RenderCommandArray commands, Font *fonts) {
         switch (cmd->commandType) {
             case CLAY_RENDER_COMMAND_TYPE_RECTANGLE: {
                 Color color = applyOverlay(ToRaylibColor(cmd->renderData.rectangle.backgroundColor));
-                DrawRectangleRounded(rect, cmd->renderData.rectangle.cornerRadius.topLeft / std::max(1.0f, std::min(rect.width, rect.height)), roundedCornerSegments, color);
+                float radius = cmd->renderData.rectangle.cornerRadius.topLeft;
+                float minDim = std::max(1.0f, std::min(rect.width, rect.height));
+                float roundness = std::min(1.0f, 2.0f * radius / minDim);
+                DrawRectangleRounded(rect, roundness, roundedCornerSegments, color);
                 break;
             }
             case CLAY_RENDER_COMMAND_TYPE_TEXT: {
@@ -167,10 +170,25 @@ static void RenderClayCommands(Clay_RenderCommandArray commands, Font *fonts) {
             case CLAY_RENDER_COMMAND_TYPE_BORDER: {
                 const Clay_BorderRenderData &b = cmd->renderData.border;
                 Color c = applyOverlay(ToRaylibColor(b.color));
-                if (b.width.top > 0) DrawRectangle(static_cast<int>(rect.x), static_cast<int>(rect.y), static_cast<int>(rect.width), b.width.top, c);
-                if (b.width.bottom > 0) DrawRectangle(static_cast<int>(rect.x), static_cast<int>(rect.y + rect.height - b.width.bottom), static_cast<int>(rect.width), b.width.bottom, c);
-                if (b.width.left > 0) DrawRectangle(static_cast<int>(rect.x), static_cast<int>(rect.y), b.width.left, static_cast<int>(rect.height), c);
-                if (b.width.right > 0) DrawRectangle(static_cast<int>(rect.x + rect.width - b.width.right), static_cast<int>(rect.y), b.width.right, static_cast<int>(rect.height), c);
+                float radius = b.cornerRadius.topLeft;
+                bool uniformWidth = b.width.left == b.width.right
+                    && b.width.top == b.width.bottom
+                    && b.width.left == b.width.top;
+                if (radius > 0.0f && uniformWidth && b.width.left > 0) {
+                    // Draw a rounded, inset border whose outer edge aligns with the
+                    // element's rounded background so fills never appear to bleed past it.
+                    float t = static_cast<float>(b.width.left);
+                    Rectangle inner = { rect.x + t, rect.y + t, rect.width - 2.0f * t, rect.height - 2.0f * t };
+                    float minDim = std::min(inner.width, inner.height);
+                    float innerRadius = std::max(0.0f, radius - t);
+                    float roundness = minDim > 0.0f ? std::min(1.0f, 2.0f * innerRadius / minDim) : 0.0f;
+                    DrawRectangleRoundedLinesEx(inner, roundness, roundedCornerSegments, t, c);
+                } else {
+                    if (b.width.top > 0) DrawRectangle(static_cast<int>(rect.x), static_cast<int>(rect.y), static_cast<int>(rect.width), b.width.top, c);
+                    if (b.width.bottom > 0) DrawRectangle(static_cast<int>(rect.x), static_cast<int>(rect.y + rect.height - b.width.bottom), static_cast<int>(rect.width), b.width.bottom, c);
+                    if (b.width.left > 0) DrawRectangle(static_cast<int>(rect.x), static_cast<int>(rect.y), b.width.left, static_cast<int>(rect.height), c);
+                    if (b.width.right > 0) DrawRectangle(static_cast<int>(rect.x + rect.width - b.width.right), static_cast<int>(rect.y), b.width.right, static_cast<int>(rect.height), c);
+                }
                 break;
             }
             case CLAY_RENDER_COMMAND_TYPE_SCISSOR_START: {
@@ -356,17 +374,9 @@ int main() {
                     .layoutDirection = compactLayout ? CLAY_TOP_TO_BOTTOM : CLAY_LEFT_TO_RIGHT,
                 },
             }) {
-                CLAY(CLAY_ID("LeftPanel"), {
-                    .layout = {
-                        .sizing = { .width = leftPanelWidth, .height = leftPanelHeight },
-                        .padding = CLAY_PADDING_ALL(12),
-                        .childGap = 12,
-                        .layoutDirection = CLAY_TOP_TO_BOTTOM,
-                    },
-                    .backgroundColor = ui.theme.surfaceAltColor,
-                    .cornerRadius = CLAY_CORNER_RADIUS(10),
-                    .clip = { .vertical = true, .childOffset = Clay_GetScrollOffset() },
-                }) {
+                ClayWidgets_BeginScrollPanel(&ui, CLAY_ID("LeftPanel"),
+                    ClayWidgets_ScrollPanelOptions{ leftPanelWidth, leftPanelHeight, 0, 0, ui.theme.spacing.md });
+                {
                     ClayWidgets_Label(&ui, CLAY_STRING("Keyboard: Tab moves focus, Enter activates the focused control."));
 
                     CLAY(CLAY_ID("ActionRow"), {
@@ -479,64 +489,46 @@ int main() {
                         uiScale / 1.5f,
                         CLAY_STRING("Scale calibration")
                     );
-
-                    ClayWidgets_ScrollBar(&ui, CLAY_ID("LeftPanel"));
                 }
+                ClayWidgets_EndScrollPanel(&ui, CLAY_ID("LeftPanel"));
 
-                CLAY(CLAY_ID("RightPanel"), {
-                    .layout = {
-                        .sizing = { .width = rightPanelWidth, .height = rightPanelHeight },
-                        .padding = CLAY_PADDING_ALL(12),
-                        .childGap = 8,
-                        .layoutDirection = CLAY_TOP_TO_BOTTOM,
-                    },
-                    .backgroundColor = ui.theme.surfaceAltColor,
-                    .cornerRadius = CLAY_CORNER_RADIUS(10),
-                }) {
+                ClayWidgets_BeginScrollPanel(&ui, CLAY_ID("RightPanel"),
+                    ClayWidgets_ScrollPanelOptions{ rightPanelWidth, rightPanelHeight, 0, 0, ui.theme.spacing.sm });
+                {
                     ClayWidgets_Label(&ui, CLAY_STRING("Live State"));
 
-                    CLAY(CLAY_ID("RightPanelScrollView"), {
-                        .layout = {
-                            .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_GROW(0) },
-                            .childGap = 8,
-                            .layoutDirection = CLAY_TOP_TO_BOTTOM,
-                        },
-                        .clip = { .vertical = true, .childOffset = Clay_GetScrollOffset() },
-                    }) {
-                        char stateLines[14][256] = {};
-                        int stateLineCount = 0;
-                        std::snprintf(stateLines[stateLineCount++], sizeof(stateLines[0]), "Button clicks: %d", clickCount);
-                        std::snprintf(stateLines[stateLineCount++], sizeof(stateLines[0]), "Apply count: %d", applyCount);
-                        std::snprintf(stateLines[stateLineCount++], sizeof(stateLines[0]), "Feature A: %s", featureA ? "ON" : "OFF");
-                        std::snprintf(stateLines[stateLineCount++], sizeof(stateLines[0]), "Feature B: %s", featureB ? "ON" : "OFF");
-                        std::snprintf(stateLines[stateLineCount++], sizeof(stateLines[0]), "Notifications: %s", notificationsEnabled ? "ON" : "OFF");
-                        std::snprintf(stateLines[stateLineCount++], sizeof(stateLines[0]), "Profile: %d", selectedProfile);
+                    char stateLines[14][256] = {};
+                    int stateLineCount = 0;
+                    std::snprintf(stateLines[stateLineCount++], sizeof(stateLines[0]), "Button clicks: %d", clickCount);
+                    std::snprintf(stateLines[stateLineCount++], sizeof(stateLines[0]), "Apply count: %d", applyCount);
+                    std::snprintf(stateLines[stateLineCount++], sizeof(stateLines[0]), "Feature A: %s", featureA ? "ON" : "OFF");
+                    std::snprintf(stateLines[stateLineCount++], sizeof(stateLines[0]), "Feature B: %s", featureB ? "ON" : "OFF");
+                    std::snprintf(stateLines[stateLineCount++], sizeof(stateLines[0]), "Notifications: %s", notificationsEnabled ? "ON" : "OFF");
+                    std::snprintf(stateLines[stateLineCount++], sizeof(stateLines[0]), "Profile: %d", selectedProfile);
 
-                        const char *themeName = "Slate";
-                        if (selectedTheme == CLAY_WIDGETS_THEME_PRESET_SAND) {
-                            themeName = "Sand";
-                        } else if (selectedTheme == CLAY_WIDGETS_THEME_PRESET_FOREST) {
-                            themeName = "Forest";
-                        }
-                        std::snprintf(stateLines[stateLineCount++], sizeof(stateLines[0]), "Theme: %s", themeName);
-                        std::snprintf(stateLines[stateLineCount++], sizeof(stateLines[0]), "Volume: %.2f", masterVolume);
-                        std::snprintf(stateLines[stateLineCount++], sizeof(stateLines[0]), "UI Scale: %.2f", uiScale);
-                        std::snprintf(stateLines[stateLineCount++], sizeof(stateLines[0]), "Name: %s", nameBuffer);
-                        std::snprintf(stateLines[stateLineCount++], sizeof(stateLines[0]), "Project: %s", projectBuffer);
+                    const char *themeName = "Slate";
+                    if (selectedTheme == CLAY_WIDGETS_THEME_PRESET_SAND) {
+                        themeName = "Sand";
+                    } else if (selectedTheme == CLAY_WIDGETS_THEME_PRESET_FOREST) {
+                        themeName = "Forest";
+                    }
+                    std::snprintf(stateLines[stateLineCount++], sizeof(stateLines[0]), "Theme: %s", themeName);
+                    std::snprintf(stateLines[stateLineCount++], sizeof(stateLines[0]), "Volume: %.2f", masterVolume);
+                    std::snprintf(stateLines[stateLineCount++], sizeof(stateLines[0]), "UI Scale: %.2f", uiScale);
+                    std::snprintf(stateLines[stateLineCount++], sizeof(stateLines[0]), "Name: %s", nameBuffer);
+                    std::snprintf(stateLines[stateLineCount++], sizeof(stateLines[0]), "Project: %s", projectBuffer);
 
-                        const char *buildConfigName = (selectedBuildConfig >= 0 && selectedBuildConfig < comboItemCount)
-                            ? comboItems[selectedBuildConfig].chars : "(none)";
-                        std::snprintf(stateLines[stateLineCount++], sizeof(stateLines[0]), "Build config: %s", buildConfigName);
-                        std::snprintf(stateLines[stateLineCount++], sizeof(stateLines[0]), "Focused widget id: %u", ui.focusedId);
-                        std::snprintf(stateLines[stateLineCount++], sizeof(stateLines[0]), "Status: %s", statusLine);
+                    const char *buildConfigName = (selectedBuildConfig >= 0 && selectedBuildConfig < comboItemCount)
+                        ? comboItems[selectedBuildConfig].chars : "(none)";
+                    std::snprintf(stateLines[stateLineCount++], sizeof(stateLines[0]), "Build config: %s", buildConfigName);
+                    std::snprintf(stateLines[stateLineCount++], sizeof(stateLines[0]), "Focused widget id: %u", ui.focusedId);
+                    std::snprintf(stateLines[stateLineCount++], sizeof(stateLines[0]), "Status: %s", statusLine);
 
-                        for (int i = 0; i < stateLineCount; ++i) {
-                            ClayWidgets_Label(&ui, ClayStringFromCString(stateLines[i]));
-                        }
-
-                        ClayWidgets_ScrollBar(&ui, CLAY_ID("RightPanelScrollView"));
+                    for (int i = 0; i < stateLineCount; ++i) {
+                        ClayWidgets_Label(&ui, ClayStringFromCString(stateLines[i]));
                     }
                 }
+                ClayWidgets_EndScrollPanel(&ui, CLAY_ID("RightPanel"));
             }
         }
 

@@ -68,6 +68,7 @@ float ClayWidgets_Slider(
     CLAY(id, {
         .layout = {
             .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_FIXED(18) },
+            .padding = CLAY_PADDING_ALL(1),
             .childAlignment = { .x = CLAY_ALIGN_X_LEFT, .y = CLAY_ALIGN_Y_CENTER },
         },
         .backgroundColor = ctx->theme.surfaceAltColor,

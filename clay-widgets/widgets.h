@@ -19,6 +19,10 @@ extern "C" {
 #define CLAY_WIDGETS_MAX_FOCUSABLES 128
 #endif
 
+#ifndef CLAY_WIDGETS_SCROLLBAR_WIDTH
+#define CLAY_WIDGETS_SCROLLBAR_WIDTH 8
+#endif
+
 typedef struct ClayWidgets_Input {
     float mouseX;
     float mouseY;
@@ -125,6 +129,14 @@ typedef struct ClayWidgets_TextInputOptions {
     bool clearOnEnter;
 } ClayWidgets_TextInputOptions;
 
+typedef struct ClayWidgets_ScrollPanelOptions {
+    Clay_SizingAxis width;
+    Clay_SizingAxis height;
+    uint16_t fadeMargin; // vertical inset where content clips before the panel edge (0 = theme default)
+    uint16_t padding;    // horizontal content padding (0 = theme default)
+    uint16_t childGap;   // gap between child widgets (0 = theme default)
+} ClayWidgets_ScrollPanelOptions;
+
 #include "core.h"
 #include "themes.h"
 #include "text.h"
@@ -136,6 +148,7 @@ typedef struct ClayWidgets_TextInputOptions {
 #include "text-input.h"
 #include "combo.h"
 #include "scroll-bar.h"
+#include "scroll-panel.h"
 
 #ifdef __cplusplus
 }

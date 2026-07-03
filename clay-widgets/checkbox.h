@@ -42,7 +42,6 @@ bool ClayWidgets_Checkbox(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_Stri
             },
             .backgroundColor = ctx->theme.surfaceAltColor,
             .cornerRadius = CLAY_CORNER_RADIUS(ctx->theme.radiusSm),
-            .clip = { .horizontal = true, .vertical = true },
             .border = {
                 .color = (focused || over) ? ctx->theme.focusRingColor : ctx->theme.borderColor,
                 .width = { .left = 1, .right = 1, .top = 1, .bottom = 1 },
@@ -60,7 +59,6 @@ bool ClayWidgets_Checkbox(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_Stri
                     },
                     .backgroundColor = ctx->theme.accentColor,
                     .cornerRadius = CLAY_CORNER_RADIUS(ctx->theme.radiusSm > 0 ? ctx->theme.radiusSm - 1 : 0),
-                    .clip = { .horizontal = true, .vertical = true },
                 }) {
                     CLAY_TEXT(CLAY_STRING("X"), {
                         .textColor = (Clay_Color){240, 248, 255, 255},

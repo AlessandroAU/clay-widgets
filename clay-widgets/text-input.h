@@ -37,7 +37,6 @@ bool ClayWidgets_TextInput(
     const float horizontalInset = (float)ctx->theme.spacing.sm;
     const float fieldHeight = (float)(ctx->theme.fontSizeBody + (int32_t)ctx->theme.spacing.md + 8);
     Clay_ElementId fieldId = Clay_GetElementIdWithIndex(CLAY_STRING("ClayWidgetsTextInputField"), id.id);
-    Clay_ElementId textContentId = Clay_GetElementIdWithIndex(CLAY_STRING("ClayWidgetsTextInputContent"), id.id);
 
     bool over = Clay_PointerOver(id);
     if (over) {
@@ -182,7 +181,6 @@ bool ClayWidgets_TextInput(
     }
 
     float textScrollX = focused ? ctx->textScrollX : 0.0f;
-    float textOffsetX = horizontalInset - textScrollX;
 
     Clay_Dimensions lineMetrics = ClayWidgets__MeasureSlice(ctx, "Ag", 2, fontId, fontSize, letterSpacing);
     float textHeight = lineMetrics.height > 0.0f ? lineMetrics.height : (float)fontSize;
@@ -246,10 +244,19 @@ bool ClayWidgets_TextInput(
                                 .width = CLAY_SIZING_FIXED(selWidth),
                                 .height = CLAY_SIZING_FIXED(textHeight),
                             },
-                            .childAlignment = { .x = CLAY_ALIGN_X_LEFT, .y = CLAY_ALIGN_Y_CENTER },
                         },
                         .backgroundColor = ctx->theme.accentMutedColor,
                         .cornerRadius = CLAY_CORNER_RADIUS(3),
+                        .floating = {
+                            .offset = { horizontalInset + startX, textOffsetY },
+                            .attachPoints = {
+                                .element = CLAY_ATTACH_POINT_LEFT_TOP,
+                                .parent = CLAY_ATTACH_POINT_LEFT_TOP,
+                            },
+                            .pointerCaptureMode = CLAY_POINTER_CAPTURE_MODE_PASSTHROUGH,
+                            .attachTo = CLAY_ATTACH_TO_PARENT,
+                            .clipTo = CLAY_CLIP_TO_ATTACHED_PARENT,
+                        },
                     }) {}
                 }
             }
@@ -276,8 +283,6 @@ bool ClayWidgets_TextInput(
         }
     }
 
-    (void)textContentId;
-    (void)textOffsetX;
     (void)textOffsetY;
 
     return changed;

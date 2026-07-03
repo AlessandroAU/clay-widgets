@@ -37,7 +37,7 @@ void ClayWidgets_ScrollBar(
         return;
     }
 
-    const float trackWidth = 8.0f;
+    const float trackWidth = (float)CLAY_WIDGETS_SCROLLBAR_WIDTH;
     const float trackPadding = 1.0f;
     float trackInnerHeight = containerHeight - trackPadding * 2.0f;
     if (trackInnerHeight <= 1.0f) {
@@ -105,7 +105,6 @@ void ClayWidgets_ScrollBar(
             },
             .attachTo = CLAY_ATTACH_TO_ELEMENT_WITH_ID,
         },
-        .clip = { .horizontal = true, .vertical = true },
         .border = {
             .color = ctx->theme.borderColor,
             .width = { .left = 1, .right = 1, .top = 1, .bottom = 1 },

@@ -48,7 +48,6 @@ void ClayWidgets_ProgressBar(
             },
             .backgroundColor = ctx->theme.surfaceAltColor,
             .cornerRadius = CLAY_CORNER_RADIUS(6),
-            .clip = { .horizontal = true, .vertical = true },
             .border = {
                 .color = ctx->theme.borderColor,
                 .width = { .left = 1, .right = 1, .top = 1, .bottom = 1 },
