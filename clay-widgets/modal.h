@@ -121,7 +121,16 @@ bool ClayWidgets_BeginModal(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_St
             }
         }
 
-        if (ClayWidgets_Button(ctx, closeId, CLAY_STRING("X"))) {
+        // Fix the close button to a square (side = the label's line height
+        // plus the button's own padding); left to fit, the lone narrow X
+        // glyph would produce a tall rectangle.
+        float closeSize = (float)ctx->theme.fontSizeBody + 2.0f * (float)ctx->theme.spacing.md;
+        ClayWidgets_ButtonOptions closeOptions = {
+            CLAY_WIDGETS_BUTTON_DEFAULT,
+            false,
+            { CLAY_SIZING_FIXED(closeSize), CLAY_SIZING_FIXED(closeSize) },
+        };
+        if (ClayWidgets_ButtonEx(ctx, closeId, CLAY_STRING("X"), closeOptions)) {
             *open = false;
         }
     }

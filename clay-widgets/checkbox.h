@@ -5,24 +5,40 @@
 #error "Include widgets.h before checkbox.h"
 #endif
 
+bool ClayWidgets_CheckboxEx(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_String text, bool *value, bool disabled);
+
 bool ClayWidgets_Checkbox(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_String text, bool *value);
 
 #ifdef CLAY_WIDGETS_IMPLEMENTATION
 
-bool ClayWidgets_Checkbox(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_String text, bool *value) {
+bool ClayWidgets_CheckboxEx(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_String text, bool *value, bool disabled) {
     if (!ctx || !value) {
         return false;
     }
 
-    bool over = Clay_PointerOver(id);
-    bool focused = ClayWidgets__RegisterFocusable(ctx, id, over);
-    bool clicked = ClayWidgets__ConsumeClick(ctx, over);
-    if (!clicked && ClayWidgets__ActivateFocused(ctx, id)) {
-        clicked = true;
+    // Disabled: inert. No focus registration, no click; always returns false.
+    // The box keeps a plain border (never the focus ring), the check fill is a
+    // muted accent, and the label text is muted.
+    bool over = disabled ? false : Clay_PointerOver(id);
+    bool focused = disabled ? false : ClayWidgets__RegisterFocusable(ctx, id, over);
+    bool clicked = false;
+    if (!disabled) {
+        clicked = ClayWidgets__ConsumeClick(ctx, over);
+        if (!clicked && ClayWidgets__ActivateFocused(ctx, id)) {
+            clicked = true;
+        }
+        if (clicked) {
+            *value = !(*value);
+        }
     }
-    if (clicked) {
-        *value = !(*value);
-    }
+
+    Clay_Color boxBorder = (!disabled && (focused || over))
+        ? ctx->theme.focusRingColor
+        : ctx->theme.borderColor;
+    Clay_Color checkFill = disabled
+        ? ClayWidgets__MixColor(ctx->theme.accentColor, ctx->theme.surfaceColor, 0.4f)
+        : ctx->theme.accentColor;
+    Clay_Color labelColor = disabled ? ctx->theme.textMutedColor : ctx->theme.textColor;
 
     CLAY(id, {
         .layout = {
@@ -43,7 +59,7 @@ bool ClayWidgets_Checkbox(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_Stri
             .backgroundColor = ctx->theme.surfaceAltColor,
             .cornerRadius = CLAY_CORNER_RADIUS(ctx->theme.radiusSm),
             .border = {
-                .color = (focused || over) ? ctx->theme.focusRingColor : ctx->theme.borderColor,
+                .color = boxBorder,
                 .width = { .left = 1, .right = 1, .top = 1, .bottom = 1 },
             },
         }) {
@@ -57,7 +73,7 @@ bool ClayWidgets_Checkbox(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_Stri
                         .padding = CLAY_PADDING_ALL(3),
                         .childAlignment = { .x = CLAY_ALIGN_X_CENTER, .y = CLAY_ALIGN_Y_CENTER },
                     },
-                    .backgroundColor = ctx->theme.accentColor,
+                    .backgroundColor = checkFill,
                     .cornerRadius = CLAY_CORNER_RADIUS(ctx->theme.radiusSm > 0 ? ctx->theme.radiusSm - 1 : 0),
                 }) {
                     CLAY_TEXT(CLAY_STRING("X"), {
@@ -70,13 +86,17 @@ bool ClayWidgets_Checkbox(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_Stri
         }
 
         CLAY_TEXT(text, {
-            .textColor = ctx->theme.textColor,
+            .textColor = labelColor,
             .fontId = ctx->theme.fontBody,
             .fontSize = ctx->theme.fontSizeBody,
         });
     }
 
     return clicked;
+}
+
+bool ClayWidgets_Checkbox(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_String text, bool *value) {
+    return ClayWidgets_CheckboxEx(ctx, id, text, value, false);
 }
 
 #endif

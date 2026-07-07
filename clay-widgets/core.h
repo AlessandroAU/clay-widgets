@@ -236,8 +236,18 @@ static float ClayWidgets__AnimTo(ClayWidgets_Context *ctx, uint32_t id, float ta
         return target;
     }
 
+    // Already advanced this frame (a second call for the same id in one frame):
+    // return the current value instead of easing again, which would apply dt
+    // twice and make the motion frame-rate dependent.
+    if (slot->frame == ctx->animFrame) {
+        return slot->value;
+    }
+
+    // Skip easing on a non-positive or non-finite dt. `!(dt > 0.0f)` also rejects
+    // NaN (any comparison with NaN is false); a bare `dt < 0.0f` would let a NaN
+    // through and permanently poison slot->value.
     float dt = ctx->input.deltaTime;
-    if (dt < 0.0f) {
+    if (!(dt > 0.0f)) {
         dt = 0.0f;
     }
     float factor = 1.0f - expf(-dt * speed);
@@ -592,8 +602,9 @@ static bool ClayWidgets__ActivateFocused(ClayWidgets_Context *ctx, Clay_ElementI
 // text field). Clay routes the wheel to the innermost clip under the pointer and
 // drops it if that clip can't scroll in the wheel's direction, so without this
 // the widget silently eats the scroll. Recorded here (during layout, using last
-// frame's box) and acted on in the next BeginFrame, which nudges the wheel to the
-// scrolling ancestor. Call every frame the pointer is over the element.
+// frame's box) and acted on in the next BeginFrame, which forwards the wheel
+// directly to the enclosing scroll panel. Call every frame the pointer is over
+// the element.
 static void ClayWidgets__RegisterWheelFallthrough(ClayWidgets_Context *ctx, Clay_ElementId clipId, bool pointerOver) {
     if (!ctx || !pointerOver) {
         return;
@@ -603,10 +614,14 @@ static void ClayWidgets__RegisterWheelFallthrough(ClayWidgets_Context *ctx, Clay
         ctx->wheelFallthroughId = clipId.id;
         ctx->wheelFallthroughBox = data.boundingBox;
         // The innermost scroll panel currently open around this clip is the one to
-        // forward the wheel to. 0 if the clip isn't inside a scroll panel.
-        ctx->wheelFallthroughPanelId = ctx->scrollPanelDepth > 0
-            ? ctx->scrollPanelStack[ctx->scrollPanelDepth - 1]
-            : 0;
+        // forward the wheel to. 0 if the clip isn't inside a scroll panel, or if
+        // nesting ran past the stack (depth is counted unconditionally but only
+        // stored up to the cap, so a depth beyond the cap has no recorded id -
+        // guard the index to avoid reading past scrollPanelStack).
+        ctx->wheelFallthroughPanelId =
+            (ctx->scrollPanelDepth > 0 && ctx->scrollPanelDepth <= CLAY_WIDGETS_MAX_SCROLL_NESTING)
+                ? ctx->scrollPanelStack[ctx->scrollPanelDepth - 1]
+                : 0;
     }
 }
 
@@ -700,13 +715,7 @@ void ClayWidgets_BeginFrame(
                 maxScroll = 0.0f;
             }
             float y = panelScroll.scrollPosition->y + scrollDelta.y * 10.0f; // match Clay's wheel step
-            if (y > 0.0f) {
-                y = 0.0f;
-            }
-            if (y < -maxScroll) {
-                y = -maxScroll;
-            }
-            panelScroll.scrollPosition->y = y;
+            panelScroll.scrollPosition->y = ClayWidgets__Clamp(y, -maxScroll, 0.0f);
         }
     }
     // Consume the registration; hovered clip widgets re-register during this

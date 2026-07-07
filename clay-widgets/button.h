@@ -5,12 +5,57 @@
 #error "Include widgets.h before button.h"
 #endif
 
+typedef enum ClayWidgets_ButtonVariant {
+    CLAY_WIDGETS_BUTTON_DEFAULT = 0,
+    CLAY_WIDGETS_BUTTON_PRIMARY = 1,
+    CLAY_WIDGETS_BUTTON_DANGER  = 2,
+} ClayWidgets_ButtonVariant;
+typedef struct ClayWidgets_ButtonOptions {
+    ClayWidgets_ButtonVariant variant;
+    bool disabled;
+    // Optional sizing override. The zero value is CLAY_SIZING_FIT(0, 0) on
+    // both axes, i.e. the default wrap-to-label behavior; set it for e.g. a
+    // fixed square icon button or a full-width toolbar button.
+    Clay_Sizing sizing;
+} ClayWidgets_ButtonOptions;
+bool ClayWidgets_ButtonEx(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_String text, ClayWidgets_ButtonOptions options);
+
 bool ClayWidgets_Button(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_String text);
 
 #ifdef CLAY_WIDGETS_IMPLEMENTATION
 
-bool ClayWidgets_Button(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_String text) {
+bool ClayWidgets_ButtonEx(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_String text, ClayWidgets_ButtonOptions options) {
     if (!ctx) {
+        return false;
+    }
+
+    // Disabled: inert. No focus registration, no press/click tracking, always
+    // returns false. Muted fill (surfaceAlt mixed halfway to surface), muted
+    // text and a plain border, with no color transition.
+    if (options.disabled) {
+        Clay_Color color = ClayWidgets__MixColor(ctx->theme.surfaceAltColor, ctx->theme.surfaceColor, 0.5f);
+
+        CLAY(id, {
+            .layout = {
+                .sizing = options.sizing,
+                .padding = CLAY_PADDING_ALL(ctx->theme.spacing.md),
+                .childAlignment = { .x = CLAY_ALIGN_X_CENTER, .y = CLAY_ALIGN_Y_CENTER },
+            },
+            .backgroundColor = color,
+            .cornerRadius = CLAY_CORNER_RADIUS(ctx->theme.radiusMd),
+            .border = {
+                .color = ctx->theme.borderColor,
+                .width = { .left = 1, .right = 1, .top = 1, .bottom = 1 },
+            },
+        }) {
+            CLAY_TEXT(text, {
+                .textColor = ctx->theme.textMutedColor,
+                .fontId = ctx->theme.fontBody,
+                .fontSize = ctx->theme.fontSizeBody,
+                .textAlignment = CLAY_TEXT_ALIGN_CENTER,
+            });
+        }
+
         return false;
     }
 
@@ -32,16 +77,44 @@ bool ClayWidgets_Button(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_String
         clicked = true;
     }
 
-    Clay_Color color = ctx->theme.surfaceAltColor;
+    // Per-variant resting / hover / pressed fills and text color. DEFAULT keeps
+    // the original theme-driven look; PRIMARY and DANGER carry their own palette.
+    Clay_Color base;
+    Clay_Color hover;
+    Clay_Color pressed;
+    Clay_Color textColor;
+    switch (options.variant) {
+        case CLAY_WIDGETS_BUTTON_PRIMARY:
+            base = ctx->theme.accentColor;
+            hover = ClayWidgets__MixColor(ctx->theme.accentColor, (Clay_Color){255, 255, 255, 255}, 0.12f);
+            pressed = ClayWidgets__MixColor(ctx->theme.accentColor, (Clay_Color){0, 0, 0, 255}, 0.15f);
+            textColor = (Clay_Color){245, 248, 255, 255};
+            break;
+        case CLAY_WIDGETS_BUTTON_DANGER:
+            base = (Clay_Color){200, 64, 52, 255};
+            hover = (Clay_Color){220, 84, 72, 255};
+            pressed = (Clay_Color){170, 44, 36, 255};
+            textColor = (Clay_Color){255, 240, 238, 255};
+            break;
+        case CLAY_WIDGETS_BUTTON_DEFAULT:
+        default:
+            base = ctx->theme.surfaceAltColor;
+            hover = ctx->theme.hoverColor;
+            pressed = ctx->theme.pressedColor;
+            textColor = ctx->theme.textColor;
+            break;
+    }
+
+    Clay_Color color = base;
     if (active) {
-        color = ctx->theme.pressedColor;
+        color = pressed;
     } else if (over) {
-        color = ctx->theme.hoverColor;
+        color = hover;
     }
 
     CLAY(id, {
         .layout = {
-            .sizing = { .width = CLAY_SIZING_FIT(0, 0), .height = CLAY_SIZING_FIT(0, 0) },
+            .sizing = options.sizing,
             .padding = CLAY_PADDING_ALL(ctx->theme.spacing.md),
             .childAlignment = { .x = CLAY_ALIGN_X_CENTER, .y = CLAY_ALIGN_Y_CENTER },
         },
@@ -54,7 +127,7 @@ bool ClayWidgets_Button(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_String
         .transition = ClayWidgets__ColorTransition(ctx),
     }) {
         CLAY_TEXT(text, {
-            .textColor = ctx->theme.textColor,
+            .textColor = textColor,
             .fontId = ctx->theme.fontBody,
             .fontSize = ctx->theme.fontSizeBody,
             .textAlignment = CLAY_TEXT_ALIGN_CENTER,
@@ -62,6 +135,10 @@ bool ClayWidgets_Button(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_String
     }
 
     return clicked;
+}
+
+bool ClayWidgets_Button(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_String text) {
+    return ClayWidgets_ButtonEx(ctx, id, text, (ClayWidgets_ButtonOptions){CLAY_WIDGETS_BUTTON_DEFAULT, false});
 }
 
 #endif

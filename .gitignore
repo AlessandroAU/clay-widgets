@@ -5,5 +5,9 @@
 /web/
 /subprojects/raylib/src/libraylib.web.a
 
-# Build logs
+# Build
+/build/*
 *.log
+
+# Final binaries
+*.exe

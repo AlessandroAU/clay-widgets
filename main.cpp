@@ -1,5 +1,18 @@
+// clay-widgets demo application.
+//
+// Structured like a small real program rather than a widget dump:
+//   - Dashboard: live task statistics, a data table, and quick actions.
+//   - Tasks:     a working to-do manager (add / edit / filter / delete) built
+//                from the kit's list rows, inputs, radios and modal dialog.
+//   - Gallery:   the full widget catalog, grouped into themed cards.
+//   - Settings:  theme presets, behavior toggles and live diagnostics.
+//
+// All state lives in DemoState (plain structs, rebuilt into UI every frame);
+// rendering is raylib; the same file compiles to desktop and WebAssembly.
+
 #include <algorithm>
 #include <cmath>
+#include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -156,6 +169,48 @@ static Rectangle IntersectRects(Rectangle a, Rectangle b) {
     return Rectangle{x1, y1, x2 - x1, y2 - y1};
 }
 
+// Raylib's DrawRectangleRounded applies one radius to all four corners, so
+// mixed-radius fills (e.g. the end cells of a segmented control, which round
+// only their outer corners) are assembled from quarter-disc sectors plus
+// non-overlapping horizontal strips - overlap would double-blend translucent
+// fills.
+static void DrawRectangleRoundedPerCorner(Rectangle rect, Clay_CornerRadius cr, int segments, Color color) {
+    float maxRadius = 0.5f * std::min(rect.width, rect.height);
+    float tl = std::min(cr.topLeft, maxRadius);
+    float tr = std::min(cr.topRight, maxRadius);
+    float bl = std::min(cr.bottomLeft, maxRadius);
+    float br = std::min(cr.bottomRight, maxRadius);
+
+    if (tl == tr && tl == bl && tl == br) {
+        float minDim = std::max(1.0f, std::min(rect.width, rect.height));
+        float roundness = std::min(1.0f, 2.0f * tl / minDim);
+        DrawRectangleRounded(rect, roundness, segments, color);
+        return;
+    }
+
+    if (tl > 0.0f) DrawCircleSector(Vector2{rect.x + tl, rect.y + tl}, tl, 180.0f, 270.0f, segments, color);
+    if (tr > 0.0f) DrawCircleSector(Vector2{rect.x + rect.width - tr, rect.y + tr}, tr, 270.0f, 360.0f, segments, color);
+    if (br > 0.0f) DrawCircleSector(Vector2{rect.x + rect.width - br, rect.y + rect.height - br}, br, 0.0f, 90.0f, segments, color);
+    if (bl > 0.0f) DrawCircleSector(Vector2{rect.x + bl, rect.y + rect.height - bl}, bl, 90.0f, 180.0f, segments, color);
+
+    // The rest is the rect minus the four corner squares: split it at every
+    // corner-square edge into horizontal strips, insetting each strip past
+    // whichever corner squares it runs alongside.
+    float ys[6] = {0.0f, tl, tr, rect.height - bl, rect.height - br, rect.height};
+    std::sort(ys, ys + 6);
+    for (int s = 0; s < 5; ++s) {
+        float y1 = ys[s];
+        float y2 = ys[s + 1];
+        if (y2 - y1 <= 0.0f) {
+            continue;
+        }
+        float mid = 0.5f * (y1 + y2);
+        float left = (mid < tl) ? tl : ((mid > rect.height - bl) ? bl : 0.0f);
+        float right = (mid < tr) ? tr : ((mid > rect.height - br) ? br : 0.0f);
+        DrawRectangleRec(Rectangle{rect.x + left, rect.y + y1, rect.width - left - right, y2 - y1}, color);
+    }
+}
+
 static void RenderClayCommands(Clay_RenderCommandArray commands, Font *fonts) {
     std::vector<Rectangle> scissorStack;
     std::vector<Color> overlayStack;
@@ -184,20 +239,25 @@ static void RenderClayCommands(Clay_RenderCommandArray commands, Font *fonts) {
 
     for (int i = 0; i < commands.length; ++i) {
         Clay_RenderCommand *cmd = Clay_RenderCommandArray_Get(&commands, i);
+        // Snap boxes to whole pixels. Clay lays out in floats, so sibling
+        // edges land on fractional coordinates and rasterize as a half-pixel
+        // blur that reads as uneven widths and gaps (three equally-grown
+        // cards can each look a different size). Rounding the two edges
+        // independently (rather than x and width) keeps adjacent elements
+        // flush with each other.
+        float x0 = std::round(cmd->boundingBox.x);
+        float y0 = std::round(cmd->boundingBox.y);
         Rectangle rect = {
-            cmd->boundingBox.x,
-            cmd->boundingBox.y,
-            cmd->boundingBox.width,
-            cmd->boundingBox.height,
+            x0,
+            y0,
+            std::round(cmd->boundingBox.x + cmd->boundingBox.width) - x0,
+            std::round(cmd->boundingBox.y + cmd->boundingBox.height) - y0,
         };
 
         switch (cmd->commandType) {
             case CLAY_RENDER_COMMAND_TYPE_RECTANGLE: {
                 Color color = applyOverlay(ToRaylibColor(cmd->renderData.rectangle.backgroundColor));
-                float radius = cmd->renderData.rectangle.cornerRadius.topLeft;
-                float minDim = std::max(1.0f, std::min(rect.width, rect.height));
-                float roundness = std::min(1.0f, 2.0f * radius / minDim);
-                DrawRectangleRounded(rect, roundness, roundedCornerSegments, color);
+                DrawRectangleRoundedPerCorner(rect, cmd->renderData.rectangle.cornerRadius, roundedCornerSegments, color);
                 break;
             }
             case CLAY_RENDER_COMMAND_TYPE_TEXT: {
@@ -287,138 +347,1221 @@ static void RenderClayCommands(Clay_RenderCommandArray commands, Font *fonts) {
     }
 }
 
-// A document shown in the "Documents" view of the demo.
-struct DemoDocument {
-    Clay_String title;
-    Clay_String subtitle;
-    Clay_String body;
+// ---------------------------------------------------------------------------
+// Demo data and state
+// ---------------------------------------------------------------------------
+
+enum DemoView {
+    kViewDashboard = 0,
+    kViewTasks = 1,
+    kViewGallery = 2,
+    kViewSettings = 3,
 };
 
-static const DemoDocument kDemoDocuments[] = {
-    {
-        CLAY_STRING("Getting Started"),
-        CLAY_STRING("Bring your own renderer and input."),
-        CLAY_STRING(
-            "clay-widgets is a small immediate-mode UI kit that sits on top of Clay's layout engine.\n"
-            "\n"
-            "Each frame you feed the widgets an input snapshot, declare your controls, and then hand the resulting Clay render commands to a backend of your choice. This demo uses raylib, but the same widget code works with any renderer that can draw rounded rectangles, borders and text.\n"
-            "\n"
-            "Because everything is rebuilt every frame, there is no retained widget tree to keep in sync - the state you pass in is the single source of truth."
-        ),
-    },
-    {
-        CLAY_STRING("Layout Model"),
-        CLAY_STRING("Rows, columns, and grow/fit sizing."),
-        CLAY_STRING(
-            "Clay lays out elements as nested rows and columns. Every element sizes itself with one of three strategies: FIXED for an exact pixel size, FIT to hug its content, and GROW to share the remaining space with its siblings.\n"
-            "\n"
-            "Panels in this demo use GROW so they expand to fill the window, while controls like checkboxes use FIXED boxes with FIT labels. Switching between horizontal and vertical stacking is a single field, which is how the demo collapses to a single column on narrow windows."
-        ),
-    },
-    {
-        CLAY_STRING("Theming & Presets"),
-        CLAY_STRING("Slate, Sand and Forest out of the box."),
-        CLAY_STRING(
-            "A theme is just a struct of colors, corner radii, font ids and spacing steps. Widgets read from the active theme every frame, so you can swap the entire look of the UI by assigning a new theme before you build the layout.\n"
-            "\n"
-            "Try the Theme radio buttons on the Settings tab to flip between the built-in presets and watch every widget update instantly."
-        ),
-    },
-    {
-        CLAY_STRING("Widget Catalog"),
-        CLAY_STRING("What ships in the kit today."),
-        CLAY_STRING(
-            "Buttons, checkboxes, radio groups, sliders, progress bars, single-line text inputs with selection, dropdown combo boxes, headings, labels and separators.\n"
-            "\n"
-            "Container widgets round things out: scroll panels with a draggable scroll bar, plus the navigation bar and selectable list you are using right now, which are assembled in the demo from raw Clay elements."
-        ),
-    },
-    {
-        CLAY_STRING("Keyboard & Focus"),
-        CLAY_STRING("Tab, arrows and activation."),
-        CLAY_STRING(
-            "Focusable widgets register themselves each frame in declaration order. Tab and Shift+Tab move focus, Enter activates the focused control, and text inputs support Home/End, word jumps and Ctrl+A select-all.\n"
-            "\n"
-            "The focused widget id is printed live on the Settings tab so you can watch focus move as you press Tab."
-        ),
-    },
-};
-static const int kDemoDocumentCount = (int)(sizeof(kDemoDocuments) / sizeof(kDemoDocuments[0]));
+constexpr int32_t kMaxTasks = 32;
+constexpr int32_t kTaskTitleCap = 64;
 
-// Pages shown by the "Tab Plane" view: a tab strip switches the content panel below.
-struct TabPage {
+// Priorities are indexes into these tables: 0 = High, 1 = Medium, 2 = Low.
+static const Clay_String kPriorityNames[] = {
+    CLAY_STRING("High"),
+    CLAY_STRING("Medium"),
+    CLAY_STRING("Low"),
+};
+static const Clay_Color kPrioritySwatches[] = {
+    Clay_Color{224, 82, 64, 255},
+    Clay_Color{240, 180, 60, 255},
+    Clay_Color{110, 168, 224, 255},
+};
+
+static const Clay_String kTaskFilterNames[] = {
+    CLAY_STRING("All"),
+    CLAY_STRING("Active"),
+    CLAY_STRING("Done"),
+};
+
+static const Clay_String kThemeNames[] = {
+    CLAY_STRING("Slate"),
+    CLAY_STRING("Sand"),
+    CLAY_STRING("Forest"),
+    CLAY_STRING("Win95"),
+};
+
+static const Clay_String kDensityNames[] = {
+    CLAY_STRING("Compact"),
+    CLAY_STRING("Cozy"),
+    CLAY_STRING("Comfortable"),
+};
+
+static const Clay_String kChannelNames[] = {
+    CLAY_STRING("Stable"),
+    CLAY_STRING("Beta"),
+    CLAY_STRING("Nightly"),
+    CLAY_STRING("Canary"),
+};
+
+static const Clay_String kLogLevelNames[] = {
+    CLAY_STRING("Error"),
+    CLAY_STRING("Warning"),
+    CLAY_STRING("Info"),
+    CLAY_STRING("Debug"),
+    CLAY_STRING("Trace"),
+};
+
+static const Clay_String kBuildConfigNames[] = {
+    CLAY_STRING("Debug"),
+    CLAY_STRING("Release"),
+    CLAY_STRING("Release with Debug Info"),
+    CLAY_STRING("Minimum Size"),
+};
+
+// Rows for the Dashboard "Recent builds" table.
+static const Clay_String kBuildNames[] = {
+    CLAY_STRING("web build"),
+    CLAY_STRING("widget sweep"),
+    CLAY_STRING("theme audit"),
+    CLAY_STRING("wasm smoke test"),
+};
+static const Clay_String kBuildStates[] = {
+    CLAY_STRING("passing"),
+    CLAY_STRING("passing"),
+    CLAY_STRING("flaky"),
+    CLAY_STRING("broken"),
+};
+static const Clay_String kBuildTimes[] = {
+    CLAY_STRING("2m 14s"),
+    CLAY_STRING("1m 03s"),
+    CLAY_STRING("4m 41s"),
+    CLAY_STRING("0m 12s"),
+};
+constexpr int32_t kBuildRowCount = 4;
+
+// Pages for the Gallery's attached-tab mini plane.
+struct MiniTabPage {
     Clay_String label;
-    Clay_String heading;
     Clay_String body;
 };
-
-static const TabPage kTabPages[] = {
+static const MiniTabPage kMiniTabs[] = {
     {
         CLAY_STRING("Overview"),
-        CLAY_STRING("Tabbed panels"),
-        CLAY_STRING(
-            "A tab plane is just a row of tabs above a shared content panel.\n"
-            "\n"
-            "Each tab is a ClayWidgets_Tab that behaves like a radio button: it takes a distinct option value and a shared selection pointer. Clicking a tab (or focusing it and pressing Enter) updates the selection, and the panel below swaps its contents to match."
-        ),
+        CLAY_STRING("Attached tabs share one framed surface with the panel below, so the strip and body read as a single control."),
     },
     {
-        CLAY_STRING("Usage"),
-        CLAY_STRING("How to build one"),
-        CLAY_STRING(
-            "Lay several ClayWidgets_Tab calls inside a horizontal container to form the strip, passing each an index and a pointer to your active-tab variable.\n"
-            "\n"
-            "Then branch on that variable to declare the body. Because the whole UI is rebuilt every frame, there is no retained tab control to keep in sync - the active-tab integer is the single source of truth."
-        ),
+        CLAY_STRING("Behavior"),
+        CLAY_STRING("Each tab is a radio bound to one shared integer. Rebuild the body from that integer every frame and the panel swaps for free."),
     },
     {
         CLAY_STRING("Keyboard"),
-        CLAY_STRING("Focus and activation"),
-        CLAY_STRING(
-            "Tabs register as focusable widgets in declaration order, so Tab and Shift+Tab move between them and Enter activates the focused tab.\n"
-            "\n"
-            "This makes the tab plane fully keyboard navigable without any extra wiring - the same focus system every other widget in the kit uses."
-        ),
-    },
-    {
-        CLAY_STRING("Styling"),
-        CLAY_STRING("Theme-driven look"),
-        CLAY_STRING(
-            "The active tab paints with the theme accent color, hover uses the hover color, and the focused tab shows the focus ring on its border.\n"
-            "\n"
-            "Switch themes on the Settings tab to see the tab strip restyle instantly along with the rest of the widgets."
-        ),
+        CLAY_STRING("Tabs join the global focus order: Tab reaches the strip and Enter activates the focused tab."),
     },
 };
-static const int kTabPageCount = (int)(sizeof(kTabPages) / sizeof(kTabPages[0]));
+constexpr int32_t kMiniTabCount = static_cast<int32_t>(sizeof(kMiniTabs) / sizeof(kMiniTabs[0]));
 
+struct DemoTask {
+    char title[kTaskTitleCap];
+    int32_t priority; // index into kPriorityNames
+    bool done;
+};
 
-// A full-width selectable row used for the document sidebar. Returns true when clicked.
-static bool DocListItem(ClayWidgets_Context &ui, Clay_ElementId id, Clay_String title, bool selected) {
-    bool over = Clay_PointerOver(id);
-    bool clicked = over && IsMouseButtonReleased(MOUSE_BUTTON_LEFT);
-    Clay_Color background = selected ? ui.theme.accentMutedColor : (over ? ui.theme.hoverColor : ui.theme.surfaceAltColor);
+struct DemoSeedTask {
+    const char *title;
+    int32_t priority;
+    bool done;
+};
+static const DemoSeedTask kSeedTasks[] = {
+    {"Ship the 0.2 release notes", 0, false},
+    {"Fix wheel scroll over clipped tables", 0, true},
+    {"Add the selectable list-row widget", 1, true},
+    {"Document the theme presets", 1, false},
+    {"Profile text measurement on web", 2, false},
+    {"Run the wasm smoke test", 2, false},
+    {"Refactor focus-ring drawing", 1, false},
+    {"Design a date-picker widget", 2, false},
+};
 
-    CLAY(id, {
-        .layout = {
-            .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_FIT(0, 0) },
-            .padding = CLAY_PADDING_ALL(ui.theme.spacing.md),
-        },
-        .backgroundColor = background,
-        .cornerRadius = CLAY_CORNER_RADIUS(ui.theme.radiusSm),
-        .border = {
-            .color = selected ? ui.theme.accentColor : ui.theme.borderColor,
-            .width = { .left = 1, .right = 1, .top = 1, .bottom = 1 },
-        },
-    }) {
-        CLAY_TEXT(title, {
-            .textColor = ui.theme.textColor,
-            .fontId = ui.theme.fontBody,
-            .fontSize = ui.theme.fontSizeBody,
-        });
+constexpr int32_t kScratchSlots = 24;
+constexpr int32_t kScratchBytes = 128;
+
+struct DemoState {
+    int32_t activeView = kViewDashboard;
+
+    // Tasks
+    DemoTask tasks[kMaxTasks] = {};
+    int32_t taskCount = 0;
+    int32_t selectedTask = 0;
+    int32_t taskFilter = 0; // index into kTaskFilterNames
+    char newTaskTitle[kTaskTitleCap] = "";
+    int32_t newTaskPriority = 1;
+    int32_t contextTask = -1; // task the context menu was opened on
+
+    // Structural task edits (delete / clear / reset) are deferred to the top of
+    // the next frame: applying them mid-layout would move task memory that
+    // Clay_Strings declared earlier this frame still point into.
+    int32_t pendingDelete = -1;
+    bool pendingClearCompleted = false;
+    bool pendingReset = false;
+
+    // Delete confirmation modal
+    bool showDeleteModal = false;
+    int32_t deleteTarget = -1; // -1 falls back to the selected task
+
+    // Dashboard
+    int32_t selectedBuild = 1;
+
+    // Gallery
+    int32_t galleryClicks = 0;
+    bool autosave = true;
+    bool telemetryLocked = true; // shown via a disabled checkbox
+    int32_t quality = 2;         // radio values 1..3
+    float volume = 0.4f;
+    int32_t density = 1;
+    int32_t retryCount = 3;
+    char galleryText[128] = "";
+    int32_t buildConfig = 1;
+    int32_t channel = 0;
+    bool treeSrcOpen = true;
+    bool treeWidgetsOpen = true;
+    bool treeAssetsOpen = false;
+    int32_t miniTab = 0;
+
+    // Settings
+    int32_t themePreset = CLAY_WIDGETS_THEME_PRESET_SLATE;
+    bool animationsOn = true;
+    bool notifications = true;
+    bool verboseLogging = false;
+    bool experimentalGpu = false;
+    bool showAdvanced = false;
+    int32_t logLevel = 2;
+
+    // Status bar
+    char statusLine[128] = "Ready";
+
+    // Per-frame scratch for formatted labels. Clay retains Clay_String pointers
+    // until render, so these live here (reset each frame) instead of on an
+    // inner scope's stack that closes before the frame is drawn.
+    char scratch[kScratchSlots][kScratchBytes] = {};
+    int32_t scratchUsed = 0;
+};
+
+// Textures for the tintable-icon demo, generated procedurally at startup.
+struct DemoIcons {
+    Texture2D check;
+    Texture2D play;
+    Texture2D circle;
+    Texture2D square;
+};
+
+static void SetStatus(DemoState &s, const char *fmt, ...) {
+    va_list ap;
+    va_start(ap, fmt);
+    std::vsnprintf(s.statusLine, sizeof(s.statusLine), fmt, ap);
+    va_end(ap);
+}
+
+// Formats into the per-frame scratch ring and returns a Clay_String view of it.
+static Clay_String FormatString(DemoState &s, const char *fmt, ...) {
+    char *buf = s.scratch[s.scratchUsed % kScratchSlots];
+    s.scratchUsed++;
+
+    va_list ap;
+    va_start(ap, fmt);
+    int n = std::vsnprintf(buf, kScratchBytes, fmt, ap);
+    va_end(ap);
+    if (n < 0) {
+        n = 0;
+    }
+    if (n > kScratchBytes - 1) {
+        n = kScratchBytes - 1;
     }
 
-    return clicked;
+    Clay_String out = {};
+    out.isStaticallyAllocated = false;
+    out.length = n;
+    out.chars = buf;
+    return out;
+}
+
+// Small dim caption. The kit only ships Label, so this drops down to a raw
+// CLAY_TEXT - which is also how apps are expected to extend the kit.
+static void MutedLabel(ClayWidgets_Context &ui, Clay_String text) {
+    CLAY_TEXT(text, {
+        .textColor = ui.theme.textMutedColor,
+        .fontId = ui.theme.fontBody,
+        .fontSize = ui.theme.fontSizeSmall,
+    });
+}
+
+// All demo toasts route through here so the Settings "notifications" toggle
+// actually governs app behavior.
+static void Notify(ClayWidgets_Context &ui, DemoState &s, Clay_String message, ClayWidgets_BadgeVariant variant, float seconds) {
+    if (s.notifications) {
+        ClayWidgets_ShowToast(&ui, message, variant, seconds);
+    }
+}
+
+// Appends a task. Appending never moves existing entries in the fixed array,
+// so it is safe to call mid-layout (unlike delete, which is deferred).
+static bool AddTask(DemoState &s, const char *title, int32_t priority) {
+    if (!title || !title[0] || s.taskCount >= kMaxTasks) {
+        return false;
+    }
+    DemoTask &t = s.tasks[s.taskCount++];
+    std::snprintf(t.title, sizeof(t.title), "%s", title);
+    t.priority = priority < 0 ? 0 : (priority > 2 ? 2 : priority);
+    t.done = false;
+    return true;
+}
+
+static void SeedTasks(DemoState &s) {
+    s.taskCount = 0;
+    for (const DemoSeedTask &seed : kSeedTasks) {
+        if (AddTask(s, seed.title, seed.priority)) {
+            s.tasks[s.taskCount - 1].done = seed.done;
+        }
+    }
+}
+
+static void ResetDemoState(DemoState &s) {
+    int32_t view = s.activeView;
+    s = DemoState{};
+    s.activeView = view;
+    SeedTasks(s);
+    SetStatus(s, "Demo state reset");
+}
+
+// Applies deferred structural edits. Runs at the top of each frame, before any
+// layout is declared, so no live Clay_String can point into moved task memory.
+static void ApplyPendingTaskEdits(DemoState &s) {
+    if (s.pendingReset) {
+        ResetDemoState(s);
+        return;
+    }
+    if (s.pendingClearCompleted) {
+        s.pendingClearCompleted = false;
+        int32_t kept = 0;
+        for (int32_t i = 0; i < s.taskCount; ++i) {
+            if (!s.tasks[i].done) {
+                s.tasks[kept++] = s.tasks[i];
+            }
+        }
+        s.taskCount = kept;
+    }
+    if (s.pendingDelete >= 0) {
+        if (s.pendingDelete < s.taskCount) {
+            for (int32_t i = s.pendingDelete; i + 1 < s.taskCount; ++i) {
+                s.tasks[i] = s.tasks[i + 1];
+            }
+            --s.taskCount;
+        }
+        s.pendingDelete = -1;
+    }
+    if (s.selectedTask >= s.taskCount) {
+        s.selectedTask = s.taskCount - 1;
+    }
+    if (s.selectedTask < 0) {
+        s.selectedTask = 0;
+    }
+    if (s.contextTask >= s.taskCount) {
+        s.contextTask = -1;
+    }
+    if (s.deleteTarget >= s.taskCount) {
+        s.deleteTarget = -1;
+    }
+}
+
+static int32_t CountCompletedTasks(const DemoState &s) {
+    int32_t done = 0;
+    for (int32_t i = 0; i < s.taskCount; ++i) {
+        if (s.tasks[i].done) {
+            ++done;
+        }
+    }
+    return done;
+}
+
+static void AddSampleTask(ClayWidgets_Context &ui, DemoState &s) {
+    if (AddTask(s, "Explore the Tasks view", 1)) {
+        s.selectedTask = s.taskCount - 1;
+        SetStatus(s, "Added a sample task");
+        Notify(ui, s, CLAY_STRING("Task added"), CLAY_WIDGETS_BADGE_SUCCESS, 2.5f);
+    } else {
+        SetStatus(s, "Task list is full (%d max)", kMaxTasks);
+    }
+}
+
+static void DuplicateTask(ClayWidgets_Context &ui, DemoState &s, int32_t index) {
+    if (index < 0 || index >= s.taskCount) {
+        return;
+    }
+    char copyTitle[kTaskTitleCap];
+    std::snprintf(copyTitle, sizeof(copyTitle), "%s (copy)", s.tasks[index].title);
+    if (AddTask(s, copyTitle, s.tasks[index].priority)) {
+        s.selectedTask = s.taskCount - 1;
+        SetStatus(s, "Duplicated: %s", s.tasks[index].title);
+        Notify(ui, s, CLAY_STRING("Task duplicated"), CLAY_WIDGETS_BADGE_ACCENT, 2.5f);
+    } else {
+        SetStatus(s, "Task list is full (%d max)", kMaxTasks);
+    }
+}
+
+static void RequestDeleteTask(DemoState &s, int32_t index) {
+    if (s.taskCount <= 0) {
+        SetStatus(s, "No tasks to delete");
+        return;
+    }
+    s.deleteTarget = (index >= 0 && index < s.taskCount) ? index : s.selectedTask;
+    s.showDeleteModal = true;
+}
+
+// ---------------------------------------------------------------------------
+// Chrome: header, menu bar, navigation, status bar
+// ---------------------------------------------------------------------------
+
+static void DrawHeader(ClayWidgets_Context &ui, DemoState &s, bool compactLayout) {
+    CLAY(CLAY_ID("Header"), {
+        .layout = {
+            .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_FIT(0, 0) },
+            .childGap = ui.theme.spacing.md,
+            .childAlignment = { .x = CLAY_ALIGN_X_LEFT, .y = CLAY_ALIGN_Y_CENTER },
+            .layoutDirection = CLAY_LEFT_TO_RIGHT,
+        },
+    }) {
+        ClayWidgets_Heading(&ui, CLAY_STRING("clay-widgets"));
+        ClayWidgets_Badge(&ui, CLAY_STRING("demo"), CLAY_WIDGETS_BADGE_ACCENT);
+
+        CLAY(CLAY_ID("HeaderSpacer"), {
+            .layout = {
+                .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_FIXED(1) },
+            },
+        }) {}
+
+        // Quick theme switcher; the Settings page has the same state as radios.
+        if (!compactLayout) {
+            int32_t themeIndex = s.themePreset - 1;
+            if (themeIndex < 0) themeIndex = 0;
+            if (themeIndex > 3) themeIndex = 3;
+            if (ClayWidgets_Segmented(&ui, CLAY_ID("HeaderThemeSeg"), kThemeNames, 4, &themeIndex)) {
+                SetStatus(s, "Theme: %s", kThemeNames[themeIndex].chars);
+            }
+            s.themePreset = themeIndex + 1;
+            ClayWidgets_Tooltip(&ui, CLAY_ID("HeaderThemeSeg"), CLAY_STRING("Restyle every widget instantly"));
+        }
+    }
+}
+
+static void DrawMenuBar(ClayWidgets_Context &ui, DemoState &s) {
+    CLAY(CLAY_ID("MenuBar"), {
+        .layout = {
+            .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_FIT(0, 0) },
+            .padding = CLAY_PADDING_ALL(ui.theme.spacing.xs),
+            .childGap = ui.theme.spacing.xs,
+            .childAlignment = { .x = CLAY_ALIGN_X_LEFT, .y = CLAY_ALIGN_Y_CENTER },
+            .layoutDirection = CLAY_LEFT_TO_RIGHT,
+        },
+        .backgroundColor = ui.theme.surfaceAltColor,
+        .cornerRadius = CLAY_CORNER_RADIUS(ui.theme.radiusSm),
+    }) {
+        if (ClayWidgets_BeginMenu(&ui, CLAY_ID("FileMenu"), CLAY_STRING("File"))) {
+            if (ClayWidgets_MenuItem(&ui, CLAY_ID("MenuNewTask"), CLAY_STRING("New Sample Task"))) {
+                AddSampleTask(ui, s);
+            }
+            if (ClayWidgets_MenuItem(&ui, CLAY_ID("MenuReset"), CLAY_STRING("Reset Demo"))) {
+                s.pendingReset = true;
+                Notify(ui, s, CLAY_STRING("Demo reset"), CLAY_WIDGETS_BADGE_NEUTRAL, 2.5f);
+            }
+            ClayWidgets_MenuSeparator(&ui);
+            if (ClayWidgets_MenuItem(&ui, CLAY_ID("MenuDeleteTask"), CLAY_STRING("Delete Task..."))) {
+                RequestDeleteTask(s, s.selectedTask);
+            }
+            ClayWidgets_EndMenu(&ui, CLAY_ID("FileMenu"));
+        }
+
+        if (ClayWidgets_BeginMenu(&ui, CLAY_ID("EditMenu"), CLAY_STRING("Edit"))) {
+            if (ClayWidgets_MenuItem(&ui, CLAY_ID("MenuUndo"), CLAY_STRING("Undo"))) {
+                SetStatus(s, "Menu: Undo");
+            }
+            if (ClayWidgets_MenuItem(&ui, CLAY_ID("MenuRedo"), CLAY_STRING("Redo"))) {
+                SetStatus(s, "Menu: Redo");
+            }
+            ClayWidgets_EndMenu(&ui, CLAY_ID("EditMenu"));
+        }
+
+        if (ClayWidgets_BeginMenu(&ui, CLAY_ID("ViewMenu"), CLAY_STRING("View"))) {
+            if (ClayWidgets_MenuItem(&ui, CLAY_ID("MenuViewDashboard"), CLAY_STRING("Dashboard"))) {
+                s.activeView = kViewDashboard;
+            }
+            if (ClayWidgets_MenuItem(&ui, CLAY_ID("MenuViewTasks"), CLAY_STRING("Tasks"))) {
+                s.activeView = kViewTasks;
+            }
+            if (ClayWidgets_MenuItem(&ui, CLAY_ID("MenuViewGallery"), CLAY_STRING("Gallery"))) {
+                s.activeView = kViewGallery;
+            }
+            if (ClayWidgets_MenuItem(&ui, CLAY_ID("MenuViewSettings"), CLAY_STRING("Settings"))) {
+                s.activeView = kViewSettings;
+            }
+            ClayWidgets_EndMenu(&ui, CLAY_ID("ViewMenu"));
+        }
+    }
+}
+
+static void DrawNavBar(ClayWidgets_Context &ui, DemoState &s) {
+    CLAY(CLAY_ID("NavBar"), {
+        .layout = {
+            .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_FIT(0, 0) },
+            .childGap = 10,
+            .layoutDirection = CLAY_LEFT_TO_RIGHT,
+        },
+    }) {
+        ClayWidgets_Tab(&ui, CLAY_ID("NavDashboard"), CLAY_STRING("Dashboard"), kViewDashboard, &s.activeView);
+        ClayWidgets_Tab(&ui, CLAY_ID("NavTasks"), CLAY_STRING("Tasks"), kViewTasks, &s.activeView);
+        ClayWidgets_Tab(&ui, CLAY_ID("NavGallery"), CLAY_STRING("Gallery"), kViewGallery, &s.activeView);
+        ClayWidgets_Tab(&ui, CLAY_ID("NavSettings"), CLAY_STRING("Settings"), kViewSettings, &s.activeView);
+
+        ClayWidgets_Tooltip(&ui, CLAY_ID("NavDashboard"), CLAY_STRING("Live stats, a data table and quick actions"));
+        ClayWidgets_Tooltip(&ui, CLAY_ID("NavTasks"), CLAY_STRING("A working to-do manager built from the kit"));
+        ClayWidgets_Tooltip(&ui, CLAY_ID("NavGallery"), CLAY_STRING("The full widget catalog"));
+        ClayWidgets_Tooltip(&ui, CLAY_ID("NavSettings"), CLAY_STRING("Theme, behavior and diagnostics"));
+    }
+}
+
+static void DrawStatusBar(ClayWidgets_Context &ui, DemoState &s) {
+    CLAY(CLAY_ID("StatusBar"), {
+        .layout = {
+            .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_FIT(0, 0) },
+            .padding = {
+                .left = ui.theme.spacing.md,
+                .right = ui.theme.spacing.md,
+                .top = ui.theme.spacing.xs,
+                .bottom = ui.theme.spacing.xs,
+            },
+            .childGap = ui.theme.spacing.md,
+            .childAlignment = { .x = CLAY_ALIGN_X_LEFT, .y = CLAY_ALIGN_Y_CENTER },
+            .layoutDirection = CLAY_LEFT_TO_RIGHT,
+        },
+        .backgroundColor = ui.theme.surfaceAltColor,
+        .cornerRadius = CLAY_CORNER_RADIUS(ui.theme.radiusSm),
+    }) {
+        ClayWidgets_Label(&ui, ClayStringFromCString(s.statusLine));
+
+        CLAY(CLAY_ID("StatusSpacer"), {
+            .layout = {
+                .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_FIXED(1) },
+            },
+        }) {}
+
+        MutedLabel(ui, FormatString(s, "focus %u  |  %d fps", ui.focusedId, GetFPS()));
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Dashboard view
+// ---------------------------------------------------------------------------
+
+// Stat cards grow on both axes so every card in the row matches the tallest
+// one (the progress card); with FIT heights each card would hug its own
+// content and the row would render as mismatched boxes. In the compact
+// (stacked) layout the row is FIT, so GROW leaves heights at their natural
+// content size.
+static void StatCard(ClayWidgets_Context &ui, Clay_ElementId id, Clay_String value, Clay_String caption) {
+    ClayWidgets_BeginCardEx(&ui, id, Clay_String{}, CLAY_SIZING_GROW(0), CLAY_SIZING_GROW(0));
+    CLAY_TEXT(value, {
+        .textColor = ui.theme.textColor,
+        .fontId = ui.theme.fontHeading,
+        .fontSize = static_cast<uint16_t>(ui.theme.fontSizeHeading + 6),
+    });
+    MutedLabel(ui, caption);
+    ClayWidgets_EndCard(&ui, id);
+}
+
+static void DrawDashboardView(ClayWidgets_Context &ui, DemoState &s, bool compactLayout) {
+    int32_t doneCount = CountCompletedTasks(s);
+    int32_t openCount = s.taskCount - doneCount;
+    float completion = s.taskCount > 0 ? static_cast<float>(doneCount) / static_cast<float>(s.taskCount) : 0.0f;
+
+    ClayWidgets_BeginScrollPanel(&ui, CLAY_ID("DashboardPanel"),
+        ClayWidgets_ScrollPanelOptions{ CLAY_SIZING_GROW(0), CLAY_SIZING_GROW(0), 0, 0, ui.theme.spacing.md });
+    {
+        CLAY(CLAY_ID("StatRow"), {
+            .layout = {
+                .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_FIT(0, 0) },
+                .childGap = ui.theme.spacing.md,
+                .layoutDirection = compactLayout ? CLAY_TOP_TO_BOTTOM : CLAY_LEFT_TO_RIGHT,
+            },
+        }) {
+            StatCard(ui, CLAY_ID("StatOpen"), FormatString(s, "%d", openCount), CLAY_STRING("open tasks"));
+            StatCard(ui, CLAY_ID("StatDone"), FormatString(s, "%d", doneCount), CLAY_STRING("completed"));
+
+            ClayWidgets_BeginCardEx(&ui, CLAY_ID("StatProgress"), Clay_String{}, CLAY_SIZING_GROW(0), CLAY_SIZING_GROW(0));
+            CLAY_TEXT(FormatString(s, "%d%%", static_cast<int>(std::lround(completion * 100.0f))), {
+                .textColor = ui.theme.textColor,
+                .fontId = ui.theme.fontHeading,
+                .fontSize = static_cast<uint16_t>(ui.theme.fontSizeHeading + 6),
+            });
+            ClayWidgets_ProgressBar(&ui, CLAY_ID("DashProgress"), completion, CLAY_STRING("Completion"));
+            ClayWidgets_EndCard(&ui, CLAY_ID("StatProgress"));
+        }
+
+        ClayWidgets_BeginCard(&ui, CLAY_ID("WelcomeCard"), CLAY_STRING("Welcome"));
+        {
+            ClayWidgets_Label(&ui, CLAY_STRING(
+                "clay-widgets is a small immediate-mode widget kit built on Clay's layout engine, rendered here with raylib. "
+                "Every frame this whole interface is rebuilt from plain structs - there is no retained widget tree to keep in sync.\n"
+                "\n"
+                "The Tasks view is a tiny working app built from the kit, the Gallery catalogs every widget, and Settings changes "
+                "how the demo itself looks and behaves."));
+            MutedLabel(ui, CLAY_STRING("Tab / Shift+Tab move focus, Enter activates, Escape dismisses. Right-click task rows for a context menu."));
+            CLAY(CLAY_ID("WelcomeBadges"), {
+                .layout = {
+                    .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_FIT(0, 0) },
+                    .childGap = ui.theme.spacing.sm,
+                    .childAlignment = { .x = CLAY_ALIGN_X_LEFT, .y = CLAY_ALIGN_Y_CENTER },
+                    .layoutDirection = CLAY_LEFT_TO_RIGHT,
+                },
+            }) {
+                ClayWidgets_Badge(&ui, CLAY_STRING("immediate mode"), CLAY_WIDGETS_BADGE_ACCENT);
+                ClayWidgets_Badge(&ui, CLAY_STRING("keyboard navigable"), CLAY_WIDGETS_BADGE_SUCCESS);
+                ClayWidgets_Badge(&ui, CLAY_STRING("4 theme presets"), CLAY_WIDGETS_BADGE_NEUTRAL);
+                ClayWidgets_Badge(&ui, CLAY_STRING("runs on web"), CLAY_WIDGETS_BADGE_WARNING);
+            }
+        }
+        ClayWidgets_EndCard(&ui, CLAY_ID("WelcomeCard"));
+
+        ClayWidgets_BeginCard(&ui, CLAY_ID("BuildsCard"), CLAY_STRING("Recent builds"));
+        {
+            ClayWidgets_TableColumn buildCols[] = {
+                { CLAY_STRING("Pipeline"), CLAY_SIZING_GROW(0) },
+                { CLAY_STRING("Status"), CLAY_SIZING_FIXED(110) },
+                { CLAY_STRING("Duration"), CLAY_SIZING_FIXED(100) },
+            };
+            ClayWidgets_BeginTable(&ui, CLAY_ID("BuildsTable"), buildCols, 3);
+            for (int32_t r = 0; r < kBuildRowCount; ++r) {
+                Clay_ElementId rowId = Clay_GetElementIdWithIndex(CLAY_STRING("BuildRow"), static_cast<uint32_t>(r));
+                Clay_String cells[] = { kBuildNames[r], kBuildStates[r], kBuildTimes[r] };
+                if (ClayWidgets_TableRow(&ui, rowId, cells, 3, r, r == s.selectedBuild)) {
+                    s.selectedBuild = r;
+                    SetStatus(s, "Selected build: %.*s", static_cast<int>(kBuildNames[r].length), kBuildNames[r].chars);
+                }
+            }
+            ClayWidgets_EndTable(&ui, CLAY_ID("BuildsTable"));
+
+            CLAY(CLAY_ID("BuildLegend"), {
+                .layout = {
+                    .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_FIT(0, 0) },
+                    .childGap = ui.theme.spacing.sm,
+                    .childAlignment = { .x = CLAY_ALIGN_X_LEFT, .y = CLAY_ALIGN_Y_CENTER },
+                    .layoutDirection = CLAY_LEFT_TO_RIGHT,
+                },
+            }) {
+                ClayWidgets_Badge(&ui, CLAY_STRING("passing"), CLAY_WIDGETS_BADGE_SUCCESS);
+                ClayWidgets_Badge(&ui, CLAY_STRING("flaky"), CLAY_WIDGETS_BADGE_WARNING);
+                ClayWidgets_Badge(&ui, CLAY_STRING("broken"), CLAY_WIDGETS_BADGE_DANGER);
+            }
+        }
+        ClayWidgets_EndCard(&ui, CLAY_ID("BuildsCard"));
+
+        ClayWidgets_BeginCard(&ui, CLAY_ID("ActionsCard"), CLAY_STRING("Quick actions"));
+        {
+            CLAY(CLAY_ID("ActionsRow"), {
+                .layout = {
+                    .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_FIT(0, 0) },
+                    .childGap = ui.theme.spacing.sm,
+                    .layoutDirection = compactLayout ? CLAY_TOP_TO_BOTTOM : CLAY_LEFT_TO_RIGHT,
+                },
+            }) {
+                if (ClayWidgets_ButtonEx(&ui, CLAY_ID("ActionAddTask"), CLAY_STRING("Add Sample Task"),
+                        ClayWidgets_ButtonOptions{CLAY_WIDGETS_BUTTON_PRIMARY, false})) {
+                    AddSampleTask(ui, s);
+                }
+                if (ClayWidgets_Button(&ui, CLAY_ID("ActionToast"), CLAY_STRING("Show a Toast"))) {
+                    SetStatus(s, "Toast requested");
+                    Notify(ui, s, CLAY_STRING("Toasts float above every view"), CLAY_WIDGETS_BADGE_ACCENT, 3.0f);
+                }
+                if (ClayWidgets_ButtonEx(&ui, CLAY_ID("ActionClearDone"), CLAY_STRING("Clear Completed"),
+                        ClayWidgets_ButtonOptions{CLAY_WIDGETS_BUTTON_DANGER, false})) {
+                    if (doneCount > 0) {
+                        s.pendingClearCompleted = true;
+                        SetStatus(s, "Cleared %d completed task(s)", doneCount);
+                        Notify(ui, s, CLAY_STRING("Completed tasks cleared"), CLAY_WIDGETS_BADGE_DANGER, 2.5f);
+                    } else {
+                        SetStatus(s, "Nothing to clear");
+                    }
+                }
+                ClayWidgets_ButtonEx(&ui, CLAY_ID("ActionDeploy"), CLAY_STRING("Deploy"),
+                    ClayWidgets_ButtonOptions{CLAY_WIDGETS_BUTTON_DEFAULT, true});
+            }
+            MutedLabel(ui, CLAY_STRING("The last button is disabled: inert, muted, and skipped by Tab."));
+        }
+        ClayWidgets_EndCard(&ui, CLAY_ID("ActionsCard"));
+    }
+    ClayWidgets_EndScrollPanel(&ui, CLAY_ID("DashboardPanel"));
+}
+
+// ---------------------------------------------------------------------------
+// Tasks view
+// ---------------------------------------------------------------------------
+
+static void DrawTasksView(ClayWidgets_Context &ui, DemoState &s, bool compactLayout) {
+    Clay_SizingAxis listWidth = compactLayout ? CLAY_SIZING_GROW(0) : CLAY_SIZING_PERCENT(0.58f);
+    Clay_SizingAxis listHeight = compactLayout ? CLAY_SIZING_PERCENT(0.55f) : CLAY_SIZING_GROW(0);
+    Clay_SizingAxis detailWidth = compactLayout ? CLAY_SIZING_GROW(0) : CLAY_SIZING_PERCENT(0.42f);
+
+    CLAY(CLAY_ID("TasksColumns"), {
+        .layout = {
+            .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_GROW(0) },
+            .childGap = 16,
+            .layoutDirection = compactLayout ? CLAY_TOP_TO_BOTTOM : CLAY_LEFT_TO_RIGHT,
+        },
+    }) {
+        CLAY(CLAY_ID("TaskListColumn"), {
+            .layout = {
+                .sizing = { .width = listWidth, .height = listHeight },
+                .childGap = ui.theme.spacing.sm,
+                .layoutDirection = CLAY_TOP_TO_BOTTOM,
+            },
+        }) {
+            // --- Add form -------------------------------------------------
+            // clearOnEnter empties the buffer inside the widget, so snapshot the
+            // text first: Enter + now-empty buffer means "submitted".
+            Clay_ElementId addInputId = CLAY_ID("NewTaskInput");
+            char pendingTitle[kTaskTitleCap];
+            std::snprintf(pendingTitle, sizeof(pendingTitle), "%s", s.newTaskTitle);
+
+            ClayWidgets_TextInput(&ui, addInputId, CLAY_STRING("Add a task"),
+                s.newTaskTitle, static_cast<int32_t>(sizeof(s.newTaskTitle)),
+                ClayWidgets_TextInputOptions{"What needs doing? Press Enter to add", true});
+            bool enterAdd = ui.input.keyEnter && ui.focusedId == addInputId.id
+                && pendingTitle[0] != '\0' && s.newTaskTitle[0] == '\0';
+
+            bool buttonAdd = false;
+            CLAY(CLAY_ID("AddTaskRow"), {
+                .layout = {
+                    .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_FIT(0, 0) },
+                    .childGap = ui.theme.spacing.sm,
+                    .childAlignment = { .x = CLAY_ALIGN_X_LEFT, .y = CLAY_ALIGN_Y_BOTTOM },
+                    .layoutDirection = CLAY_LEFT_TO_RIGHT,
+                },
+            }) {
+                ClayWidgets_Combo(&ui, CLAY_ID("NewTaskPriority"), CLAY_STRING("Priority"),
+                    kPriorityNames, 3, &s.newTaskPriority);
+                buttonAdd = ClayWidgets_ButtonEx(&ui, CLAY_ID("AddTaskButton"), CLAY_STRING("Add Task"),
+                    ClayWidgets_ButtonOptions{CLAY_WIDGETS_BUTTON_PRIMARY, false});
+            }
+
+            const char *titleToAdd = nullptr;
+            if (enterAdd) {
+                titleToAdd = pendingTitle;
+            } else if (buttonAdd && s.newTaskTitle[0] != '\0') {
+                titleToAdd = s.newTaskTitle;
+            }
+            if (titleToAdd) {
+                if (AddTask(s, titleToAdd, s.newTaskPriority)) {
+                    s.selectedTask = s.taskCount - 1;
+                    SetStatus(s, "Added: %s", s.tasks[s.taskCount - 1].title);
+                    Notify(ui, s, CLAY_STRING("Task added"), CLAY_WIDGETS_BADGE_SUCCESS, 2.5f);
+                } else {
+                    SetStatus(s, "Task list is full (%d max)", kMaxTasks);
+                }
+                if (titleToAdd == s.newTaskTitle) {
+                    s.newTaskTitle[0] = '\0';
+                }
+            }
+
+            // --- Filter ---------------------------------------------------
+            CLAY(CLAY_ID("TaskFilterRow"), {
+                .layout = {
+                    .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_FIT(0, 0) },
+                    .childGap = ui.theme.spacing.sm,
+                    .childAlignment = { .x = CLAY_ALIGN_X_LEFT, .y = CLAY_ALIGN_Y_CENTER },
+                    .layoutDirection = CLAY_LEFT_TO_RIGHT,
+                },
+            }) {
+                MutedLabel(ui, CLAY_STRING("Show"));
+                ClayWidgets_Segmented(&ui, CLAY_ID("TaskFilter"), kTaskFilterNames, 3, &s.taskFilter);
+            }
+
+            // --- Task list (the new SelectRow widget) ----------------------
+            int32_t shownCount = 0;
+            ClayWidgets_BeginScrollPanel(&ui, CLAY_ID("TaskListPanel"),
+                ClayWidgets_ScrollPanelOptions{ CLAY_SIZING_GROW(0), CLAY_SIZING_GROW(0), 0, 0, ui.theme.spacing.xs });
+            {
+                if (s.taskCount == 0) {
+                    ClayWidgets_Label(&ui, CLAY_STRING("No tasks yet - add one above."));
+                }
+                for (int32_t i = 0; i < s.taskCount; ++i) {
+                    DemoTask &t = s.tasks[i];
+                    if (s.taskFilter == 1 && t.done) continue;
+                    if (s.taskFilter == 2 && !t.done) continue;
+                    ++shownCount;
+
+                    Clay_ElementId rowId = Clay_GetElementIdWithIndex(CLAY_STRING("TaskRow"), static_cast<uint32_t>(i));
+                    Clay_Color swatch = kPrioritySwatches[t.priority];
+                    if (t.done) {
+                        swatch.a = 96;
+                    }
+                    Clay_String trailing = t.done ? CLAY_STRING("done") : kPriorityNames[t.priority];
+
+                    if (ClayWidgets_SelectRowEx(&ui, rowId, swatch, ClayStringFromCString(t.title), trailing, s.selectedTask == i)) {
+                        s.selectedTask = i;
+                        SetStatus(s, "Selected: %s", t.title);
+                    }
+                    if (ClayWidgets_RightClicked(&ui, rowId)) {
+                        s.contextTask = i;
+                        s.selectedTask = i;
+                        ClayWidgets_OpenContextMenu(&ui, CLAY_ID("TaskMenu"), ui.input.mouseX, ui.input.mouseY);
+                    }
+                }
+                if (s.taskCount > 0 && shownCount == 0) {
+                    ClayWidgets_Label(&ui, CLAY_STRING("No tasks match this filter."));
+                }
+            }
+            ClayWidgets_EndScrollPanel(&ui, CLAY_ID("TaskListPanel"));
+
+            MutedLabel(ui, FormatString(s, "%d of %d tasks shown - right-click a row for actions", shownCount, s.taskCount));
+        }
+
+        // --- Detail editor: widgets bound straight into the task struct ----
+        ClayWidgets_BeginScrollPanel(&ui, CLAY_ID("TaskDetailPanel"),
+            ClayWidgets_ScrollPanelOptions{ detailWidth, CLAY_SIZING_GROW(0), 0, 0, ui.theme.spacing.md });
+        {
+            ClayWidgets_BeginCard(&ui, CLAY_ID("TaskDetailCard"), CLAY_STRING("Task details"));
+            if (s.taskCount == 0) {
+                ClayWidgets_Label(&ui, CLAY_STRING("Nothing selected - add a task on the left."));
+            } else {
+                DemoTask &t = s.tasks[s.selectedTask];
+
+                ClayWidgets_TextInput(&ui, CLAY_ID("DetailTitle"), CLAY_STRING("Title"),
+                    t.title, static_cast<int32_t>(sizeof(t.title)),
+                    ClayWidgets_TextInputOptions{"Task title", false});
+
+                ClayWidgets_Label(&ui, CLAY_STRING("Priority"));
+                ClayWidgets_Radio(&ui, CLAY_ID("DetailPriorityHigh"), CLAY_STRING("High"), 0, &t.priority);
+                ClayWidgets_Radio(&ui, CLAY_ID("DetailPriorityMedium"), CLAY_STRING("Medium"), 1, &t.priority);
+                ClayWidgets_Radio(&ui, CLAY_ID("DetailPriorityLow"), CLAY_STRING("Low"), 2, &t.priority);
+
+                ClayWidgets_Toggle(&ui, CLAY_ID("DetailDone"), CLAY_STRING("Completed"), &t.done);
+
+                ClayWidgets_Separator(&ui);
+
+                CLAY(CLAY_ID("DetailButtonRow"), {
+                    .layout = {
+                        .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_FIT(0, 0) },
+                        .childGap = ui.theme.spacing.sm,
+                        .layoutDirection = CLAY_LEFT_TO_RIGHT,
+                    },
+                }) {
+                    if (ClayWidgets_Button(&ui, CLAY_ID("DetailDuplicate"), CLAY_STRING("Duplicate"))) {
+                        DuplicateTask(ui, s, s.selectedTask);
+                    }
+                    if (ClayWidgets_ButtonEx(&ui, CLAY_ID("DetailDelete"), CLAY_STRING("Delete..."),
+                            ClayWidgets_ButtonOptions{CLAY_WIDGETS_BUTTON_DANGER, false})) {
+                        RequestDeleteTask(s, s.selectedTask);
+                    }
+                }
+                MutedLabel(ui, CLAY_STRING("Edits write straight into the task struct - the list on the left updates live."));
+            }
+            ClayWidgets_EndCard(&ui, CLAY_ID("TaskDetailCard"));
+        }
+        ClayWidgets_EndScrollPanel(&ui, CLAY_ID("TaskDetailPanel"));
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Gallery view
+// ---------------------------------------------------------------------------
+
+static void DrawGalleryView(ClayWidgets_Context &ui, DemoState &s, DemoIcons &icons, bool compactLayout) {
+    Clay_SizingAxis leftWidth = compactLayout ? CLAY_SIZING_GROW(0) : CLAY_SIZING_PERCENT(0.55f);
+    Clay_SizingAxis leftHeight = compactLayout ? CLAY_SIZING_PERCENT(0.55f) : CLAY_SIZING_GROW(0);
+    Clay_SizingAxis rightWidth = compactLayout ? CLAY_SIZING_GROW(0) : CLAY_SIZING_PERCENT(0.45f);
+
+    CLAY(CLAY_ID("GalleryColumns"), {
+        .layout = {
+            .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_GROW(0) },
+            .childGap = 16,
+            .layoutDirection = compactLayout ? CLAY_TOP_TO_BOTTOM : CLAY_LEFT_TO_RIGHT,
+        },
+    }) {
+        ClayWidgets_BeginScrollPanel(&ui, CLAY_ID("GalleryLeft"),
+            ClayWidgets_ScrollPanelOptions{ leftWidth, leftHeight, 0, 0, ui.theme.spacing.md });
+        {
+            ClayWidgets_BeginCard(&ui, CLAY_ID("ButtonsCard"), CLAY_STRING("Buttons"));
+            {
+                MutedLabel(ui, CLAY_STRING("Four variants: default, primary (accent), danger, and disabled."));
+                CLAY(CLAY_ID("GalleryButtonRow"), {
+                    .layout = {
+                        .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_FIT(0, 0) },
+                        .childGap = ui.theme.spacing.sm,
+                        .layoutDirection = compactLayout ? CLAY_TOP_TO_BOTTOM : CLAY_LEFT_TO_RIGHT,
+                    },
+                }) {
+                    if (ClayWidgets_Button(&ui, CLAY_ID("GalleryDefault"), CLAY_STRING("Default"))) {
+                        s.galleryClicks++;
+                        SetStatus(s, "Default button clicked");
+                    }
+                    if (ClayWidgets_ButtonEx(&ui, CLAY_ID("GalleryPrimary"), CLAY_STRING("Primary"),
+                            ClayWidgets_ButtonOptions{CLAY_WIDGETS_BUTTON_PRIMARY, false})) {
+                        s.galleryClicks++;
+                        SetStatus(s, "Primary button clicked");
+                    }
+                    if (ClayWidgets_ButtonEx(&ui, CLAY_ID("GalleryDanger"), CLAY_STRING("Danger"),
+                            ClayWidgets_ButtonOptions{CLAY_WIDGETS_BUTTON_DANGER, false})) {
+                        s.galleryClicks++;
+                        SetStatus(s, "Danger button clicked");
+                    }
+                    ClayWidgets_ButtonEx(&ui, CLAY_ID("GalleryDisabled"), CLAY_STRING("Disabled"),
+                        ClayWidgets_ButtonOptions{CLAY_WIDGETS_BUTTON_DEFAULT, true});
+                }
+                ClayWidgets_Tooltip(&ui, CLAY_ID("GalleryPrimary"), CLAY_STRING("Accent-filled call to action"));
+                ClayWidgets_Tooltip(&ui, CLAY_ID("GalleryDanger"), CLAY_STRING("For destructive actions"));
+                MutedLabel(ui, FormatString(s, "Clicked %d time(s)", s.galleryClicks));
+            }
+            ClayWidgets_EndCard(&ui, CLAY_ID("ButtonsCard"));
+
+            ClayWidgets_BeginCard(&ui, CLAY_ID("TextChoiceCard"), CLAY_STRING("Text & choice"));
+            {
+                ClayWidgets_TextInput(&ui, CLAY_ID("GalleryInput"), CLAY_STRING("Text input"),
+                    s.galleryText, static_cast<int32_t>(sizeof(s.galleryText)),
+                    ClayWidgets_TextInputOptions{"Selection, word jumps, Ctrl+A", false});
+                ClayWidgets_Combo(&ui, CLAY_ID("GalleryCombo"), CLAY_STRING("Combo box"),
+                    kBuildConfigNames, 4, &s.buildConfig);
+                ClayWidgets_Label(&ui, CLAY_STRING("List box (click or focus + arrows)"));
+                ClayWidgets_ListBox(&ui, CLAY_ID("GalleryListBox"), kChannelNames, 4, &s.channel);
+            }
+            ClayWidgets_EndCard(&ui, CLAY_ID("TextChoiceCard"));
+
+            ClayWidgets_BeginCard(&ui, CLAY_ID("RangesCard"), CLAY_STRING("Ranges & numbers"));
+            {
+                ClayWidgets_Label(&ui, CLAY_STRING("Slider + progress bar"));
+                s.volume = ClayWidgets_Slider(&ui, CLAY_ID("GalleryVolume"), s.volume,
+                    ClayWidgets_SliderOptions{0.0f, 1.0f, 0.01f});
+                ClayWidgets_ProgressBar(&ui, CLAY_ID("GalleryVolumeBar"), s.volume,
+                    FormatString(s, "Volume %d%%", static_cast<int>(std::lround(s.volume * 100.0f))));
+
+                ClayWidgets_Label(&ui, CLAY_STRING("Stepper"));
+                ClayWidgets_Stepper(&ui, CLAY_ID("GalleryRetry"), &s.retryCount,
+                    ClayWidgets_StepperOptions{0, 10, 1});
+
+                ClayWidgets_Label(&ui, CLAY_STRING("Segmented control"));
+                ClayWidgets_Segmented(&ui, CLAY_ID("GalleryDensity"), kDensityNames, 3, &s.density);
+            }
+            ClayWidgets_EndCard(&ui, CLAY_ID("RangesCard"));
+
+            ClayWidgets_BeginCard(&ui, CLAY_ID("TabsCard"), CLAY_STRING("Attached tabs"));
+            {
+                CLAY(CLAY_ID("MiniTabPlane"), {
+                    .layout = {
+                        .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_FIT(0, 0) },
+                        .layoutDirection = CLAY_TOP_TO_BOTTOM,
+                    },
+                    .backgroundColor = ui.theme.surfaceColor,
+                    .cornerRadius = CLAY_CORNER_RADIUS(ui.theme.radiusMd),
+                    .border = {
+                        .color = ui.theme.borderColor,
+                        .width = { .left = 1, .right = 1, .top = 1, .bottom = 1 },
+                    },
+                }) {
+                    CLAY(CLAY_ID("MiniTabStrip"), {
+                        .layout = {
+                            .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_FIT(0, 0) },
+                            .padding = { .left = ui.theme.spacing.sm, .right = ui.theme.spacing.sm, .top = ui.theme.spacing.xs, .bottom = 0 },
+                            .childGap = ui.theme.spacing.xs,
+                            .layoutDirection = CLAY_LEFT_TO_RIGHT,
+                        },
+                    }) {
+                        for (int32_t i = 0; i < kMiniTabCount; ++i) {
+                            Clay_ElementId tabId = Clay_GetElementIdWithIndex(CLAY_STRING("MiniTab"), static_cast<uint32_t>(i));
+                            ClayWidgets_TabEx(&ui, tabId, kMiniTabs[i].label, i, &s.miniTab, CLAY_WIDGETS_TAB_STYLE_ATTACHED);
+                        }
+                    }
+                    CLAY(CLAY_ID("MiniTabBody"), {
+                        .layout = {
+                            .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_FIT(0, 0) },
+                            .padding = CLAY_PADDING_ALL(ui.theme.spacing.md),
+                            .childGap = ui.theme.spacing.sm,
+                            .layoutDirection = CLAY_TOP_TO_BOTTOM,
+                        },
+                        .border = {
+                            .color = ui.theme.borderColor,
+                            .width = { .left = 0, .right = 0, .top = 1, .bottom = 0 },
+                        },
+                    }) {
+                        int32_t page = (s.miniTab >= 0 && s.miniTab < kMiniTabCount) ? s.miniTab : 0;
+                        ClayWidgets_Label(&ui, kMiniTabs[page].body);
+                    }
+                }
+            }
+            ClayWidgets_EndCard(&ui, CLAY_ID("TabsCard"));
+        }
+        ClayWidgets_EndScrollPanel(&ui, CLAY_ID("GalleryLeft"));
+
+        ClayWidgets_BeginScrollPanel(&ui, CLAY_ID("GalleryRight"),
+            ClayWidgets_ScrollPanelOptions{ rightWidth, CLAY_SIZING_GROW(0), 0, 0, ui.theme.spacing.md });
+        {
+            ClayWidgets_BeginCard(&ui, CLAY_ID("TogglesCard"), CLAY_STRING("Toggles & checks"));
+            {
+                ClayWidgets_Checkbox(&ui, CLAY_ID("GalleryAutosave"), CLAY_STRING("Autosave"), &s.autosave);
+                ClayWidgets_Toggle(&ui, CLAY_ID("GalleryAutosaveToggle"), CLAY_STRING("Autosave (same state as above)"), &s.autosave);
+                ClayWidgets_CheckboxEx(&ui, CLAY_ID("GalleryManaged"), CLAY_STRING("Telemetry (managed by policy)"), &s.telemetryLocked, true);
+
+                ClayWidgets_Label(&ui, CLAY_STRING("Render quality"));
+                ClayWidgets_Radio(&ui, CLAY_ID("GalleryQualityDraft"), CLAY_STRING("Draft"), 1, &s.quality);
+                ClayWidgets_Radio(&ui, CLAY_ID("GalleryQualityBalanced"), CLAY_STRING("Balanced"), 2, &s.quality);
+                ClayWidgets_Radio(&ui, CLAY_ID("GalleryQualityBest"), CLAY_STRING("Best"), 3, &s.quality);
+            }
+            ClayWidgets_EndCard(&ui, CLAY_ID("TogglesCard"));
+
+            ClayWidgets_BeginCard(&ui, CLAY_ID("DataCard"), CLAY_STRING("Data display"));
+            {
+                ClayWidgets_Label(&ui, CLAY_STRING("Tree view"));
+                if (ClayWidgets_TreeNode(&ui, CLAY_ID("TreeSrc"), CLAY_STRING("src"), 0, &s.treeSrcOpen)) {
+                    if (ClayWidgets_TreeLeaf(&ui, CLAY_ID("TreeMain"), CLAY_STRING("main.cpp"), 1)) {
+                        SetStatus(s, "Tree: main.cpp");
+                    }
+                    if (ClayWidgets_TreeNode(&ui, CLAY_ID("TreeWidgets"), CLAY_STRING("clay-widgets"), 1, &s.treeWidgetsOpen)) {
+                        if (ClayWidgets_TreeLeaf(&ui, CLAY_ID("TreeButtonH"), CLAY_STRING("button.h"), 2)) {
+                            SetStatus(s, "Tree: button.h");
+                        }
+                        if (ClayWidgets_TreeLeaf(&ui, CLAY_ID("TreeListRowH"), CLAY_STRING("list-row.h"), 2)) {
+                            SetStatus(s, "Tree: list-row.h");
+                        }
+                        if (ClayWidgets_TreeLeaf(&ui, CLAY_ID("TreeWidgetsH"), CLAY_STRING("widgets.h"), 2)) {
+                            SetStatus(s, "Tree: widgets.h");
+                        }
+                    }
+                }
+                if (ClayWidgets_TreeNode(&ui, CLAY_ID("TreeAssets"), CLAY_STRING("assets"), 0, &s.treeAssetsOpen)) {
+                    if (ClayWidgets_TreeLeaf(&ui, CLAY_ID("TreeFont"), CLAY_STRING("Roboto-Regular.ttf"), 1)) {
+                        SetStatus(s, "Tree: Roboto-Regular.ttf");
+                    }
+                }
+
+                ClayWidgets_Separator(&ui);
+                CLAY(CLAY_ID("IconRow"), {
+                    .layout = {
+                        .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_FIT(0, 0) },
+                        .childGap = ui.theme.spacing.md,
+                        .childAlignment = { .x = CLAY_ALIGN_X_LEFT, .y = CLAY_ALIGN_Y_CENTER },
+                        .layoutDirection = CLAY_LEFT_TO_RIGHT,
+                    },
+                }) {
+                    ClayWidgets_Icon(&ui, CLAY_ID("IconCheck"), &icons.check, 24, ui.theme.accentColor);
+                    ClayWidgets_Icon(&ui, CLAY_ID("IconPlay"), &icons.play, 24, ui.theme.textColor);
+                    ClayWidgets_Icon(&ui, CLAY_ID("IconCircle"), &icons.circle, 24, ui.theme.accentColor);
+                    ClayWidgets_Icon(&ui, CLAY_ID("IconSquare"), &icons.square, 24, ui.theme.textMutedColor);
+                    MutedLabel(ui, CLAY_STRING("Theme-tinted texture icons"));
+                }
+
+                CLAY(CLAY_ID("BadgeRow"), {
+                    .layout = {
+                        .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_FIT(0, 0) },
+                        .childGap = ui.theme.spacing.sm,
+                        .childAlignment = { .x = CLAY_ALIGN_X_LEFT, .y = CLAY_ALIGN_Y_CENTER },
+                        .layoutDirection = CLAY_LEFT_TO_RIGHT,
+                    },
+                }) {
+                    ClayWidgets_Badge(&ui, CLAY_STRING("Neutral"), CLAY_WIDGETS_BADGE_NEUTRAL);
+                    ClayWidgets_Badge(&ui, CLAY_STRING("Accent"), CLAY_WIDGETS_BADGE_ACCENT);
+                    ClayWidgets_Badge(&ui, CLAY_STRING("Success"), CLAY_WIDGETS_BADGE_SUCCESS);
+                    ClayWidgets_Badge(&ui, CLAY_STRING("Warning"), CLAY_WIDGETS_BADGE_WARNING);
+                    ClayWidgets_Badge(&ui, CLAY_STRING("Danger"), CLAY_WIDGETS_BADGE_DANGER);
+                }
+            }
+            ClayWidgets_EndCard(&ui, CLAY_ID("DataCard"));
+
+            ClayWidgets_BeginCard(&ui, CLAY_ID("OverlaysCard"), CLAY_STRING("Overlays"));
+            {
+                MutedLabel(ui, CLAY_STRING("Toasts, modal dialog, context menu and tooltips."));
+                CLAY(CLAY_ID("ToastRow"), {
+                    .layout = {
+                        .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_FIT(0, 0) },
+                        .childGap = ui.theme.spacing.sm,
+                        .layoutDirection = compactLayout ? CLAY_TOP_TO_BOTTOM : CLAY_LEFT_TO_RIGHT,
+                    },
+                }) {
+                    if (ClayWidgets_Button(&ui, CLAY_ID("ToastSuccess"), CLAY_STRING("Success toast"))) {
+                        Notify(ui, s, CLAY_STRING("Saved successfully"), CLAY_WIDGETS_BADGE_SUCCESS, 2.5f);
+                    }
+                    if (ClayWidgets_Button(&ui, CLAY_ID("ToastWarning"), CLAY_STRING("Warning toast"))) {
+                        Notify(ui, s, CLAY_STRING("Disk space is low"), CLAY_WIDGETS_BADGE_WARNING, 2.5f);
+                    }
+                    if (ClayWidgets_Button(&ui, CLAY_ID("ToastDanger"), CLAY_STRING("Danger toast"))) {
+                        Notify(ui, s, CLAY_STRING("Connection lost"), CLAY_WIDGETS_BADGE_DANGER, 2.5f);
+                    }
+                }
+                if (ClayWidgets_Button(&ui, CLAY_ID("GalleryOpenModal"), CLAY_STRING("Confirm dialog..."))) {
+                    RequestDeleteTask(s, s.selectedTask);
+                }
+
+                CLAY(CLAY_ID("GalleryCtxTarget"), {
+                    .layout = {
+                        .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_FIT(0, 0) },
+                        .padding = CLAY_PADDING_ALL(ui.theme.spacing.md),
+                        .childAlignment = { .x = CLAY_ALIGN_X_CENTER, .y = CLAY_ALIGN_Y_CENTER },
+                    },
+                    .backgroundColor = ui.theme.surfaceColor,
+                    .cornerRadius = CLAY_CORNER_RADIUS(ui.theme.radiusSm),
+                    .border = {
+                        .color = ui.theme.borderColor,
+                        .width = { .left = 1, .right = 1, .top = 1, .bottom = 1 },
+                    },
+                }) {
+                    ClayWidgets_Label(&ui, CLAY_STRING("Right-click here for a context menu"));
+                }
+                if (ClayWidgets_RightClicked(&ui, CLAY_ID("GalleryCtxTarget"))) {
+                    ClayWidgets_OpenContextMenu(&ui, CLAY_ID("GalleryMenu"), ui.input.mouseX, ui.input.mouseY);
+                }
+            }
+            ClayWidgets_EndCard(&ui, CLAY_ID("OverlaysCard"));
+        }
+        ClayWidgets_EndScrollPanel(&ui, CLAY_ID("GalleryRight"));
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Settings view
+// ---------------------------------------------------------------------------
+
+static void DrawSettingsView(ClayWidgets_Context &ui, DemoState &s) {
+    ClayWidgets_BeginScrollPanel(&ui, CLAY_ID("SettingsPanel"),
+        ClayWidgets_ScrollPanelOptions{ CLAY_SIZING_GROW(0), CLAY_SIZING_GROW(0), 0, 0, ui.theme.spacing.md });
+    {
+        ClayWidgets_BeginCard(&ui, CLAY_ID("AppearanceCard"), CLAY_STRING("Appearance"));
+        {
+            ClayWidgets_Label(&ui, CLAY_STRING("Theme preset"));
+            ClayWidgets_Radio(&ui, CLAY_ID("ThemeSlate"), CLAY_STRING("Slate"), CLAY_WIDGETS_THEME_PRESET_SLATE, &s.themePreset);
+            ClayWidgets_Radio(&ui, CLAY_ID("ThemeSand"), CLAY_STRING("Sand"), CLAY_WIDGETS_THEME_PRESET_SAND, &s.themePreset);
+            ClayWidgets_Radio(&ui, CLAY_ID("ThemeForest"), CLAY_STRING("Forest"), CLAY_WIDGETS_THEME_PRESET_FOREST, &s.themePreset);
+            ClayWidgets_Radio(&ui, CLAY_ID("ThemeWin95"), CLAY_STRING("Windows"), CLAY_WIDGETS_THEME_PRESET_WIN95, &s.themePreset);
+
+            ClayWidgets_Separator(&ui);
+            ClayWidgets_Toggle(&ui, CLAY_ID("AnimToggle"), CLAY_STRING("Animate hover and state changes"), &s.animationsOn);
+            MutedLabel(ui, CLAY_STRING("Also forced off by the --no-anim screenshot flag (reduce-motion support)."));
+        }
+        ClayWidgets_EndCard(&ui, CLAY_ID("AppearanceCard"));
+
+        ClayWidgets_BeginCard(&ui, CLAY_ID("BehaviorCard"), CLAY_STRING("Behavior"));
+        {
+            if (ClayWidgets_Checkbox(&ui, CLAY_ID("NotificationsCheck"), CLAY_STRING("Show toast notifications"), &s.notifications)) {
+                SetStatus(s, s.notifications ? "Notifications enabled" : "Notifications disabled");
+                Notify(ui, s, CLAY_STRING("Notifications enabled"), CLAY_WIDGETS_BADGE_SUCCESS, 2.5f);
+            }
+            ClayWidgets_Combo(&ui, CLAY_ID("LogLevelCombo"), CLAY_STRING("Log level"), kLogLevelNames, 5, &s.logLevel);
+
+            if (ClayWidgets_BeginCollapsible(&ui, CLAY_ID("AdvancedSection"), CLAY_STRING("Advanced options"), &s.showAdvanced)) {
+                ClayWidgets_Checkbox(&ui, CLAY_ID("VerboseCheck"), CLAY_STRING("Verbose logging"), &s.verboseLogging);
+                ClayWidgets_Checkbox(&ui, CLAY_ID("GpuCheck"), CLAY_STRING("Experimental GPU path"), &s.experimentalGpu);
+                ClayWidgets_EndCollapsible(&ui, CLAY_ID("AdvancedSection"));
+            }
+        }
+        ClayWidgets_EndCard(&ui, CLAY_ID("BehaviorCard"));
+
+        ClayWidgets_BeginCard(&ui, CLAY_ID("DiagnosticsCard"), CLAY_STRING("Diagnostics"));
+        {
+            ClayWidgets_Label(&ui, FormatString(s, "Screen: %d x %d", GetScreenWidth(), GetScreenHeight()));
+            ClayWidgets_Label(&ui, FormatString(s, "Pointer: %.0f, %.0f", ui.input.mouseX, ui.input.mouseY));
+            ClayWidgets_Label(&ui, FormatString(s, "Focused widget id: %u", ui.focusedId));
+            ClayWidgets_Label(&ui, FormatString(s, "Frame rate: %d fps", GetFPS()));
+            ClayWidgets_Label(&ui, FormatString(s, "Animations: %s", ui.animationsEnabled ? "on" : "off"));
+
+            ClayWidgets_Separator(&ui);
+            if (ClayWidgets_ButtonEx(&ui, CLAY_ID("ResetDemoButton"), CLAY_STRING("Reset Demo State"),
+                    ClayWidgets_ButtonOptions{CLAY_WIDGETS_BUTTON_DANGER, false})) {
+                s.pendingReset = true;
+                Notify(ui, s, CLAY_STRING("Demo reset"), CLAY_WIDGETS_BADGE_NEUTRAL, 2.5f);
+            }
+        }
+        ClayWidgets_EndCard(&ui, CLAY_ID("DiagnosticsCard"));
+
+        ClayWidgets_BeginCard(&ui, CLAY_ID("AboutCard"), CLAY_STRING("About"));
+        {
+            ClayWidgets_Label(&ui, CLAY_STRING(
+                "clay-widgets demo - a single-file example application for the clay-widgets immediate-mode UI kit.\n"
+                "\n"
+                "Bring your own renderer: the widgets only emit Clay render commands. This build draws them with raylib "
+                "and compiles unchanged to WebAssembly."));
+        }
+        ClayWidgets_EndCard(&ui, CLAY_ID("AboutCard"));
+    }
+    ClayWidgets_EndScrollPanel(&ui, CLAY_ID("SettingsPanel"));
+}
+
+// ---------------------------------------------------------------------------
+// Floating layers: context menus and the delete-confirmation modal.
+// Declared at the root, after all views, so they overlay everything.
+// ---------------------------------------------------------------------------
+
+static void DrawFloatingLayers(ClayWidgets_Context &ui, DemoState &s) {
+    if (ClayWidgets_BeginContextMenu(&ui, CLAY_ID("TaskMenu"))) {
+        bool valid = s.contextTask >= 0 && s.contextTask < s.taskCount;
+        if (valid) {
+            DemoTask &t = s.tasks[s.contextTask];
+            if (ClayWidgets_MenuItem(&ui, CLAY_ID("TaskMenuToggle"),
+                    t.done ? CLAY_STRING("Mark as active") : CLAY_STRING("Mark as done"))) {
+                t.done = !t.done;
+                SetStatus(s, "%s: %s", t.done ? "Completed" : "Reopened", t.title);
+            }
+            if (ClayWidgets_MenuItem(&ui, CLAY_ID("TaskMenuDuplicate"), CLAY_STRING("Duplicate"))) {
+                DuplicateTask(ui, s, s.contextTask);
+            }
+            ClayWidgets_MenuSeparator(&ui);
+            if (ClayWidgets_MenuItem(&ui, CLAY_ID("TaskMenuDelete"), CLAY_STRING("Delete..."))) {
+                RequestDeleteTask(s, s.contextTask);
+            }
+        } else {
+            ClayWidgets_MenuItem(&ui, CLAY_ID("TaskMenuNone"), CLAY_STRING("(no task)"));
+        }
+        ClayWidgets_EndContextMenu(&ui, CLAY_ID("TaskMenu"));
+    }
+
+    if (ClayWidgets_BeginContextMenu(&ui, CLAY_ID("GalleryMenu"))) {
+        if (ClayWidgets_MenuItem(&ui, CLAY_ID("CtxCut"), CLAY_STRING("Cut"))) {
+            SetStatus(s, "Context: Cut");
+        }
+        if (ClayWidgets_MenuItem(&ui, CLAY_ID("CtxCopy"), CLAY_STRING("Copy"))) {
+            SetStatus(s, "Context: Copy");
+        }
+        if (ClayWidgets_MenuItem(&ui, CLAY_ID("CtxPaste"), CLAY_STRING("Paste"))) {
+            SetStatus(s, "Context: Paste");
+        }
+        ClayWidgets_MenuSeparator(&ui);
+        if (ClayWidgets_MenuItem(&ui, CLAY_ID("CtxProps"), CLAY_STRING("Properties..."))) {
+            SetStatus(s, "Context: Properties");
+        }
+        ClayWidgets_EndContextMenu(&ui, CLAY_ID("GalleryMenu"));
+    }
+
+    if (ClayWidgets_BeginModal(&ui, CLAY_ID("ConfirmDeleteModal"), CLAY_STRING("Delete task?"), &s.showDeleteModal)) {
+        int32_t target = (s.deleteTarget >= 0 && s.deleteTarget < s.taskCount)
+            ? s.deleteTarget
+            : (s.taskCount > 0 ? s.selectedTask : -1);
+        if (target >= 0 && target < s.taskCount) {
+            ClayWidgets_Label(&ui, FormatString(s, "\"%s\" will be permanently removed.", s.tasks[target].title));
+        } else {
+            ClayWidgets_Label(&ui, CLAY_STRING("There is no task to delete."));
+        }
+        MutedLabel(ui, CLAY_STRING("The scrim dims and blocks everything behind this dialog until it is dismissed."));
+
+        CLAY(CLAY_ID("ModalButtonRow"), {
+            .layout = {
+                .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_FIT(0, 0) },
+                .childGap = ui.theme.spacing.sm,
+                .childAlignment = { .x = CLAY_ALIGN_X_RIGHT, .y = CLAY_ALIGN_Y_CENTER },
+                .layoutDirection = CLAY_LEFT_TO_RIGHT,
+            },
+        }) {
+            if (ClayWidgets_Button(&ui, CLAY_ID("ModalCancel"), CLAY_STRING("Cancel"))) {
+                s.showDeleteModal = false;
+            }
+            if (ClayWidgets_ButtonEx(&ui, CLAY_ID("ModalDelete"), CLAY_STRING("Delete"),
+                    ClayWidgets_ButtonOptions{CLAY_WIDGETS_BUTTON_DANGER, target < 0})) {
+                SetStatus(s, "Deleted: %s", s.tasks[target].title);
+                s.pendingDelete = target;
+                s.showDeleteModal = false;
+                Notify(ui, s, CLAY_STRING("Task deleted"), CLAY_WIDGETS_BADGE_DANGER, 2.5f);
+            }
+        }
+
+        ClayWidgets_EndModal(&ui, CLAY_ID("ConfirmDeleteModal"));
+    }
 }
 
 } // namespace
@@ -446,6 +1589,8 @@ int main(int argc, char **argv) {
     bool forceRightClick = false; // makes the phase-1 click a right-click
     bool shotToast = false;
     bool disableAnim = false; // --no-anim: snap all widget transitions for deterministic shots
+    int screenWidth = 1080;   // --size W H: initial window size (shots at other layouts)
+    int screenHeight = 720;
     for (int i = 1; i < argc; ++i) {
         if (std::strcmp(argv[i], "--shot") == 0 && i + 1 < argc) {
             shotPath = argv[++i];
@@ -476,14 +1621,15 @@ int main(int argc, char **argv) {
             shotToast = true;
         } else if (std::strcmp(argv[i], "--no-anim") == 0) {
             disableAnim = true;
+        } else if (std::strcmp(argv[i], "--size") == 0 && i + 2 < argc) {
+            screenWidth = std::atoi(argv[++i]);
+            screenHeight = std::atoi(argv[++i]);
         }
     }
     if (shotFrames < 1) {
         shotFrames = 1;
     }
 
-    const int screenWidth = 1080;
-    const int screenHeight = 720;
     const char *fontPath = "assets/fonts/Roboto-Regular.ttf";
 
     SetConfigFlags(FLAG_MSAA_4X_HINT | FLAG_VSYNC_HINT | FLAG_WINDOW_HIGHDPI | FLAG_WINDOW_RESIZABLE);
@@ -510,7 +1656,7 @@ int main(int argc, char **argv) {
     fonts[0] = GetFontDefault();
     bool customFontLoaded = false;
     if (FileExists(fontPath)) {
-        Font roboto = LoadFontEx(fontPath, 64, nullptr, 0);
+        Font roboto = LoadFontEx(fontPath, 32, nullptr, 0);
         if (roboto.texture.id != 0) {
             fonts[0] = roboto;
             customFontLoaded = true;
@@ -528,36 +1674,36 @@ int main(int argc, char **argv) {
     // Procedurally generated white glyph textures used to demonstrate the image
     // element. Drawing them white lets ClayWidgets_Icon recolor them per theme
     // via its tint. Passed to the widgets as opaque Texture2D* handles.
-    Texture2D iconCheck, iconPlay, iconCircle, iconSquare;
+    DemoIcons icons = {};
     {
         Image im = GenImageColor(64, 64, BLANK);
         ImageDrawLineEx(&im, Vector2{14, 34}, Vector2{27, 47}, 7, WHITE);
         ImageDrawLineEx(&im, Vector2{27, 47}, Vector2{52, 16}, 7, WHITE);
-        iconCheck = LoadTextureFromImage(im);
+        icons.check = LoadTextureFromImage(im);
         UnloadImage(im);
     }
     {
         Image im = GenImageColor(64, 64, BLANK);
         ImageDrawTriangle(&im, Vector2{22, 14}, Vector2{22, 50}, Vector2{52, 32}, WHITE);
-        iconPlay = LoadTextureFromImage(im);
+        icons.play = LoadTextureFromImage(im);
         UnloadImage(im);
     }
     {
         Image im = GenImageColor(64, 64, BLANK);
         ImageDrawCircle(&im, 32, 32, 20, WHITE);
-        iconCircle = LoadTextureFromImage(im);
+        icons.circle = LoadTextureFromImage(im);
         UnloadImage(im);
     }
     {
         Image im = GenImageColor(64, 64, BLANK);
         ImageDrawRectangle(&im, 14, 14, 36, 36, WHITE);
-        iconSquare = LoadTextureFromImage(im);
+        icons.square = LoadTextureFromImage(im);
         UnloadImage(im);
     }
-    SetTextureFilter(iconCheck, TEXTURE_FILTER_BILINEAR);
-    SetTextureFilter(iconPlay, TEXTURE_FILTER_BILINEAR);
-    SetTextureFilter(iconCircle, TEXTURE_FILTER_BILINEAR);
-    SetTextureFilter(iconSquare, TEXTURE_FILTER_BILINEAR);
+    SetTextureFilter(icons.check, TEXTURE_FILTER_BILINEAR);
+    SetTextureFilter(icons.play, TEXTURE_FILTER_BILINEAR);
+    SetTextureFilter(icons.circle, TEXTURE_FILTER_BILINEAR);
+    SetTextureFilter(icons.square, TEXTURE_FILTER_BILINEAR);
 
     uint32_t clayMemorySize = Clay_MinMemorySize();
     void *clayMemory = std::malloc(clayMemorySize);
@@ -575,84 +1721,18 @@ int main(int argc, char **argv) {
     ClayWidgets_Theme theme = ClayWidgets_DefaultTheme();
     ClayWidgets_Init(&ui, theme);
     ClayWidgets_SetMeasureTextFunction(&ui, MeasureTextRaylib, fonts);
-    if (disableAnim) {
-        ui.animationsEnabled = false;
-    }
 
-    bool featureA = true;
-    bool featureB = false;
-    bool notificationsEnabled = true;
-    bool showAdvanced = true;      // collapsible section, open by default
-    bool verboseLogging = false;
-    bool experimentalGpu = false;
-    int32_t selectedProfile = 2;
-    int32_t selectedTheme = CLAY_WIDGETS_THEME_PRESET_SLATE;
-    float masterVolume = 0.35f;
-    float uiScale = 1.0f;
-    char nameBuffer[128] = "Clay User";
-    char projectBuffer[128] = "clay-widgets";
-    int clickCount = 0;
-    int applyCount = 0;
-    char statusLine[128] = "Ready";
+    DemoState demo;
+    SeedTasks(demo);
 
-    static const Clay_String comboItems[] = {
-        CLAY_STRING("Debug"),
-        CLAY_STRING("Release"),
-        CLAY_STRING("Release with Debug Info"),
-        CLAY_STRING("Minimum Size"),
-    };
-    static const int32_t comboItemCount = (int32_t)(sizeof(comboItems) / sizeof(comboItems[0]));
-    int32_t selectedBuildConfig = 1;
-
-    static const Clay_String logLevelItems[] = {
-        CLAY_STRING("Error"),
-        CLAY_STRING("Warning"),
-        CLAY_STRING("Info"),
-        CLAY_STRING("Debug"),
-        CLAY_STRING("Trace"),
-    };
-    static const int32_t logLevelItemCount = (int32_t)(sizeof(logLevelItems) / sizeof(logLevelItems[0]));
-    int32_t selectedLogLevel = 2;
-
-    static const Clay_String densityItems[] = {
-        CLAY_STRING("Compact"),
-        CLAY_STRING("Cozy"),
-        CLAY_STRING("Comfortable"),
-    };
-    static const int32_t densityItemCount = (int32_t)(sizeof(densityItems) / sizeof(densityItems[0]));
-    int32_t densityMode = 1;
-
-    int32_t retryCount = 3;
-
-    static const Clay_String tableNames[] = {
-        CLAY_STRING("widgets.h"), CLAY_STRING("core.h"), CLAY_STRING("menu.h"), CLAY_STRING("table.h"),
-    };
-    static const Clay_String tableTypes[] = {
-        CLAY_STRING("umbrella"), CLAY_STRING("core"), CLAY_STRING("widget"), CLAY_STRING("widget"),
-    };
-    static const Clay_String tableSizes[] = {
-        CLAY_STRING("4.2 KB"), CLAY_STRING("14 KB"), CLAY_STRING("6.8 KB"), CLAY_STRING("5.1 KB"),
-    };
-    static const int32_t tableRowCount = 4;
-    int32_t selectedTableRow = 1;
-
-    bool treeSrcOpen = true;
-    bool treeWidgetsOpen = true;
-    bool treeAssetsOpen = false;
-
-    int32_t activeView = 0; // 0 = Settings, 1 = Documents, 2 = Tab Plane
-    int32_t selectedDoc = 0;
-    int32_t activeTab = 0;  // selected page within the Tab Plane view
-    bool showConfirmModal = false;
-
-    if (shotView >= 0) {
-        activeView = shotView;
-    }
-    if (shotOpenModal) {
-        showConfirmModal = true;
+    if (shotView >= kViewDashboard && shotView <= kViewSettings) {
+        demo.activeView = shotView;
     }
     if (shotTheme >= 1) {
-        selectedTheme = shotTheme;
+        demo.themePreset = shotTheme;
+    }
+    if (shotOpenModal) {
+        demo.showDeleteModal = true;
     }
     if (shotToast) {
         ClayWidgets_ShowToast(&ui, CLAY_STRING("Changes applied"), CLAY_WIDGETS_BADGE_SUCCESS, 6.0f);
@@ -662,6 +1742,9 @@ int main(int argc, char **argv) {
     bool webQuit = false;
     auto frameStep = [&]() {
         float dt = GetFrameTime();
+
+        demo.scratchUsed = 0;
+        ApplyPendingTaskEdits(demo);
 
         char frameUtf8[64] = {};
         int frameUtf8Len = 0;
@@ -731,7 +1814,8 @@ int main(int argc, char **argv) {
             input.scrollY = (shotFrameCounter < shotFrames - 1) ? forceScrollY : 0.0f;
         }
 
-        ui.theme = ClayWidgets_ThemeFromPreset((ClayWidgets_ThemePreset)selectedTheme);
+        ui.theme = ClayWidgets_ThemeFromPreset((ClayWidgets_ThemePreset)demo.themePreset);
+        ui.animationsEnabled = demo.animationsOn && !disableAnim;
 
         ClayWidgets_BeginFrame(
             &ui,
@@ -740,519 +1824,42 @@ int main(int argc, char **argv) {
             true
         );
 
-        bool compactLayout = GetScreenWidth() < 1120;
-        Clay_SizingAxis leftPanelWidth = compactLayout ? CLAY_SIZING_GROW(0) : CLAY_SIZING_PERCENT(0.58f);
-        Clay_SizingAxis rightPanelWidth = compactLayout ? CLAY_SIZING_GROW(0) : CLAY_SIZING_PERCENT(0.42f);
-        Clay_SizingAxis leftPanelHeight = compactLayout ? CLAY_SIZING_PERCENT(0.64f) : CLAY_SIZING_GROW(0);
-        Clay_SizingAxis rightPanelHeight = compactLayout ? CLAY_SIZING_PERCENT(0.36f) : CLAY_SIZING_GROW(0);
+        bool compactLayout = GetScreenWidth() < 900;
 
         CLAY(CLAY_ID("Root"), {
             .layout = {
                 .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_GROW(0) },
                 .padding = CLAY_PADDING_ALL(16),
-                .childGap = 14,
+                .childGap = 12,
                 .layoutDirection = CLAY_TOP_TO_BOTTOM,
             },
             .backgroundColor = ui.theme.surfaceColor,
         }) {
-            ClayWidgets_Heading(&ui, CLAY_STRING("clay-widgets demo"));
-            ClayWidgets_Label(&ui, CLAY_STRING("A starter UI kit on top of Clay + raylib"));
-            ClayWidgets_Separator(&ui);
+            DrawHeader(ui, demo, compactLayout);
+            DrawMenuBar(ui, demo);
+            DrawNavBar(ui, demo);
 
-            CLAY(CLAY_ID("MenuBar"), {
-                .layout = {
-                    .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_FIT(0, 0) },
-                    .padding = CLAY_PADDING_ALL(ui.theme.spacing.xs),
-                    .childGap = ui.theme.spacing.xs,
-                    .childAlignment = { .x = CLAY_ALIGN_X_LEFT, .y = CLAY_ALIGN_Y_CENTER },
-                    .layoutDirection = CLAY_LEFT_TO_RIGHT,
-                },
-                .backgroundColor = ui.theme.surfaceAltColor,
-                .cornerRadius = CLAY_CORNER_RADIUS(ui.theme.radiusSm),
-            }) {
-                if (ClayWidgets_BeginMenu(&ui, CLAY_ID("FileMenu"), CLAY_STRING("File"))) {
-                    if (ClayWidgets_MenuItem(&ui, CLAY_ID("MenuNew"), CLAY_STRING("New Project"))) {
-                        std::strncpy(statusLine, "Menu: New Project", sizeof(statusLine));
-                        statusLine[sizeof(statusLine) - 1] = '\0';
-                    }
-                    if (ClayWidgets_MenuItem(&ui, CLAY_ID("MenuOpen"), CLAY_STRING("Open..."))) {
-                        std::strncpy(statusLine, "Menu: Open", sizeof(statusLine));
-                        statusLine[sizeof(statusLine) - 1] = '\0';
-                    }
-                    if (ClayWidgets_MenuItem(&ui, CLAY_ID("MenuSave"), CLAY_STRING("Save"))) {
-                        std::strncpy(statusLine, "Menu: Save", sizeof(statusLine));
-                        statusLine[sizeof(statusLine) - 1] = '\0';
-                    }
-                    ClayWidgets_MenuSeparator(&ui);
-                    if (ClayWidgets_MenuItem(&ui, CLAY_ID("MenuDeleteItem"), CLAY_STRING("Delete Project..."))) {
-                        showConfirmModal = true;
-                    }
-                    ClayWidgets_EndMenu(&ui, CLAY_ID("FileMenu"));
-                }
-
-                if (ClayWidgets_BeginMenu(&ui, CLAY_ID("EditMenu"), CLAY_STRING("Edit"))) {
-                    if (ClayWidgets_MenuItem(&ui, CLAY_ID("MenuUndo"), CLAY_STRING("Undo"))) {
-                        std::strncpy(statusLine, "Menu: Undo", sizeof(statusLine));
-                        statusLine[sizeof(statusLine) - 1] = '\0';
-                    }
-                    if (ClayWidgets_MenuItem(&ui, CLAY_ID("MenuRedo"), CLAY_STRING("Redo"))) {
-                        std::strncpy(statusLine, "Menu: Redo", sizeof(statusLine));
-                        statusLine[sizeof(statusLine) - 1] = '\0';
-                    }
-                    ClayWidgets_EndMenu(&ui, CLAY_ID("EditMenu"));
-                }
-
-                if (ClayWidgets_BeginMenu(&ui, CLAY_ID("ViewMenu"), CLAY_STRING("View"))) {
-                    if (ClayWidgets_MenuItem(&ui, CLAY_ID("MenuViewSettings"), CLAY_STRING("Settings"))) {
-                        activeView = 0;
-                    }
-                    if (ClayWidgets_MenuItem(&ui, CLAY_ID("MenuViewDocuments"), CLAY_STRING("Documents"))) {
-                        activeView = 1;
-                    }
-                    if (ClayWidgets_MenuItem(&ui, CLAY_ID("MenuViewTabPlane"), CLAY_STRING("Tab Plane"))) {
-                        activeView = 2;
-                    }
-                    ClayWidgets_EndMenu(&ui, CLAY_ID("ViewMenu"));
-                }
+            switch (demo.activeView) {
+                case kViewTasks:
+                    DrawTasksView(ui, demo, compactLayout);
+                    break;
+                case kViewGallery:
+                    DrawGalleryView(ui, demo, icons, compactLayout);
+                    break;
+                case kViewSettings:
+                    DrawSettingsView(ui, demo);
+                    break;
+                case kViewDashboard:
+                default:
+                    DrawDashboardView(ui, demo, compactLayout);
+                    break;
             }
 
-            CLAY(CLAY_ID("NavBar"), {
-                .layout = {
-                    .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_FIT(0, 0) },
-                    .childGap = 10,
-                    .layoutDirection = CLAY_LEFT_TO_RIGHT,
-                },
-            }) {
-                ClayWidgets_Tab(&ui, CLAY_ID("NavSettings"), CLAY_STRING("Settings"), 0, &activeView);
-                ClayWidgets_Tab(&ui, CLAY_ID("NavDocuments"), CLAY_STRING("Documents"), 1, &activeView);
-                ClayWidgets_Tab(&ui, CLAY_ID("NavTabPlane"), CLAY_STRING("Tab Plane"), 2, &activeView);
+            DrawStatusBar(ui, demo);
 
-                ClayWidgets_Tooltip(&ui, CLAY_ID("NavSettings"), CLAY_STRING("Forms, controls and theming"));
-                ClayWidgets_Tooltip(&ui, CLAY_ID("NavDocuments"), CLAY_STRING("A sidebar list with a reading pane"));
-                ClayWidgets_Tooltip(&ui, CLAY_ID("NavTabPlane"), CLAY_STRING("Tabs sharing one framed panel"));
-            }
-
-            if (activeView == 0) {
-            CLAY(CLAY_ID("MainColumns"), {
-                .layout = {
-                    .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_GROW(0) },
-                    .childGap = 16,
-                    .layoutDirection = compactLayout ? CLAY_TOP_TO_BOTTOM : CLAY_LEFT_TO_RIGHT,
-                },
-            }) {
-                ClayWidgets_BeginScrollPanel(&ui, CLAY_ID("LeftPanel"),
-                    ClayWidgets_ScrollPanelOptions{ leftPanelWidth, leftPanelHeight, 0, 0, ui.theme.spacing.md });
-                {
-                    CLAY(CLAY_ID("IconRow"), {
-                        .layout = {
-                            .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_FIT(0, 0) },
-                            .childGap = ui.theme.spacing.md,
-                            .childAlignment = { .x = CLAY_ALIGN_X_LEFT, .y = CLAY_ALIGN_Y_CENTER },
-                            .layoutDirection = CLAY_LEFT_TO_RIGHT,
-                        },
-                    }) {
-                        ClayWidgets_Icon(&ui, CLAY_ID("IconCheck"), &iconCheck, 26, ui.theme.accentColor);
-                        ClayWidgets_Icon(&ui, CLAY_ID("IconPlay"), &iconPlay, 26, ui.theme.textColor);
-                        ClayWidgets_Icon(&ui, CLAY_ID("IconCircle"), &iconCircle, 26, ui.theme.accentColor);
-                        ClayWidgets_Icon(&ui, CLAY_ID("IconSquare"), &iconSquare, 26, ui.theme.textMutedColor);
-                        ClayWidgets_Label(&ui, CLAY_STRING("Icon elements (theme-tinted textures)"));
-                    }
-
-                    CLAY(CLAY_ID("CtxTarget"), {
-                        .layout = {
-                            .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_FIT(0, 0) },
-                            .padding = CLAY_PADDING_ALL(ui.theme.spacing.md),
-                            .childAlignment = { .x = CLAY_ALIGN_X_CENTER, .y = CLAY_ALIGN_Y_CENTER },
-                        },
-                        .backgroundColor = ui.theme.surfaceColor,
-                        .cornerRadius = CLAY_CORNER_RADIUS(ui.theme.radiusSm),
-                        .border = {
-                            .color = ui.theme.borderColor,
-                            .width = { .left = 1, .right = 1, .top = 1, .bottom = 1 },
-                        },
-                    }) {
-                        ClayWidgets_Label(&ui, CLAY_STRING("Right-click here for a context menu"));
-                    }
-                    if (ClayWidgets_RightClicked(&ui, CLAY_ID("CtxTarget"))) {
-                        ClayWidgets_OpenContextMenu(&ui, CLAY_ID("CanvasMenu"), ui.input.mouseX, ui.input.mouseY);
-                    }
-
-                    ClayWidgets_Label(&ui, CLAY_STRING("Keyboard: Tab moves focus, Enter activates the focused control."));
-
-                    ClayWidgets_Label(&ui, CLAY_STRING("Density (segmented control)"));
-                    ClayWidgets_Segmented(&ui, CLAY_ID("DensitySeg"), densityItems, densityItemCount, &densityMode);
-
-                    ClayWidgets_Label(&ui, CLAY_STRING("Retry count (stepper)"));
-                    ClayWidgets_Stepper(&ui, CLAY_ID("RetryStepper"), &retryCount, ClayWidgets_StepperOptions{0, 10, 1});
-
-                    ClayWidgets_Label(&ui, CLAY_STRING("Badges (chips / tags)"));
-                    CLAY(CLAY_ID("BadgeRow"), {
-                        .layout = {
-                            .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_FIT(0, 0) },
-                            .childGap = ui.theme.spacing.sm,
-                            .childAlignment = { .x = CLAY_ALIGN_X_LEFT, .y = CLAY_ALIGN_Y_CENTER },
-                            .layoutDirection = CLAY_LEFT_TO_RIGHT,
-                        },
-                    }) {
-                        ClayWidgets_Badge(&ui, CLAY_STRING("Neutral"), CLAY_WIDGETS_BADGE_NEUTRAL);
-                        ClayWidgets_Badge(&ui, CLAY_STRING("Accent"), CLAY_WIDGETS_BADGE_ACCENT);
-                        ClayWidgets_Badge(&ui, CLAY_STRING("Success"), CLAY_WIDGETS_BADGE_SUCCESS);
-                        ClayWidgets_Badge(&ui, CLAY_STRING("Warning"), CLAY_WIDGETS_BADGE_WARNING);
-                        ClayWidgets_Badge(&ui, CLAY_STRING("Danger"), CLAY_WIDGETS_BADGE_DANGER);
-                    }
-
-                    ClayWidgets_Label(&ui, CLAY_STRING("Project tree"));
-                    if (ClayWidgets_TreeNode(&ui, CLAY_ID("TreeSrc"), CLAY_STRING("src"), 0, &treeSrcOpen)) {
-                        ClayWidgets_TreeLeaf(&ui, CLAY_ID("TreeMain"), CLAY_STRING("main.cpp"), 1);
-                        if (ClayWidgets_TreeNode(&ui, CLAY_ID("TreeWidgets"), CLAY_STRING("clay-widgets"), 1, &treeWidgetsOpen)) {
-                            ClayWidgets_TreeLeaf(&ui, CLAY_ID("TreeButtonH"), CLAY_STRING("button.h"), 2);
-                            ClayWidgets_TreeLeaf(&ui, CLAY_ID("TreeTreeH"), CLAY_STRING("tree.h"), 2);
-                            ClayWidgets_TreeLeaf(&ui, CLAY_ID("TreeWidgetsH"), CLAY_STRING("widgets.h"), 2);
-                        }
-                    }
-                    if (ClayWidgets_TreeNode(&ui, CLAY_ID("TreeAssets"), CLAY_STRING("assets"), 0, &treeAssetsOpen)) {
-                        ClayWidgets_TreeLeaf(&ui, CLAY_ID("TreeFont"), CLAY_STRING("Roboto-Regular.ttf"), 1);
-                    }
-
-                    ClayWidgets_Label(&ui, CLAY_STRING("Files (table - click a row to select)"));
-                    {
-                        ClayWidgets_TableColumn tableCols[] = {
-                            { CLAY_STRING("Name"), CLAY_SIZING_GROW(0) },
-                            { CLAY_STRING("Type"), CLAY_SIZING_FIXED(110) },
-                            { CLAY_STRING("Size"), CLAY_SIZING_FIXED(90) },
-                        };
-                        ClayWidgets_BeginTable(&ui, CLAY_ID("FilesTable"), tableCols, 3);
-                        for (int r = 0; r < tableRowCount; ++r) {
-                            Clay_ElementId rid = Clay_GetElementIdWithIndex(CLAY_STRING("FileRow"), (uint32_t)r);
-                            Clay_String cells[] = { tableNames[r], tableTypes[r], tableSizes[r] };
-                            if (ClayWidgets_TableRow(&ui, rid, cells, 3, r, r == selectedTableRow)) {
-                                selectedTableRow = r;
-                            }
-                        }
-                        ClayWidgets_EndTable(&ui, CLAY_ID("FilesTable"));
-                    }
-
-                    CLAY(CLAY_ID("ActionRow"), {
-                        .layout = {
-                            .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_FIT(0, 0) },
-                            .childGap = 10,
-                            .layoutDirection = compactLayout ? CLAY_TOP_TO_BOTTOM : CLAY_LEFT_TO_RIGHT,
-                        },
-                    }) {
-                        if (ClayWidgets_Button(&ui, CLAY_ID("PrimaryButton"), CLAY_STRING("Apply Changes"))) {
-                            clickCount += 1;
-                            applyCount += 1;
-                            std::snprintf(statusLine, sizeof(statusLine), "Applied preset %d", selectedProfile);
-                            ClayWidgets_ShowToast(&ui, CLAY_STRING("Changes applied"), CLAY_WIDGETS_BADGE_SUCCESS, 2.5f);
-                        }
-
-                        if (ClayWidgets_Button(&ui, CLAY_ID("ResetButton"), CLAY_STRING("Reset Form"))) {
-                            featureA = true;
-                            featureB = false;
-                            notificationsEnabled = true;
-                            selectedProfile = 2;
-                            selectedTheme = CLAY_WIDGETS_THEME_PRESET_SLATE;
-                            masterVolume = 0.35f;
-                            uiScale = 1.0f;
-                            selectedBuildConfig = 1;
-                            std::strncpy(nameBuffer, "Clay User", sizeof(nameBuffer));
-                            nameBuffer[sizeof(nameBuffer) - 1] = '\0';
-                            std::strncpy(projectBuffer, "clay-widgets", sizeof(projectBuffer));
-                            projectBuffer[sizeof(projectBuffer) - 1] = '\0';
-                            std::strncpy(statusLine, "Form reset", sizeof(statusLine));
-                            statusLine[sizeof(statusLine) - 1] = '\0';
-                        }
-
-                        if (ClayWidgets_Button(&ui, CLAY_ID("DeleteButton"), CLAY_STRING("Delete Project..."))) {
-                            showConfirmModal = true;
-                        }
-                    }
-
-                    // A card groups the project form fields under a titled,
-                    // bordered surface.
-                    ClayWidgets_BeginCard(&ui, CLAY_ID("ProjectCard"), CLAY_STRING("Project Settings"));
-                    {
-                        ClayWidgets_TextInput(
-                            &ui,
-                            CLAY_ID("NameInput"),
-                            CLAY_STRING("Display name"),
-                            nameBuffer,
-                            static_cast<int32_t>(sizeof(nameBuffer)),
-                            ClayWidgets_TextInputOptions{"Type your name", false}
-                        );
-
-                        ClayWidgets_TextInput(
-                            &ui,
-                            CLAY_ID("ProjectInput"),
-                            CLAY_STRING("Project slug"),
-                            projectBuffer,
-                            static_cast<int32_t>(sizeof(projectBuffer)),
-                            ClayWidgets_TextInputOptions{"workspace identifier", false}
-                        );
-
-                        ClayWidgets_Combo(
-                            &ui,
-                            CLAY_ID("BuildConfigCombo"),
-                            CLAY_STRING("Build configuration"),
-                            comboItems,
-                            comboItemCount,
-                            &selectedBuildConfig
-                        );
-                    }
-                    ClayWidgets_EndCard(&ui, CLAY_ID("ProjectCard"));
-
-                    if (ClayWidgets_Button(&ui, CLAY_ID("PingButton"), CLAY_STRING("Increment Counter"))) {
-                        clickCount += 1;
-                        std::strncpy(statusLine, "Counter incremented", sizeof(statusLine));
-                        statusLine[sizeof(statusLine) - 1] = '\0';
-                    }
-
-                    ClayWidgets_Checkbox(&ui, CLAY_ID("CheckboxA"), CLAY_STRING("Enable particles"), &featureA);
-                    ClayWidgets_Checkbox(&ui, CLAY_ID("CheckboxB"), CLAY_STRING("Enable shadows"), &featureB);
-                    ClayWidgets_Checkbox(&ui, CLAY_ID("CheckboxNotifications"), CLAY_STRING("Enable notifications"), &notificationsEnabled);
-
-                    ClayWidgets_Separator(&ui);
-                    ClayWidgets_Label(&ui, CLAY_STRING("Switches (bound to the same state as the checkboxes above)"));
-                    ClayWidgets_Toggle(&ui, CLAY_ID("ToggleParticles"), CLAY_STRING("Enable particles"), &featureA);
-                    ClayWidgets_Toggle(&ui, CLAY_ID("ToggleShadows"), CLAY_STRING("Enable shadows"), &featureB);
-                    ClayWidgets_Toggle(&ui, CLAY_ID("ToggleNotifications"), CLAY_STRING("Enable notifications"), &notificationsEnabled);
-
-                    // A collapsible disclosure section groups rarely-used options.
-                    if (ClayWidgets_BeginCollapsible(&ui, CLAY_ID("AdvancedSection"), CLAY_STRING("Advanced options"), &showAdvanced)) {
-                        ClayWidgets_Checkbox(&ui, CLAY_ID("VerboseLog"), CLAY_STRING("Verbose logging"), &verboseLogging);
-                        ClayWidgets_Checkbox(&ui, CLAY_ID("ExperimentalGpu"), CLAY_STRING("Experimental GPU path"), &experimentalGpu);
-                        ClayWidgets_EndCollapsible(&ui, CLAY_ID("AdvancedSection"));
-                    }
-
-                    ClayWidgets_Label(&ui, CLAY_STRING("Log level (list box: click or focus + arrows)"));
-                    ClayWidgets_ListBox(&ui, CLAY_ID("LogLevelList"), logLevelItems, logLevelItemCount, &selectedLogLevel);
-
-                    ClayWidgets_Label(&ui, CLAY_STRING("Profile"));
-                    ClayWidgets_Radio(&ui, CLAY_ID("Profile1"), CLAY_STRING("Minimal"), 1, &selectedProfile);
-                    ClayWidgets_Radio(&ui, CLAY_ID("Profile2"), CLAY_STRING("Balanced"), 2, &selectedProfile);
-                    ClayWidgets_Radio(&ui, CLAY_ID("Profile3"), CLAY_STRING("Quality"), 3, &selectedProfile);
-
-                    ClayWidgets_Label(&ui, CLAY_STRING("Theme"));
-                    ClayWidgets_Radio(&ui, CLAY_ID("Theme1"), CLAY_STRING("Slate"), CLAY_WIDGETS_THEME_PRESET_SLATE, &selectedTheme);
-                    ClayWidgets_Radio(&ui, CLAY_ID("Theme2"), CLAY_STRING("Sand"), CLAY_WIDGETS_THEME_PRESET_SAND, &selectedTheme);
-                    ClayWidgets_Radio(&ui, CLAY_ID("Theme3"), CLAY_STRING("Forest"), CLAY_WIDGETS_THEME_PRESET_FOREST, &selectedTheme);
-                    ClayWidgets_Radio(&ui, CLAY_ID("Theme4"), CLAY_STRING("Windows"), CLAY_WIDGETS_THEME_PRESET_WIN95, &selectedTheme);
-
-                    ClayWidgets_Label(&ui, CLAY_STRING("Master Volume"));
-                    masterVolume = ClayWidgets_Slider(
-                        &ui,
-                        CLAY_ID("MasterVolume"),
-                        masterVolume,
-                        ClayWidgets_SliderOptions{0.0f, 1.0f, 0.01f}
-                    );
-
-                    ClayWidgets_ProgressBar(
-                        &ui,
-                        CLAY_ID("Progress"),
-                        masterVolume,
-                        CLAY_STRING("Volume level")
-                    );
-
-                    ClayWidgets_Label(&ui, CLAY_STRING("UI Scale"));
-                    uiScale = ClayWidgets_Slider(
-                        &ui,
-                        CLAY_ID("UiScale"),
-                        uiScale,
-                        ClayWidgets_SliderOptions{0.75f, 1.5f, 0.05f}
-                    );
-
-                    ClayWidgets_ProgressBar(
-                        &ui,
-                        CLAY_ID("ApplyProgress"),
-                        uiScale / 1.5f,
-                        CLAY_STRING("Scale calibration")
-                    );
-                }
-                ClayWidgets_EndScrollPanel(&ui, CLAY_ID("LeftPanel"));
-
-                ClayWidgets_BeginScrollPanel(&ui, CLAY_ID("RightPanel"),
-                    ClayWidgets_ScrollPanelOptions{ rightPanelWidth, rightPanelHeight, 0, 0, ui.theme.spacing.sm });
-                {
-                    ClayWidgets_Label(&ui, CLAY_STRING("Live State"));
-
-                    char stateLines[14][256] = {};
-                    int stateLineCount = 0;
-                    std::snprintf(stateLines[stateLineCount++], sizeof(stateLines[0]), "Button clicks: %d", clickCount);
-                    std::snprintf(stateLines[stateLineCount++], sizeof(stateLines[0]), "Apply count: %d", applyCount);
-                    std::snprintf(stateLines[stateLineCount++], sizeof(stateLines[0]), "Feature A: %s", featureA ? "ON" : "OFF");
-                    std::snprintf(stateLines[stateLineCount++], sizeof(stateLines[0]), "Feature B: %s", featureB ? "ON" : "OFF");
-                    std::snprintf(stateLines[stateLineCount++], sizeof(stateLines[0]), "Notifications: %s", notificationsEnabled ? "ON" : "OFF");
-                    std::snprintf(stateLines[stateLineCount++], sizeof(stateLines[0]), "Profile: %d", selectedProfile);
-
-                    const char *themeName = "Slate";
-                    if (selectedTheme == CLAY_WIDGETS_THEME_PRESET_SAND) {
-                        themeName = "Sand";
-                    } else if (selectedTheme == CLAY_WIDGETS_THEME_PRESET_FOREST) {
-                        themeName = "Forest";
-                    } else if (selectedTheme == CLAY_WIDGETS_THEME_PRESET_WIN95) {
-                        themeName = "Windows";
-                    }
-                    std::snprintf(stateLines[stateLineCount++], sizeof(stateLines[0]), "Theme: %s", themeName);
-                    std::snprintf(stateLines[stateLineCount++], sizeof(stateLines[0]), "Volume: %.2f", masterVolume);
-                    std::snprintf(stateLines[stateLineCount++], sizeof(stateLines[0]), "UI Scale: %.2f", uiScale);
-                    std::snprintf(stateLines[stateLineCount++], sizeof(stateLines[0]), "Name: %s", nameBuffer);
-                    std::snprintf(stateLines[stateLineCount++], sizeof(stateLines[0]), "Project: %s", projectBuffer);
-
-                    const char *buildConfigName = (selectedBuildConfig >= 0 && selectedBuildConfig < comboItemCount)
-                        ? comboItems[selectedBuildConfig].chars : "(none)";
-                    std::snprintf(stateLines[stateLineCount++], sizeof(stateLines[0]), "Build config: %s", buildConfigName);
-                    std::snprintf(stateLines[stateLineCount++], sizeof(stateLines[0]), "Focused widget id: %u", ui.focusedId);
-                    std::snprintf(stateLines[stateLineCount++], sizeof(stateLines[0]), "Status: %s", statusLine);
-
-                    for (int i = 0; i < stateLineCount; ++i) {
-                        ClayWidgets_Label(&ui, ClayStringFromCString(stateLines[i]));
-                    }
-                }
-                ClayWidgets_EndScrollPanel(&ui, CLAY_ID("RightPanel"));
-            }
-            } else if (activeView == 1) {
-                CLAY(CLAY_ID("DocumentsView"), {
-                    .layout = {
-                        .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_GROW(0) },
-                        .childGap = 16,
-                        .layoutDirection = compactLayout ? CLAY_TOP_TO_BOTTOM : CLAY_LEFT_TO_RIGHT,
-                    },
-                }) {
-                    ClayWidgets_BeginScrollPanel(&ui, CLAY_ID("DocSidebar"),
-                        ClayWidgets_ScrollPanelOptions{
-                            compactLayout ? CLAY_SIZING_GROW(0) : CLAY_SIZING_FIXED(240),
-                            compactLayout ? CLAY_SIZING_PERCENT(0.4f) : CLAY_SIZING_GROW(0),
-                            0, 0, ui.theme.spacing.sm });
-                    {
-                        ClayWidgets_Label(&ui, CLAY_STRING("Library"));
-                        for (int i = 0; i < kDemoDocumentCount; ++i) {
-                            Clay_ElementId itemId = Clay_GetElementIdWithIndex(CLAY_STRING("DocItem"), (uint32_t)i);
-                            if (DocListItem(ui, itemId, kDemoDocuments[i].title, selectedDoc == i)) {
-                                selectedDoc = i;
-                            }
-                        }
-                    }
-                    ClayWidgets_EndScrollPanel(&ui, CLAY_ID("DocSidebar"));
-
-                    ClayWidgets_BeginScrollPanel(&ui, CLAY_ID("DocContent"),
-                        ClayWidgets_ScrollPanelOptions{ CLAY_SIZING_GROW(0), CLAY_SIZING_GROW(0), 0, 0, ui.theme.spacing.md });
-                    {
-                        int docIndex = (selectedDoc >= 0 && selectedDoc < kDemoDocumentCount) ? selectedDoc : 0;
-                        ClayWidgets_Heading(&ui, kDemoDocuments[docIndex].title);
-                        ClayWidgets_Label(&ui, kDemoDocuments[docIndex].subtitle);
-                        ClayWidgets_Separator(&ui);
-                        ClayWidgets_Label(&ui, kDemoDocuments[docIndex].body);
-                    }
-                    ClayWidgets_EndScrollPanel(&ui, CLAY_ID("DocContent"));
-                }
-            } else {
-                CLAY(CLAY_ID("TabPlaneView"), {
-                    .layout = {
-                        .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_GROW(0) },
-                        .childGap = 12,
-                        .layoutDirection = CLAY_TOP_TO_BOTTOM,
-                    },
-                }) {
-                    ClayWidgets_Label(&ui, CLAY_STRING("A tabbed panel: the tabs and their content share one framed surface."));
-
-                    // The tab plane itself: one bordered card whose top row holds
-                    // the tabs and whose body swaps with the active tab.
-                    CLAY(CLAY_ID("TabPlane"), {
-                        .layout = {
-                            .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_GROW(0) },
-                            .layoutDirection = CLAY_TOP_TO_BOTTOM,
-                        },
-                        .backgroundColor = ui.theme.surfaceAltColor,
-                        .cornerRadius = CLAY_CORNER_RADIUS(ui.theme.radiusMd),
-                        .border = {
-                            .color = ui.theme.borderColor,
-                            .width = { .left = 1, .right = 1, .top = 1, .bottom = 1 },
-                        },
-                    }) {
-                        CLAY(CLAY_ID("TabStrip"), {
-                            .layout = {
-                                .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_FIT(0, 0) },
-                                .padding = { .left = ui.theme.spacing.sm, .right = ui.theme.spacing.sm, .top = ui.theme.spacing.xs, .bottom = 0 },
-                                .childGap = ui.theme.spacing.xs,
-                                .layoutDirection = CLAY_LEFT_TO_RIGHT,
-                            },
-                        }) {
-                            for (int i = 0; i < kTabPageCount; ++i) {
-                                Clay_ElementId tabId = Clay_GetElementIdWithIndex(CLAY_STRING("TabPageTab"), (uint32_t)i);
-                                ClayWidgets_TabEx(&ui, tabId, kTabPages[i].label, i, &activeTab, CLAY_WIDGETS_TAB_STYLE_ATTACHED);
-                            }
-                        }
-
-                        CLAY(CLAY_ID("TabBody"), {
-                            .layout = {
-                                .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_GROW(0) },
-                                .padding = CLAY_PADDING_ALL(ui.theme.spacing.lg),
-                                .childGap = ui.theme.spacing.sm,
-                                .layoutDirection = CLAY_TOP_TO_BOTTOM,
-                            },
-                            .border = {
-                                .color = ui.theme.borderColor,
-                                .width = { .left = 0, .right = 0, .top = 1, .bottom = 0 },
-                            },
-                        }) {
-                            int tabIndex = (activeTab >= 0 && activeTab < kTabPageCount) ? activeTab : 0;
-                            ClayWidgets_Heading(&ui, kTabPages[tabIndex].heading);
-                            ClayWidgets_Label(&ui, kTabPages[tabIndex].body);
-                        }
-                    }
-                }
-            }
-
-            // Right-click context menu, declared at root so its panel floats
-            // above every view. Opened by the CtxTarget region above.
-            if (ClayWidgets_BeginContextMenu(&ui, CLAY_ID("CanvasMenu"))) {
-                if (ClayWidgets_MenuItem(&ui, CLAY_ID("CtxCut"), CLAY_STRING("Cut"))) {
-                    std::strncpy(statusLine, "Context: Cut", sizeof(statusLine));
-                    statusLine[sizeof(statusLine) - 1] = '\0';
-                }
-                if (ClayWidgets_MenuItem(&ui, CLAY_ID("CtxCopy"), CLAY_STRING("Copy"))) {
-                    std::strncpy(statusLine, "Context: Copy", sizeof(statusLine));
-                    statusLine[sizeof(statusLine) - 1] = '\0';
-                }
-                if (ClayWidgets_MenuItem(&ui, CLAY_ID("CtxPaste"), CLAY_STRING("Paste"))) {
-                    std::strncpy(statusLine, "Context: Paste", sizeof(statusLine));
-                    statusLine[sizeof(statusLine) - 1] = '\0';
-                }
-                ClayWidgets_MenuSeparator(&ui);
-                if (ClayWidgets_MenuItem(&ui, CLAY_ID("CtxProps"), CLAY_STRING("Properties..."))) {
-                    std::strncpy(statusLine, "Context: Properties", sizeof(statusLine));
-                    statusLine[sizeof(statusLine) - 1] = '\0';
-                }
-                ClayWidgets_EndContextMenu(&ui, CLAY_ID("CanvasMenu"));
-            }
-
-            // Confirmation dialog, declared last so it overlays every view. The
-            // scrim dims and blocks the UI behind it until dismissed.
-            if (ClayWidgets_BeginModal(&ui, CLAY_ID("ConfirmModal"), CLAY_STRING("Delete project?"), &showConfirmModal)) {
-                ClayWidgets_Label(&ui, CLAY_STRING("This permanently removes the project and cannot be undone."));
-
-                CLAY(CLAY_ID("ModalButtonRow"), {
-                    .layout = {
-                        .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_FIT(0, 0) },
-                        .childGap = ui.theme.spacing.sm,
-                        .childAlignment = { .x = CLAY_ALIGN_X_RIGHT, .y = CLAY_ALIGN_Y_CENTER },
-                        .layoutDirection = CLAY_LEFT_TO_RIGHT,
-                    },
-                }) {
-                    if (ClayWidgets_Button(&ui, CLAY_ID("ModalCancel"), CLAY_STRING("Cancel"))) {
-                        showConfirmModal = false;
-                    }
-                    if (ClayWidgets_Button(&ui, CLAY_ID("ModalDelete"), CLAY_STRING("Delete"))) {
-                        showConfirmModal = false;
-                        std::strncpy(statusLine, "Project deleted", sizeof(statusLine));
-                        statusLine[sizeof(statusLine) - 1] = '\0';
-                    }
-                }
-
-                ClayWidgets_EndModal(&ui, CLAY_ID("ConfirmModal"));
-            }
-
-            // Transient toast layer, declared last so it floats above everything.
+            // Floating layers last so they overlay every view; the toast layer
+            // floats above even those.
+            DrawFloatingLayers(ui, demo);
             ClayWidgets_ToastLayer(&ui);
         }
 
@@ -1283,10 +1890,10 @@ int main(int argc, char **argv) {
     }
 #endif
 
-    UnloadTexture(iconCheck);
-    UnloadTexture(iconPlay);
-    UnloadTexture(iconCircle);
-    UnloadTexture(iconSquare);
+    UnloadTexture(icons.check);
+    UnloadTexture(icons.play);
+    UnloadTexture(icons.circle);
+    UnloadTexture(icons.square);
     if (customFontLoaded) {
         UnloadFont(fonts[0]);
     }

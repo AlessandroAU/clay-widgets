@@ -233,6 +233,7 @@ typedef struct ClayWidgets_ScrollPanelOptions {
 #include "text-input.h"
 #include "combo.h"
 #include "listbox.h"
+#include "list-row.h"
 #include "segmented.h"
 #include "stepper.h"
 #include "table.h"

@@ -28,6 +28,7 @@ Widget layer built on top of Clay with a raylib demo application.
 - Text input
 - Combo box (dropdown select)
 - List box (selectable, keyboard-navigable list)
+- Selectable list row (color swatch + label + trailing text)
 - Segmented control (joined single-select buttons)
 - Stepper / number input (+/- with min/max/step)
 - Badge / chip / tag (status pills)
@@ -87,12 +88,21 @@ Notes and knobs:
 
 ## Demo coverage
 
-- Action buttons for apply/reset flows.
-- Multiple text fields for simple form input.
-- Checkbox and radio groups for boolean and single-choice settings.
-- Sliders paired with progress bars for continuous values.
-- Theme preset switching between Slate, Sand, and Forest palettes.
-- Live state panel that echoes the current widget state and focused widget id.
+The demo is organized like a small application, with four views:
+
+- **Dashboard** (0): live task statistics in stat cards, a completion progress
+  bar, a selectable data table, and quick-action buttons in all variants
+  (default, primary, danger, disabled).
+- **Tasks** (1): a working to-do manager - add tasks with Enter or a primary
+  button, filter with a segmented control, select rows (the list-row widget
+  with priority swatches and trailing text), edit the selected task in place,
+  and delete via a confirming modal or right-click context menu.
+- **Gallery** (2): the full widget catalog grouped into cards - buttons, text
+  and choice inputs, ranges, attached tabs, toggles/checks, tree, icons,
+  badges, and overlay demos (toasts, modal, context menu, tooltips).
+- **Settings** (3): theme preset switching (Slate, Sand, Forest, Windows), an
+  animations toggle, a notifications toggle that gates the demo's toasts, and
+  a live diagnostics card (focused widget id, pointer, fps).
 
 ## MSYS2 setup (recommended)
 
@@ -199,7 +209,7 @@ clay-widgets-demo --shot out.png [--view N] [--frames N] [--theme N]
                   [--mouse2 X Y] [--mousedown2] [--openmodal] [--toast] [--no-anim]
 ```
 
-- `--view` selects Settings (0), Documents (1) or Tab Plane (2).
+- `--view` selects Dashboard (0), Tasks (1), Gallery (2) or Settings (3).
 - `--no-anim` turns off all widget transitions so a single frame is the settled
   state. Because animations are time-based, without this a low `--frames` count
   captures a mid-transition frame; either pass `--no-anim`, or raise `--frames`

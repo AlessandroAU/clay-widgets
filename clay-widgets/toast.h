@@ -72,15 +72,21 @@ void ClayWidgets_ToastLayer(ClayWidgets_Context *ctx) {
     Clay_Color accent = ClayWidgets__ToastAccent(ctx, ctx->toastVariant);
     Clay_ElementId toastId = Clay_GetElementIdWithIndex(CLAY_STRING("ClayWidgetsToast"), 1);
 
+    // The accent stripe is the card's own background showing through a left
+    // inset: a 4px child can't bend around the card's larger corner radius, so
+    // painting it as a stripe element would poke past the rounded silhouette.
+    // The surface layer covers everything but the leading 4px, its left
+    // corners tightened by the inset so the stripe tracks the card's arc.
+    float stripeWidth = 4.0f;
+    float rOuter = (float)ctx->theme.radiusMd;
+    float rInner = rOuter > stripeWidth ? rOuter - stripeWidth : 0.0f;
+
     CLAY(toastId, {
         .layout = {
             .sizing = { .width = CLAY_SIZING_FIT(0, 0), .height = CLAY_SIZING_FIT(0, 0) },
-            .padding = { .left = 0, .right = ctx->theme.spacing.lg, .top = 0, .bottom = 0 },
-            .childGap = ctx->theme.spacing.md,
-            .childAlignment = { .x = CLAY_ALIGN_X_LEFT, .y = CLAY_ALIGN_Y_CENTER },
-            .layoutDirection = CLAY_LEFT_TO_RIGHT,
+            .padding = { .left = (uint16_t)stripeWidth, .right = 0, .top = 0, .bottom = 0 },
         },
-        .backgroundColor = ctx->theme.surfaceAltColor,
+        .backgroundColor = accent,
         .cornerRadius = CLAY_CORNER_RADIUS(ctx->theme.radiusMd),
         .floating = {
             .offset = { .x = 0.0f, .y = -28.0f },
@@ -97,20 +103,19 @@ void ClayWidgets_ToastLayer(ClayWidgets_Context *ctx) {
             .width = { .left = 1, .right = 1, .top = 1, .bottom = 1 },
         },
     }) {
-        // Accent stripe down the leading edge.
         CLAY_AUTO_ID({
             .layout = {
-                .sizing = { .width = CLAY_SIZING_FIXED(4), .height = CLAY_SIZING_GROW(0) },
+                .sizing = { .width = CLAY_SIZING_FIT(0, 0), .height = CLAY_SIZING_GROW(0) },
+                .padding = {
+                    .left = (uint16_t)(ctx->theme.spacing.md + ctx->theme.spacing.xs),
+                    .right = ctx->theme.spacing.lg,
+                    .top = ctx->theme.spacing.md,
+                    .bottom = ctx->theme.spacing.md,
+                },
+                .childAlignment = { .x = CLAY_ALIGN_X_LEFT, .y = CLAY_ALIGN_Y_CENTER },
             },
-            .backgroundColor = accent,
-            .cornerRadius = { .topLeft = (float)ctx->theme.radiusMd, .topRight = 0.0f, .bottomLeft = (float)ctx->theme.radiusMd, .bottomRight = 0.0f },
-        }) {}
-
-        CLAY_AUTO_ID({
-            .layout = {
-                .sizing = { .width = CLAY_SIZING_FIT(0, 0), .height = CLAY_SIZING_FIT(0, 0) },
-                .padding = { .left = ctx->theme.spacing.xs, .right = 0, .top = ctx->theme.spacing.md, .bottom = ctx->theme.spacing.md },
-            },
+            .backgroundColor = ctx->theme.surfaceAltColor,
+            .cornerRadius = { .topLeft = rInner, .topRight = rOuter, .bottomLeft = rInner, .bottomRight = rOuter },
         }) {
             CLAY_TEXT(message, {
                 .textColor = ctx->theme.textColor,
