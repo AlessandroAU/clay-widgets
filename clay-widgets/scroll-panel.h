@@ -38,6 +38,13 @@ Clay_ElementId ClayWidgets_BeginScrollPanel(
         return contentId;
     }
 
+    // Record this panel's scroll container so clip widgets nested inside it (a
+    // table, a text field) can forward a swallowed wheel back to it.
+    if (ctx->scrollPanelDepth < CLAY_WIDGETS_MAX_SCROLL_NESTING) {
+        ctx->scrollPanelStack[ctx->scrollPanelDepth] = contentId.id;
+    }
+    ctx->scrollPanelDepth++;
+
     uint16_t fadeMargin = options.fadeMargin > 0 ? options.fadeMargin : ctx->theme.spacing.lg;
     uint16_t padding = options.padding > 0 ? options.padding : ctx->theme.spacing.md;
     uint16_t childGap = options.childGap > 0 ? options.childGap : ctx->theme.spacing.md;
@@ -77,6 +84,9 @@ Clay_ElementId ClayWidgets_BeginScrollPanel(
 void ClayWidgets_EndScrollPanel(ClayWidgets_Context *ctx, Clay_ElementId id) {
     if (!ctx) {
         return;
+    }
+    if (ctx->scrollPanelDepth > 0) {
+        ctx->scrollPanelDepth--;
     }
     ClayWidgets_ScrollBar(ctx, ClayWidgets__ScrollPanelContentId(id));
     Clay__CloseElement(); // inner clip content

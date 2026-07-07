@@ -85,7 +85,7 @@ bool ClayWidgets_ListBox(
             bool rowOver = Clay_PointerOver(rowId);
             bool selected = (i == *selectedIndex);
 
-            Clay_Color rowBg = { 0, 0, 0, 0 };
+            Clay_Color rowBg = ClayWidgets__FadeToClear(ctx->theme.hoverColor);
             if (selected) {
                 rowBg = ctx->theme.accentMutedColor;
             } else if (rowOver) {
@@ -105,6 +105,7 @@ bool ClayWidgets_ListBox(
                 },
                 .backgroundColor = rowBg,
                 .cornerRadius = CLAY_CORNER_RADIUS(ctx->theme.radiusSm),
+                .transition = ClayWidgets__ColorTransition(ctx),
             }) {
                 CLAY_TEXT(items[i], {
                     .textColor = ctx->theme.textColor,

@@ -39,9 +39,10 @@ bool ClayWidgets_TextInput(
     Clay_ElementId fieldId = Clay_GetElementIdWithIndex(CLAY_STRING("ClayWidgetsTextInputField"), id.id);
 
     bool over = Clay_PointerOver(id);
-    if (over) {
-        ctx->lastHoveredTextInputId = id.id;
-    }
+    // The field clips both axes but scrolls neither via Clay (its horizontal text
+    // scroll is manual), so let a vertical wheel over it fall through to an
+    // enclosing scroll panel instead of being swallowed.
+    ClayWidgets__RegisterWheelFallthrough(ctx, fieldId, over);
     ClayWidgets__RegisterFocusable(ctx, id, over);
     if (ctx->input.pointerPressed && !over && ctx->focusedId == id.id) {
         ctx->focusedId = 0;

@@ -31,7 +31,6 @@ static bool ClayWidgets__TreeRow(ClayWidgets_Context *ctx, Clay_ElementId id, Cl
         depth = 0;
     }
     uint16_t indent = (uint16_t)(ctx->theme.spacing.sm + depth * 18);
-    Clay_Color transparent = { 0, 0, 0, 0 };
 
     CLAY(id, {
         .layout = {
@@ -41,8 +40,9 @@ static bool ClayWidgets__TreeRow(ClayWidgets_Context *ctx, Clay_ElementId id, Cl
             .childAlignment = { .x = CLAY_ALIGN_X_LEFT, .y = CLAY_ALIGN_Y_CENTER },
             .layoutDirection = CLAY_LEFT_TO_RIGHT,
         },
-        .backgroundColor = over ? ctx->theme.hoverColor : transparent,
+        .backgroundColor = over ? ctx->theme.hoverColor : ClayWidgets__FadeToClear(ctx->theme.hoverColor),
         .cornerRadius = CLAY_CORNER_RADIUS(ctx->theme.radiusSm),
+        .transition = ClayWidgets__ColorTransition(ctx),
     }) {
         CLAY_AUTO_ID({
             .layout = {

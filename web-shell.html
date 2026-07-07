@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>clay-widgets demo</title>
+    <style>
+      html, body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #12141a; /* matches the app's ClearBackground color */
+      }
+      /* Fill the viewport. raylib/emscripten resizes the canvas to the window
+         (see the resize callback in main.cpp), so the app reflows on resize. */
+      canvas.emscripten {
+        display: block;
+        width: 100vw;
+        height: 100vh;
+        outline: none;
+      }
+      #loading {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #9aa4b2;
+        font: 15px/1.4 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+        letter-spacing: 0.02em;
+        transition: opacity 0.3s ease;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="loading">Loading&hellip;</div>
+    <canvas class="emscripten" id="canvas" oncontextmenu="event.preventDefault()" tabindex="-1"></canvas>
+    <script>
+      var Module = {
+        canvas: document.getElementById('canvas'),
+        print: function () { console.log(Array.prototype.join.call(arguments, ' ')); },
+        printErr: function () { console.error(Array.prototype.join.call(arguments, ' ')); },
+        onRuntimeInitialized: function () {
+          var el = document.getElementById('loading');
+          if (el) { el.style.opacity = '0'; setTimeout(function () { el.remove(); }, 300); }
+        },
+      };
+    </script>
+    {{{ SCRIPT }}}
+  </body>
+</html>

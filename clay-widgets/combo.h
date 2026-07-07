@@ -166,6 +166,7 @@ bool ClayWidgets_Combo(
                 .color = (focused || isOpen) ? ctx->theme.focusRingColor : ctx->theme.borderColor,
                 .width = { .left = 1, .right = 1, .top = 1, .bottom = 1 },
             },
+            .transition = ClayWidgets__ColorTransition(ctx),
         }) {
             CLAY_AUTO_ID({
                 .layout = {
@@ -238,6 +239,7 @@ bool ClayWidgets_Combo(
                             .childAlignment = { .x = CLAY_ALIGN_X_LEFT, .y = CLAY_ALIGN_Y_CENTER },
                         },
                         .backgroundColor = itemBg,
+                        .transition = ClayWidgets__ColorTransition(ctx),
                     }) {
                         CLAY_TEXT(items[i], {
                             .textColor = ctx->theme.textColor,

@@ -120,6 +120,135 @@ static Clay_Color ClayWidgets__MixColor(Clay_Color a, Clay_Color b, float t) {
     return mixed;
 }
 
+#ifndef CLAY_WIDGETS_ANIM_HOVER_DURATION
+#define CLAY_WIDGETS_ANIM_HOVER_DURATION 0.12f
+#endif
+
+#ifndef CLAY_WIDGETS_ANIM_ENTER_DURATION
+#define CLAY_WIDGETS_ANIM_ENTER_DURATION 0.18f
+#endif
+
+// Enter-transition initial state: start fully transparent so an appearing
+// element fades its own fill in from alpha 0 to its target color. Only the
+// element's own rectangle fades - Clay transitions do not cascade to child
+// elements - so this is used on solid overlays (a modal scrim) whose visual is
+// just their own fill, not on panels that host crisp child text.
+static Clay_TransitionData ClayWidgets__FadeInInitialState(Clay_TransitionData targetState, Clay_TransitionProperty properties) {
+    (void)properties;
+    targetState.backgroundColor.a = 0;
+    return targetState;
+}
+
+// Fade-in transition for a modal scrim: its dim overlay eases from transparent
+// to its target alpha when the modal opens, while the dialog on top stays crisp.
+// ALLOW_INTERACTIONS keeps the dialog clickable during the fade (the default
+// would disable the subtree's input while entering). Zeroed when animations are
+// off, so the scrim snaps to full dim.
+static Clay_TransitionElementConfig ClayWidgets__ScrimFadeIn(const ClayWidgets_Context *ctx) {
+    Clay_TransitionElementConfig cfg;
+    memset(&cfg, 0, sizeof(cfg));
+    if (ctx && ctx->animationsEnabled) {
+        cfg.handler = Clay_EaseOut;
+        cfg.duration = CLAY_WIDGETS_ANIM_ENTER_DURATION;
+        cfg.properties = CLAY_TRANSITION_PROPERTY_BACKGROUND_COLOR;
+        cfg.interactionHandling = CLAY_TRANSITION_ALLOW_INTERACTIONS_WHILE_TRANSITIONING_POSITION;
+        cfg.enter.setInitialState = ClayWidgets__FadeInInitialState;
+        // TRIGGER (not SKIP) so a root-attached overlay fades in whenever it
+        // appears, even on the very first frame its parent (the root) also
+        // appears - otherwise a modal opened on frame 0 would pop in at full dim.
+        cfg.enter.trigger = CLAY_TRANSITION_ENTER_TRIGGER_ON_FIRST_PARENT_FRAME;
+    }
+    return cfg;
+}
+
+// The resting "cleared" background for a surface that fades a hover/selected
+// fill in and out. Returns the fill's own RGB with alpha 0 - NOT {0,0,0,0}.
+// Because a color transition eases every channel, a {0,0,0,0} resting state
+// would drag the RGB through black as the alpha ramps, so a fill appears to fade
+// in from a dark flash instead of from its true hue. Keeping the RGB fixed and
+// easing only the alpha fades cleanly from/to nothing. At rest (alpha 0) nothing
+// is drawn, so this is visually identical to full transparency when idle.
+static Clay_Color ClayWidgets__FadeToClear(Clay_Color fill) {
+    fill.a = 0;
+    return fill;
+}
+
+// Background-color transition used by interactive surfaces (buttons, list/table
+// rows, tabs, cells) so hover / selected / pressed color changes fade in over a
+// short ease instead of snapping. Clay retains the previous frame's rendered
+// color per element id and eases toward the new target whenever it changes, so a
+// widget only needs to drop this into its element's `.transition` field and keep
+// setting `.backgroundColor` to the desired target as it already does.
+//
+// Returns a zeroed (handler == NULL) config when animations are disabled, which
+// Clay treats as no transition at all - giving instant, deterministic colors for
+// screenshots and honoring a reduce-motion preference.
+static Clay_TransitionElementConfig ClayWidgets__ColorTransition(const ClayWidgets_Context *ctx) {
+    Clay_TransitionElementConfig cfg;
+    memset(&cfg, 0, sizeof(cfg));
+    if (ctx && ctx->animationsEnabled) {
+        cfg.handler = Clay_EaseOut;
+        cfg.duration = CLAY_WIDGETS_ANIM_HOVER_DURATION;
+        cfg.properties = CLAY_TRANSITION_PROPERTY_BACKGROUND_COLOR;
+    }
+    return cfg;
+}
+
+// Eases a per-id scalar toward `target` each frame and returns the current
+// value - the Route B counterpart to Clay's declarative transitions, for effects
+// that aren't a property of a single element (e.g. a toggle knob sliding across
+// its track). `speed` is an exponential-smoothing rate per second, so the motion
+// is frame-rate independent. On the first request for an id, or when its widget
+// reappears after being absent, the value snaps to the target so widgets render
+// settled instead of sweeping in from a stale value. Returns `target` unchanged
+// when animations are disabled.
+static float ClayWidgets__AnimTo(ClayWidgets_Context *ctx, uint32_t id, float target, float speed) {
+    if (!ctx || !ctx->animationsEnabled || id == 0) {
+        return target;
+    }
+
+    ClayWidgets_AnimSlot *slot = NULL;
+    for (int32_t i = 0; i < CLAY_WIDGETS_MAX_ANIMS; ++i) {
+        if (ctx->anims[i].id == id) {
+            slot = &ctx->anims[i];
+            break;
+        }
+    }
+
+    // No slot yet: claim an empty or stale one, starting settled at the target.
+    if (!slot) {
+        for (int32_t i = 0; i < CLAY_WIDGETS_MAX_ANIMS; ++i) {
+            if (ctx->anims[i].id == 0 || ctx->anims[i].frame + 1 < ctx->animFrame) {
+                ctx->anims[i].id = id;
+                ctx->anims[i].value = target;
+                ctx->anims[i].frame = ctx->animFrame;
+                return target;
+            }
+        }
+        return target; // store full; skip animating rather than evict a live slot
+    }
+
+    // Present but not touched last frame: the widget reappeared, so restart
+    // settled rather than sweeping from wherever it left off.
+    if (slot->frame + 1 < ctx->animFrame) {
+        slot->value = target;
+        slot->frame = ctx->animFrame;
+        return target;
+    }
+
+    float dt = ctx->input.deltaTime;
+    if (dt < 0.0f) {
+        dt = 0.0f;
+    }
+    float factor = 1.0f - expf(-dt * speed);
+    slot->value += (target - slot->value) * factor;
+    if (fabsf(target - slot->value) < 0.0015f) {
+        slot->value = target;
+    }
+    slot->frame = ctx->animFrame;
+    return slot->value;
+}
+
 static bool ClayWidgets__ConsumeClick(ClayWidgets_Context *ctx, bool over) {
     if (!ctx) {
         return false;
@@ -458,6 +587,29 @@ static bool ClayWidgets__ActivateFocused(ClayWidgets_Context *ctx, Clay_ElementI
     return ctx && ctx->focusedId == id.id && ctx->input.keyEnter;
 }
 
+// Registers a hovered clip element whose Clay clip becomes a scroll container but
+// can't consume a vertical wheel (a horizontally-clipped table, a single-line
+// text field). Clay routes the wheel to the innermost clip under the pointer and
+// drops it if that clip can't scroll in the wheel's direction, so without this
+// the widget silently eats the scroll. Recorded here (during layout, using last
+// frame's box) and acted on in the next BeginFrame, which nudges the wheel to the
+// scrolling ancestor. Call every frame the pointer is over the element.
+static void ClayWidgets__RegisterWheelFallthrough(ClayWidgets_Context *ctx, Clay_ElementId clipId, bool pointerOver) {
+    if (!ctx || !pointerOver) {
+        return;
+    }
+    Clay_ElementData data = Clay_GetElementData(clipId);
+    if (data.found) {
+        ctx->wheelFallthroughId = clipId.id;
+        ctx->wheelFallthroughBox = data.boundingBox;
+        // The innermost scroll panel currently open around this clip is the one to
+        // forward the wheel to. 0 if the clip isn't inside a scroll panel.
+        ctx->wheelFallthroughPanelId = ctx->scrollPanelDepth > 0
+            ? ctx->scrollPanelStack[ctx->scrollPanelDepth - 1]
+            : 0;
+    }
+}
+
 static int32_t ClayWidgets__CursorFromMouse(
     ClayWidgets_Context *ctx,
     const char *buffer,
@@ -479,6 +631,7 @@ void ClayWidgets_Init(ClayWidgets_Context *ctx, ClayWidgets_Theme theme) {
     }
     memset(ctx, 0, sizeof(*ctx));
     ctx->theme = theme;
+    ctx->animationsEnabled = true;
 }
 
 void ClayWidgets_SetMeasureTextFunction(ClayWidgets_Context *ctx, ClayWidgets_MeasureTextFunction measureText, void *userData) {
@@ -502,6 +655,8 @@ void ClayWidgets_BeginFrame(
     ctx->input = input;
     ctx->layoutDimensions = layoutSize;
     ctx->textScratchNext = 0;
+    ctx->scrollPanelDepth = 0;
+    ctx->animFrame++;
     ctx->elapsedTime += input.deltaTime;
     ClayWidgets__AdvanceFocus(ctx);
     ctx->focusCount = 0;
@@ -526,27 +681,38 @@ void ClayWidgets_BeginFrame(
     Clay_Vector2 scrollDelta = { input.scrollX, input.scrollY };
     Clay_SetPointerState(pointerPosition, input.pointerDown);
 
-    bool rerouteWheelToParent = false;
-    uint32_t wheelTargetTextInputId = ctx->textInputId != 0 ? ctx->textInputId : ctx->lastHoveredTextInputId;
-    if (scrollDelta.y != 0.0f && wheelTargetTextInputId != 0) {
-        Clay_ElementId activeFieldId = Clay_GetElementIdWithIndex(CLAY_STRING("ClayWidgetsTextInputField"), wheelTargetTextInputId);
-        Clay_ElementData activeFieldData = Clay_GetElementData(activeFieldId);
-        if (activeFieldData.found && ClayWidgets__PointInBoundingBox(pointerPosition.x, pointerPosition.y, activeFieldData.boundingBox)) {
-            rerouteWheelToParent = true;
-            Clay_Vector2 reroutedPointer = pointerPosition;
-            reroutedPointer.y = activeFieldData.boundingBox.y - 1.0f;
-            if (reroutedPointer.y < 0.0f) {
-                reroutedPointer.y = 0.0f;
-            }
-            Clay_SetPointerState(reroutedPointer, input.pointerDown);
-        }
-    }
-
     Clay_UpdateScrollContainers(enableDragScroll, scrollDelta, input.deltaTime);
 
-    if (rerouteWheelToParent) {
-        Clay_SetPointerState(pointerPosition, input.pointerDown);
+    // A widget whose clip can't consume a vertical wheel (a horizontally-clipped
+    // table, a single-line text field) registered itself last frame while
+    // hovered. Clay just handed it the wheel and dropped it, so forward that
+    // wheel straight to the scroll panel the widget lives in. Done directly
+    // (rather than by moving the pointer) so it works even when the clip covers
+    // the whole panel, leaving no bare panel pixel to reroute onto.
+    if (scrollDelta.y != 0.0f && ctx->wheelFallthroughId != 0 && ctx->wheelFallthroughPanelId != 0
+        && ClayWidgets__PointInBoundingBox(pointerPosition.x, pointerPosition.y, ctx->wheelFallthroughBox)) {
+        Clay_ElementId panelId = CLAY__INIT(Clay_ElementId) CLAY__DEFAULT_STRUCT;
+        panelId.id = ctx->wheelFallthroughPanelId;
+        Clay_ScrollContainerData panelScroll = Clay_GetScrollContainerData(panelId);
+        if (panelScroll.found && panelScroll.scrollPosition) {
+            float maxScroll = panelScroll.contentDimensions.height - panelScroll.scrollContainerDimensions.height;
+            if (maxScroll < 0.0f) {
+                maxScroll = 0.0f;
+            }
+            float y = panelScroll.scrollPosition->y + scrollDelta.y * 10.0f; // match Clay's wheel step
+            if (y > 0.0f) {
+                y = 0.0f;
+            }
+            if (y < -maxScroll) {
+                y = -maxScroll;
+            }
+            panelScroll.scrollPosition->y = y;
+        }
     }
+    // Consume the registration; hovered clip widgets re-register during this
+    // frame's layout, so a stale entry can't keep scrolling after the pointer
+    // leaves the widget.
+    ctx->wheelFallthroughId = 0;
 
     Clay_BeginLayout();
 }

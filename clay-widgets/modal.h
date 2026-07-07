@@ -80,6 +80,7 @@ bool ClayWidgets_BeginModal(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_St
             .pointerCaptureMode = CLAY_POINTER_CAPTURE_MODE_CAPTURE,
             .attachTo = CLAY_ATTACH_TO_ROOT,
         },
+        .transition = ClayWidgets__ScrimFadeIn(ctx),
     });
 
     // Dialog panel.

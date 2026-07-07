@@ -35,6 +35,13 @@ void ClayWidgets_BeginTable(ClayWidgets_Context *ctx, Clay_ElementId id, const C
     if (!ctx || !columns || columnCount <= 0) {
         return;
     }
+
+    // The table clips horizontally (so columns can't spill past its rounded
+    // frame), which makes Clay treat it as a scroll container. It can't scroll
+    // vertically, so register it to let a vertical wheel fall through to an
+    // enclosing scroll panel rather than being eaten here.
+    ClayWidgets__RegisterWheelFallthrough(ctx, id, Clay_PointerOver(id));
+
     int32_t maxCols = (int32_t)(sizeof(ctx->tableColWidths) / sizeof(ctx->tableColWidths[0]));
     ctx->tableColCount = columnCount < maxCols ? columnCount : maxCols;
     for (int32_t i = 0; i < ctx->tableColCount; ++i) {
@@ -96,8 +103,7 @@ bool ClayWidgets_TableRow(ClayWidgets_Context *ctx, Clay_ElementId rowId, const 
     bool over = Clay_PointerOver(rowId);
     bool clicked = ClayWidgets__ConsumeClick(ctx, over);
 
-    Clay_Color transparent = { 0, 0, 0, 0 };
-    Clay_Color rowBg = transparent;
+    Clay_Color rowBg = ClayWidgets__FadeToClear(ctx->theme.hoverColor);
     if (selected) {
         rowBg = ctx->theme.accentMutedColor;
     } else if (over) {
@@ -115,6 +121,7 @@ bool ClayWidgets_TableRow(ClayWidgets_Context *ctx, Clay_ElementId rowId, const 
             .layoutDirection = CLAY_LEFT_TO_RIGHT,
         },
         .backgroundColor = rowBg,
+        .transition = ClayWidgets__ColorTransition(ctx),
     }) {
         for (int32_t i = 0; i < count; ++i) {
             CLAY_AUTO_ID({

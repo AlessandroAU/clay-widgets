@@ -49,6 +49,42 @@ Widget layer built on top of Clay with a raylib demo application.
 - Keyboard activation with `Enter` for buttons, checkboxes, and radio buttons.
 - Focused text input supports typing, `Backspace`, `Delete` to clear, and `Escape` to blur.
 
+## Animations
+
+Widgets animate their state changes using Clay's built-in transition engine
+(`Clay_EaseOut`), so no extra per-frame bookkeeping is needed - a widget just
+declares a `.transition` on its element and keeps setting its target color as
+usual. Two kinds are used:
+
+- **Color transitions** - hover / selected / pressed background colors ease in
+  over a short curve instead of snapping. Wired into buttons, list/table/tree
+  rows, tabs, segmented cells, menu items and combo triggers/items, and the
+  toggle track. (Checkbox/radio boxes keep a constant fill, so they are not
+  animated here.)
+- **Enter transition** - the modal scrim's dimming overlay fades in when a modal
+  opens, while the dialog stays crisp and remains clickable during the fade.
+
+Some effects aren't a property of a single element and so can't be a Clay
+transition - the toggle knob *sliding* across its track is the canonical case.
+For these the library keeps a small per-widget eased scalar keyed by element id
+(`ClayWidgets__AnimTo`), advanced each frame with frame-rate-independent
+exponential smoothing. The toggle drives that 0..1 value into its knob position;
+`animationsEnabled` and reduce-motion apply here too (the value snaps to its
+target). This is the pattern to reuse for future motion like an accordion's
+height or a tab underline.
+
+Notes and knobs:
+
+- `ctx->animationsEnabled` (default `true`) globally turns transitions off, which
+  makes them snap instantly. Set it to `false` to honor a reduce-motion
+  preference or to get deterministic frames for screenshot testing.
+- Durations are compile-time tunables: `CLAY_WIDGETS_ANIM_HOVER_DURATION`
+  (default `0.12f`) and `CLAY_WIDGETS_ANIM_ENTER_DURATION` (default `0.18f`).
+- Clay transitions apply to the element they are set on and do **not** cascade to
+  child elements, so fade-ins are only used on solid overlays (the scrim) whose
+  visual is their own fill - not on panels that host crisp child text. Dropdown
+  and toast enter/exit animations would need per-widget opacity handling instead.
+
 ## Demo coverage
 
 - Action buttons for apply/reset flows.
@@ -94,6 +130,39 @@ mingw32-make run
 
 or launch `./clay-widgets-demo.exe` directly.
 
+## Web build (WebAssembly + canvas)
+
+The same raylib app can be compiled to WebAssembly and run in a browser on an
+HTML `<canvas>`, so the web page looks identical to the desktop demo. This uses
+[Emscripten](https://emscripten.org/); `build-web.py` installs it for you.
+
+From the project root:
+
+```bash
+python build-web.py           # installs emsdk (first run, ~1GB) + builds
+python build-web.py --serve   # build, then serve at http://localhost:8000
+```
+
+This produces `web/index.html` (plus `index.js`, `index.wasm`, `index.data`).
+The output must be served over HTTP - browsers won't `fetch` the `.wasm`/`.data`
+from a `file://` URL. Use `--serve`, or point any static server at `web/`.
+
+Other flags:
+
+- `--clean` removes `web/` and the web raylib lib before building.
+- `--skip-raylib` reuses an existing `libraylib.web.a` (skips the raylib rebuild).
+- `--emsdk-version X` pins a specific Emscripten SDK version (default `latest`).
+
+Notes:
+
+- The web build is entirely separate from the desktop one: raylib for web is
+  archived as `libraylib.web.a`, so it never clashes with the desktop
+  `libraylib.a`. The Emscripten SDK lands in `subprojects/emsdk/` (git-ignored).
+- `main.cpp` shares one code path for both targets; on web (`__EMSCRIPTEN__`) the
+  frame loop is driven by `emscripten_set_main_loop` instead of a native
+  `while (!WindowShouldClose())` loop. The desktop build is unchanged.
+- The screenshot harness flags are desktop-only.
+
 ## Clean
 
 ```bash
@@ -127,10 +196,14 @@ the keyboard:
 ```
 clay-widgets-demo --shot out.png [--view N] [--frames N] [--theme N]
                   [--mouse X Y] [--mousedown] [--rightclick] [--scroll DY]
-                  [--mouse2 X Y] [--mousedown2] [--openmodal] [--toast]
+                  [--mouse2 X Y] [--mousedown2] [--openmodal] [--toast] [--no-anim]
 ```
 
 - `--view` selects Settings (0), Documents (1) or Tab Plane (2).
+- `--no-anim` turns off all widget transitions so a single frame is the settled
+  state. Because animations are time-based, without this a low `--frames` count
+  captures a mid-transition frame; either pass `--no-anim`, or raise `--frames`
+  (e.g. 20+) to let the animation settle.
 - `--theme` picks a preset (1 Slate, 2 Sand, 3 Forest, 4 Windows).
 - `--mouse`/`--mousedown` inject a pointer and a scripted click (`--rightclick`
   makes that a right-click, e.g. to open a context menu); `--mouse2`/

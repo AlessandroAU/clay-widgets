@@ -32,9 +32,16 @@ bool ClayWidgets_Toggle(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_String
     const float trackWidth = 40.0f;
     const float trackHeight = 22.0f;
     const float knobSize = 18.0f;
+    const float trackPad = 2.0f;
 
-    // Track fills with the accent when on; the knob slides via child alignment.
+    // Track fills with the accent when on; the knob slides from left (off) to
+    // right (on). The Clay color transition eases the track fill; the knob's
+    // horizontal position is a Route B eased scalar (0 = off, 1 = on) driven into
+    // the track's left padding, since a slide isn't a property of one element.
     Clay_Color trackColor = *value ? ctx->theme.accentColor : ctx->theme.surfaceAltColor;
+    float knobT = ClayWidgets__AnimTo(ctx, id.id, *value ? 1.0f : 0.0f, 18.0f);
+    float knobTravel = trackWidth - 2.0f * trackPad - knobSize;
+    uint16_t knobLeftPad = (uint16_t)(trackPad + knobT * knobTravel + 0.5f);
 
     CLAY(id, {
         .layout = {
@@ -50,9 +57,9 @@ bool ClayWidgets_Toggle(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_String
                     .width = CLAY_SIZING_FIXED(trackWidth),
                     .height = CLAY_SIZING_FIXED(trackHeight),
                 },
-                .padding = CLAY_PADDING_ALL(2),
+                .padding = { .left = knobLeftPad, .right = (uint16_t)trackPad, .top = (uint16_t)trackPad, .bottom = (uint16_t)trackPad },
                 .childAlignment = {
-                    .x = *value ? CLAY_ALIGN_X_RIGHT : CLAY_ALIGN_X_LEFT,
+                    .x = CLAY_ALIGN_X_LEFT,
                     .y = CLAY_ALIGN_Y_CENTER,
                 },
             },
@@ -62,6 +69,7 @@ bool ClayWidgets_Toggle(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_String
                 .color = (focused || over) ? ctx->theme.focusRingColor : ctx->theme.borderColor,
                 .width = { .left = 1, .right = 1, .top = 1, .bottom = 1 },
             },
+            .transition = ClayWidgets__ColorTransition(ctx),
         }) {
             CLAY_AUTO_ID({
                 .layout = {

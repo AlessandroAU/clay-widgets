@@ -84,7 +84,7 @@ bool ClayWidgets_BeginMenu(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_Str
         }
     }
 
-    Clay_Color triggerBg = (isOpen || overTrigger) ? ctx->theme.hoverColor : (Clay_Color){0, 0, 0, 0};
+    Clay_Color triggerBg = (isOpen || overTrigger) ? ctx->theme.hoverColor : ClayWidgets__FadeToClear(ctx->theme.hoverColor);
 
     CLAY(id, {
         .layout = {
@@ -99,6 +99,7 @@ bool ClayWidgets_BeginMenu(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_Str
         },
         .backgroundColor = triggerBg,
         .cornerRadius = CLAY_CORNER_RADIUS(ctx->theme.radiusSm),
+        .transition = ClayWidgets__ColorTransition(ctx),
     }) {
         CLAY_TEXT(title, {
             .textColor = ctx->theme.textColor,
@@ -175,8 +176,9 @@ bool ClayWidgets_MenuItem(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_Stri
             },
             .childAlignment = { .x = CLAY_ALIGN_X_LEFT, .y = CLAY_ALIGN_Y_CENTER },
         },
-        .backgroundColor = over ? ctx->theme.hoverColor : (Clay_Color){0, 0, 0, 0},
+        .backgroundColor = over ? ctx->theme.hoverColor : ClayWidgets__FadeToClear(ctx->theme.hoverColor),
         .cornerRadius = CLAY_CORNER_RADIUS(ctx->theme.radiusSm),
+        .transition = ClayWidgets__ColorTransition(ctx),
     }) {
         CLAY_TEXT(label, {
             .textColor = ctx->theme.textColor,

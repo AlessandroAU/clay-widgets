@@ -1,0 +1,9 @@
+# Emscripten SDK (installed by build-web.py, ~1GB)
+/subprojects/emsdk/
+
+# Web build output
+/web/
+/subprojects/raylib/src/libraylib.web.a
+
+# Build logs
+*.log

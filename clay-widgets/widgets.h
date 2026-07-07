@@ -23,6 +23,14 @@ extern "C" {
 #define CLAY_WIDGETS_SCROLLBAR_WIDTH 8
 #endif
 
+#ifndef CLAY_WIDGETS_MAX_ANIMS
+#define CLAY_WIDGETS_MAX_ANIMS 64
+#endif
+
+#ifndef CLAY_WIDGETS_MAX_SCROLL_NESTING
+#define CLAY_WIDGETS_MAX_SCROLL_NESTING 8
+#endif
+
 typedef struct ClayWidgets_Input {
     float mouseX;
     float mouseY;
@@ -87,6 +95,15 @@ typedef struct ClayWidgets_Theme {
     ClayWidgets_Spacing spacing;
 } ClayWidgets_Theme;
 
+// One eased scalar for a widget effect that a Clay property transition can't
+// express (e.g. a toggle knob's position). Keyed by element id; reclaimed when
+// its id stops being requested. See ClayWidgets__AnimTo.
+typedef struct ClayWidgets_AnimSlot {
+    uint32_t id;
+    uint32_t frame; // last frame this slot was requested; stale slots get reused
+    float value;    // current eased value
+} ClayWidgets_AnimSlot;
+
 typedef struct ClayWidgets_Context {
     ClayWidgets_Input input;
     ClayWidgets_Theme theme;
@@ -94,12 +111,38 @@ typedef struct ClayWidgets_Context {
     void *measureTextUserData;
     Clay_Dimensions layoutDimensions;
 
+    // When false, widgets emit no Clay transitions (colors/enter states snap
+    // instantly) and ClayWidgets__AnimTo returns its target directly. Defaults to
+    // true; turn off for deterministic screenshots or to honor a reduce-motion
+    // preference. See ClayWidgets__ColorTransition and ClayWidgets__AnimTo.
+    bool animationsEnabled;
+
+    // Per-widget eased scalars (Route B animations) plus the frame counter used
+    // to age out slots whose widget has disappeared.
+    ClayWidgets_AnimSlot anims[CLAY_WIDGETS_MAX_ANIMS];
+    uint32_t animFrame;
+
+    // A hovered widget clip that Clay treats as a scroll container but that can't
+    // consume a vertical wheel (a horizontally-clipped table, a single-line text
+    // field). Recorded during layout; next BeginFrame forwards the swallowed
+    // wheel straight to the enclosing scroll panel (wheelFallthroughPanelId) so
+    // the panel scrolls even when the clip covers all of it. Box is last frame's
+    // geometry, used to confirm the pointer is still over the clip.
+    uint32_t wheelFallthroughId;
+    uint32_t wheelFallthroughPanelId; // content id of the scroll panel to forward to (0 = none)
+    Clay_BoundingBox wheelFallthroughBox;
+
+    // Stack of open scroll-panel content ids, so a clip widget can find the
+    // scroll panel it lives in. Pushed by BeginScrollPanel, popped by
+    // EndScrollPanel, reset each frame.
+    uint32_t scrollPanelStack[CLAY_WIDGETS_MAX_SCROLL_NESTING];
+    int32_t scrollPanelDepth;
+
     uint32_t activeId;
     uint32_t focusedId;
     uint32_t focusOrder[CLAY_WIDGETS_MAX_FOCUSABLES];
     int32_t focusCount;
     uint32_t textInputId;
-    uint32_t lastHoveredTextInputId;
     int32_t textCursor;
     int32_t textSelectionAnchor;
     float textScrollX;

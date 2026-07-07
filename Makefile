@@ -10,13 +10,14 @@ LDFLAGS := -L$(RAYLIB_SRC_DIR)
 LDLIBS := -lraylib -lopengl32 -lgdi32 -lwinmm
 
 BUILD_DIR := build
+LOG := $(BUILD_DIR)/build.log
 
 APP := clay-widgets-demo.exe
 SRC := main.cpp
 OBJ := $(BUILD_DIR)/main.o
 DEP := $(OBJ:.o=.d)
 
-.PHONY: all raylib run clean raylib-clean
+.PHONY: all raylib run clean raylib-clean log
 
 all: $(APP)
 
@@ -36,6 +37,11 @@ $(APP): $(OBJ) | $(RAYLIB_LIB)
 
 run: $(APP)
 	./$(APP)
+
+# Rebuild from scratch, capturing all compiler output into build/build.log
+# (redirection syntax works under both cmd.exe and sh).
+log: | $(BUILD_DIR)
+	$(MAKE) -B all > $(LOG) 2>&1
 
 clean:
 	rm -f $(APP)

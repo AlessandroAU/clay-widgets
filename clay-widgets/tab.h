@@ -70,7 +70,7 @@ bool ClayWidgets_TabEx(
     Clay_Color transparent = { 0, 0, 0, 0 };
 
     if (style == CLAY_WIDGETS_TAB_STYLE_ATTACHED) {
-        Clay_Color background = transparent;
+        Clay_Color background = ClayWidgets__FadeToClear(ctx->theme.hoverColor);
         if (selected) {
             background = ctx->theme.surfaceColor;
         } else if (over) {
@@ -106,6 +106,7 @@ bool ClayWidgets_TabEx(
                 .color = underlineColor,
                 .width = { .left = 0, .right = 0, .top = 0, .bottom = underlineWidth },
             },
+            .transition = ClayWidgets__ColorTransition(ctx),
         }) {
             CLAY_TEXT(text, {
                 .textColor = labelColor,
@@ -144,6 +145,7 @@ bool ClayWidgets_TabEx(
             .color = borderColor,
             .width = { .left = 1, .right = 1, .top = 1, .bottom = 1 },
         },
+        .transition = ClayWidgets__ColorTransition(ctx),
     }) {
         CLAY_TEXT(text, {
             .textColor = selected ? ctx->theme.surfaceColor : ctx->theme.textColor,

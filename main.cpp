@@ -14,7 +14,48 @@
 
 #include "raylib.h"
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten/emscripten.h>
+#include <emscripten/html5.h>
+#include <functional>
+#endif
+
 namespace {
+
+#ifdef __EMSCRIPTEN__
+// The browser owns the frame loop, so on web we hand a per-frame callback to
+// emscripten instead of spinning our own while() loop. The callback captures
+// main()'s locals by reference; compiling with -sASYNCIFY and
+// simulate_infinite_loop=1 keeps main()'s stack (and therefore those locals)
+// alive for the lifetime of the page.
+static std::function<void()> g_webFrame;
+static void ClayWidgets_WebFrame() {
+    if (g_webFrame) {
+        g_webFrame();
+    }
+}
+
+// Resize the raylib window (and thus the canvas) to match the browser window.
+// raylib reads GetScreenWidth()/GetScreenHeight() every frame, so this is all
+// the Clay layout needs to reflow responsively. Emscripten's GLFW handles the
+// HiDPI backing-store scaling, so text stays crisp.
+static void ClayWidgets_SyncCanvasToWindow() {
+    int w = EM_ASM_INT({ return window.innerWidth; });
+    int h = EM_ASM_INT({ return window.innerHeight; });
+    if (w > 0 && h > 0) {
+        SetWindowSize(w, h);
+    }
+}
+
+static EM_BOOL ClayWidgets_OnResize(int, const EmscriptenUiEvent *e, void *) {
+    if (e && e->windowInnerWidth > 0 && e->windowInnerHeight > 0) {
+        SetWindowSize(e->windowInnerWidth, e->windowInnerHeight);
+    } else {
+        ClayWidgets_SyncCanvasToWindow();
+    }
+    return EM_FALSE;
+}
+#endif
 
 static Clay_String ClayStringFromCString(const char *text) {
     Clay_String s = {};
@@ -404,6 +445,7 @@ int main(int argc, char **argv) {
     bool forceMouseDown2 = false;
     bool forceRightClick = false; // makes the phase-1 click a right-click
     bool shotToast = false;
+    bool disableAnim = false; // --no-anim: snap all widget transitions for deterministic shots
     for (int i = 1; i < argc; ++i) {
         if (std::strcmp(argv[i], "--shot") == 0 && i + 1 < argc) {
             shotPath = argv[++i];
@@ -432,6 +474,8 @@ int main(int argc, char **argv) {
             forceRightClick = true;
         } else if (std::strcmp(argv[i], "--toast") == 0) {
             shotToast = true;
+        } else if (std::strcmp(argv[i], "--no-anim") == 0) {
+            disableAnim = true;
         }
     }
     if (shotFrames < 1) {
@@ -453,6 +497,14 @@ int main(int argc, char **argv) {
         TraceLog(LOG_ERROR, "Window/display unavailable; cannot start the demo.");
         return 2;
     }
+
+#ifdef __EMSCRIPTEN__
+    // Match the canvas to the browser window now, then on every window resize,
+    // so the layout fills the page and reflows (e.g. collapses to one column on
+    // narrow windows) instead of staying pinned to the initial 1080x720.
+    ClayWidgets_SyncCanvasToWindow();
+    emscripten_set_resize_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, nullptr, EM_FALSE, ClayWidgets_OnResize);
+#endif
 
     Font fonts[8] = {};
     fonts[0] = GetFontDefault();
@@ -523,6 +575,9 @@ int main(int argc, char **argv) {
     ClayWidgets_Theme theme = ClayWidgets_DefaultTheme();
     ClayWidgets_Init(&ui, theme);
     ClayWidgets_SetMeasureTextFunction(&ui, MeasureTextRaylib, fonts);
+    if (disableAnim) {
+        ui.animationsEnabled = false;
+    }
 
     bool featureA = true;
     bool featureB = false;
@@ -604,7 +659,8 @@ int main(int argc, char **argv) {
     }
     int shotFrameCounter = 0;
 
-    while (!WindowShouldClose()) {
+    bool webQuit = false;
+    auto frameStep = [&]() {
         float dt = GetFrameTime();
 
         char frameUtf8[64] = {};
@@ -1210,10 +1266,22 @@ int main(int argc, char **argv) {
         if (shotPath) {
             if (++shotFrameCounter >= shotFrames) {
                 TakeScreenshot(shotPath);
-                break;
+                webQuit = true;
+                return;
             }
         }
+    };
+
+#ifdef __EMSCRIPTEN__
+    // fps=0 => drive from requestAnimationFrame; simulate_infinite_loop=1 (with
+    // -sASYNCIFY) suspends here without unwinding main()'s stack.
+    g_webFrame = frameStep;
+    emscripten_set_main_loop(ClayWidgets_WebFrame, 0, 1);
+#else
+    while (!WindowShouldClose() && !webQuit) {
+        frameStep();
     }
+#endif
 
     UnloadTexture(iconCheck);
     UnloadTexture(iconPlay);

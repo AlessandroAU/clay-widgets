@@ -51,6 +51,7 @@ bool ClayWidgets_Button(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_String
             .color = focused ? ctx->theme.focusRingColor : ctx->theme.borderColor,
             .width = { .left = 1, .right = 1, .top = 1, .bottom = 1 },
         },
+        .transition = ClayWidgets__ColorTransition(ctx),
     }) {
         CLAY_TEXT(text, {
             .textColor = ctx->theme.textColor,

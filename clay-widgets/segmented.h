@@ -112,6 +112,7 @@ bool ClayWidgets_Segmented(
                     .color = ctx->theme.borderColor,
                     .width = { .left = (uint16_t)(i > 0 ? 1 : 0), .right = 0, .top = 0, .bottom = 0 },
                 },
+                .transition = ClayWidgets__ColorTransition(ctx),
             }) {
                 CLAY_TEXT(segments[i], {
                     .textColor = selected ? ctx->theme.surfaceColor : ctx->theme.textColor,
