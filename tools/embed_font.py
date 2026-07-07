@@ -7,8 +7,8 @@ this script converts the TTF into a byte array in a generated header that
 `main.cpp` includes and hands to raylib's `LoadFontFromMemory`.
 
 Usage:
-    python embed_font.py                    # regenerate embedded_font.h from Roboto
-    python embed_font.py --font path.ttf --out embedded_font.h --symbol kEmbeddedFont
+    python tools/embed_font.py                    # regenerate embedded_font.h from Roboto
+    python tools/embed_font.py --font path.ttf --out embedded_font.h --symbol kEmbeddedFont
 
 The generated header is committed so the project builds with just a C++
 compiler (no codegen step needed). Re-run this only when the source font
@@ -20,7 +20,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parent
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
 def emit_header(data: bytes, symbol: str, source_name: str) -> str:

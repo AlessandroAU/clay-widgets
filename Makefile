@@ -20,9 +20,19 @@ SRC := main.cpp
 OBJ := $(BUILD_DIR)/main.o
 DEP := $(OBJ:.o=.d)
 
-.PHONY: all raylib run clean raylib-clean log
+# Header trees the single translation unit pulls in: the widget library, the
+# raylib backend, and the demo screens. Listed so an edit to any of them forces
+# a rebuild even before the -MMD dependency file exists.
+HEADERS := $(wildcard clay-widgets/*.h backends/raylib/*.h demo/*.h demo/screens/*.h)
+
+.PHONY: all raylib run clean raylib-clean log font
 
 all: $(APP)
+
+# Regenerate the baked-in font header from the source TTF (committed, so this is
+# only needed when the font changes).
+font:
+	python tools/embed_font.py
 
 raylib: $(RAYLIB_LIB)
 
@@ -32,7 +42,7 @@ $(RAYLIB_LIB):
 $(BUILD_DIR):
 	-mkdir $(BUILD_DIR)
 
-$(OBJ): $(SRC) clay-widgets/widgets.h | $(BUILD_DIR)
+$(OBJ): $(SRC) $(HEADERS) | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -MMD -MP -c $(SRC) -o $(OBJ)
 
 $(APP): $(OBJ) | $(RAYLIB_LIB)

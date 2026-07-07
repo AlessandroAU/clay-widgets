@@ -14,11 +14,11 @@ What it does:
      (the UI font is baked into the binary, so there is no preloaded index.data).
 
 Usage:
-  python build-web.py                # build (installs emsdk if missing)
-  python build-web.py --serve        # build, then serve web/ at http://localhost:8000
-  python build-web.py --clean        # remove web/ and libraylib.web.a, then build
-  python build-web.py --skip-raylib  # don't rebuild raylib (reuse libraylib.web.a)
-  python build-web.py --emsdk-version 3.1.64   # pin a specific emsdk version
+  python tools/build-web.py                # build (installs emsdk if missing)
+  python tools/build-web.py --serve        # build, then serve web/ at http://localhost:8000
+  python tools/build-web.py --clean        # remove web/ and libraylib.web.a, then build
+  python tools/build-web.py --skip-raylib  # don't rebuild raylib (reuse libraylib.web.a)
+  python tools/build-web.py --emsdk-version 3.1.64   # pin a specific emsdk version
 
 Note: the output must be served over HTTP (browsers won't fetch .wasm/.data
 from file://). Use --serve, or any static server pointed at the web/ folder.
@@ -33,7 +33,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parent.parent
 EMSDK_DIR = ROOT / "subprojects" / "emsdk"
 RAYLIB_SRC = ROOT / "subprojects" / "raylib" / "src"
 RAYLIB_WEB_LIB = RAYLIB_SRC / "libraylib.web.a"

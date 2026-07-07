@@ -2,8 +2,8 @@
 """Small build wrapper for clay-widgets.
 
 Usage:
-  python build.py            # build
-  python build.py --clean    # clean (app + raylib) then build
+  python tools/build.py            # build
+  python tools/build.py --clean    # clean (app + raylib) then build
 """
 
 from __future__ import annotations
@@ -48,7 +48,7 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    project_root = Path(__file__).resolve().parent
+    project_root = Path(__file__).resolve().parent.parent
 
     try:
         make = find_make_command()
