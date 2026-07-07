@@ -109,6 +109,69 @@ static Clay_String ClayWidgets__ScratchInt(ClayWidgets_Context *ctx, int32_t val
     return result;
 }
 
+// Formats a float into one of the context's scratch buffers with `decimals`
+// fractional digits (rounded), returning a Clay_String pointing at it. Valid
+// until the buffer is reused (8 per frame). stdio-free, like ClayWidgets__ScratchInt.
+static Clay_String ClayWidgets__ScratchFloat(ClayWidgets_Context *ctx, float value, int32_t decimals) {
+    Clay_String result = {0};
+    if (!ctx) {
+        result.chars = "";
+        result.isStaticallyAllocated = true;
+        return result;
+    }
+    if (decimals < 0) decimals = 0;
+    if (decimals > 6) decimals = 6;
+
+    char *buf = ctx->textScratch[ctx->textScratchNext % 8];
+    ctx->textScratchNext++;
+    const int32_t cap = (int32_t)sizeof(ctx->textScratch[0]) - 1; // leave room for NUL
+
+    bool negative = value < 0.0f;
+    double mag = negative ? -(double)value : (double)value;
+
+    uint64_t scale = 1;
+    for (int32_t i = 0; i < decimals; ++i) scale *= 10u;
+
+    // Round to `decimals` places, then split into whole and fractional parts.
+    uint64_t scaled = (uint64_t)(mag * (double)scale + 0.5);
+    uint64_t intPart = scaled / scale;
+    uint64_t fracPart = scaled % scale;
+
+    char digits[20];
+    int32_t digitCount = 0;
+    if (intPart == 0) {
+        digits[digitCount++] = '0';
+    }
+    while (intPart > 0 && digitCount < (int32_t)sizeof(digits)) {
+        digits[digitCount++] = (char)('0' + (int)(intPart % 10u));
+        intPart /= 10u;
+    }
+
+    int32_t length = 0;
+    if (negative && length < cap) {
+        buf[length++] = '-';
+    }
+    for (int32_t i = digitCount - 1; i >= 0 && length < cap; --i) {
+        buf[length++] = digits[i];
+    }
+    if (decimals > 0 && length < cap) {
+        buf[length++] = '.';
+        // Emit fractional digits most-significant first, zero-padded to `decimals`.
+        uint64_t divisor = scale / 10u;
+        for (int32_t i = 0; i < decimals && length < cap; ++i) {
+            uint64_t d = divisor > 0 ? (fracPart / divisor) % 10u : 0u;
+            buf[length++] = (char)('0' + (int)d);
+            if (divisor > 0) divisor /= 10u;
+        }
+    }
+    buf[length] = '\0';
+
+    result.chars = buf;
+    result.length = length;
+    result.isStaticallyAllocated = false;
+    return result;
+}
+
 static Clay_Color ClayWidgets__MixColor(Clay_Color a, Clay_Color b, float t) {
     float clamped = ClayWidgets__Clamp(t, 0.0f, 1.0f);
     Clay_Color mixed = {
@@ -696,7 +759,13 @@ void ClayWidgets_BeginFrame(
     Clay_Vector2 scrollDelta = { input.scrollX, input.scrollY };
     Clay_SetPointerState(pointerPosition, input.pointerDown);
 
-    Clay_UpdateScrollContainers(enableDragScroll, scrollDelta, input.deltaTime);
+    // While a widget has captured the pointer (a slider or scroll-bar thumb being
+    // dragged, a held button), suppress pointer drag-scrolling so moving the mouse
+    // adjusts that widget instead of also scrolling the panel underneath it. The
+    // wheel (scrollDelta) still passes through. activeId persists across the drag,
+    // so this holds for every frame after the initial press.
+    bool dragScroll = enableDragScroll && ctx->activeId == 0;
+    Clay_UpdateScrollContainers(dragScroll, scrollDelta, input.deltaTime);
 
     // A widget whose clip can't consume a vertical wheel (a horizontally-clipped
     // table, a single-line text field) registered itself last frame while

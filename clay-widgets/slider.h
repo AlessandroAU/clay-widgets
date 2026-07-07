@@ -88,6 +88,49 @@ float ClayWidgets_Slider(
             .backgroundColor = ClayWidgets__MixColor(ctx->theme.accentMutedColor, ctx->theme.accentColor, t),
             .cornerRadius = CLAY_CORNER_RADIUS(8),
         }) {}
+
+        // Live value, centered over the whole track. Floating so it overlays the
+        // fill without affecting layout, and pointer-passthrough so it never
+        // steals a drag from the slider underneath it.
+        if (options.showValue) {
+            int32_t decimals = options.valueDecimals;
+            if (decimals <= 0) {
+                if (step > 0.0f) {
+                    if (step >= 1.0f) decimals = 0;
+                    else if (step >= 0.1f) decimals = 1;
+                    else if (step >= 0.01f) decimals = 2;
+                    else decimals = 3;
+                } else {
+                    float range = maxValue - minValue;
+                    if (range <= 1.0f) decimals = 2;
+                    else if (range <= 10.0f) decimals = 1;
+                    else decimals = 0;
+                }
+            }
+            Clay_String valueText = ClayWidgets__ScratchFloat(ctx, clamped, decimals);
+            CLAY_AUTO_ID({
+                .layout = {
+                    .sizing = { .width = CLAY_SIZING_FIT(0), .height = CLAY_SIZING_FIT(0) },
+                },
+                .floating = {
+                    .parentId = id.id,
+                    .zIndex = 1,
+                    .attachPoints = {
+                        .element = CLAY_ATTACH_POINT_CENTER_CENTER,
+                        .parent = CLAY_ATTACH_POINT_CENTER_CENTER,
+                    },
+                    .pointerCaptureMode = CLAY_POINTER_CAPTURE_MODE_PASSTHROUGH,
+                    .attachTo = CLAY_ATTACH_TO_ELEMENT_WITH_ID,
+                },
+            }) {
+                CLAY_TEXT(valueText, {
+                    .textColor = ctx->theme.textColor,
+                    .fontId = ctx->theme.fontBody,
+                    .fontSize = ctx->theme.fontSizeSmall,
+                    .wrapMode = CLAY_TEXT_WRAP_NONE,
+                });
+            }
+        }
     }
 
     return clamped;

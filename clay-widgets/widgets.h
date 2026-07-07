@@ -194,6 +194,8 @@ typedef struct ClayWidgets_SliderOptions {
     float minValue;
     float maxValue;
     float step;
+    bool showValue;        // draw the live value centered over the track
+    int32_t valueDecimals; // decimals for the value text; <= 0 = auto from step/range
 } ClayWidgets_SliderOptions;
 
 typedef struct ClayWidgets_StepperOptions {
