@@ -331,10 +331,7 @@ static void RenderClayCommands(Clay_RenderCommandArray commands, FontCache &font
                 Font font = *FontCache_Get(fontCache, FontCache_PixelSize(fontCache, static_cast<float>(text.fontSize)));
                 std::string tmp(text.stringContents.chars, text.stringContents.length);
                 Color color = applyOverlay(ToRaylibColor(text.textColor));
-                // Snap the pen to whole pixels: a bilinear glyph drawn at a
-                // fractional x/y (Clay centering produces e.g. x=123.5) smears
-                // across two pixel columns and reads as blurry.
-                DrawTextEx(font, tmp.c_str(), Vector2{std::floor(rect.x), std::floor(rect.y)}, static_cast<float>(text.fontSize), static_cast<float>(text.letterSpacing), color);
+                DrawTextEx(font, tmp.c_str(), Vector2{rect.x, rect.y}, static_cast<float>(text.fontSize), static_cast<float>(text.letterSpacing), color);
                 break;
             }
             case CLAY_RENDER_COMMAND_TYPE_BORDER: {
