@@ -494,20 +494,23 @@ static void ClayWidgets__UpdateTextScroll(
         return;
     }
 
+    // Reserve a couple of pixels at the right so a caret sitting at the very end of
+    // the text stays inside the clip instead of being scissored off its edge.
+    const float caretPad = 2.0f;
     float totalWidth = ClayWidgets__MeasureWidth(ctx, text, length, fontId, fontSize, letterSpacing);
-    if (totalWidth <= availableWidth || availableWidth <= 0.0f) {
+    if (totalWidth + caretPad <= availableWidth || availableWidth <= 0.0f) {
         ctx->textScrollX = 0.0f;
         return;
     }
 
-    float maxScroll = totalWidth - availableWidth;
+    float maxScroll = totalWidth + caretPad - availableWidth;
     float caretX = ClayWidgets__MeasureWidth(ctx, text, ctx->textCursor, fontId, fontSize, letterSpacing);
     float scrollX = ClayWidgets__ClampF32(ctx->textScrollX, 0.0f, maxScroll);
 
     if (caretX < scrollX) {
         scrollX = caretX;
-    } else if (caretX > scrollX + availableWidth) {
-        scrollX = caretX - availableWidth;
+    } else if (caretX > scrollX + availableWidth - caretPad) {
+        scrollX = caretX - availableWidth + caretPad;
     }
 
     ctx->textScrollX = ClayWidgets__ClampF32(scrollX, 0.0f, maxScroll);
