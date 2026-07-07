@@ -1298,7 +1298,7 @@ static void DrawGalleryView(ClayWidgets_Context &ui, DemoState &s, DemoIcons &ic
             {
                 ClayWidgets_Label(&ui, CLAY_STRING("Slider + progress bar"));
                 s.volume = ClayWidgets_Slider(&ui, CLAY_ID("GalleryVolume"), s.volume,
-                    ClayWidgets_SliderOptions{0.0f, 1.0f, 0.01f});
+                    ClayWidgets_SliderOptions{0.0f, 1.0f, 0.01f, true, 0});
                 ClayWidgets_ProgressBar(&ui, CLAY_ID("GalleryVolumeBar"), s.volume,
                     FormatString(s, "Volume %d%%", static_cast<int>(std::lround(s.volume * 100.0f))));
 
