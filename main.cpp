@@ -265,7 +265,10 @@ static void RenderClayCommands(Clay_RenderCommandArray commands, Font *fonts) {
                 Font font = fonts[text.fontId];
                 std::string tmp(text.stringContents.chars, text.stringContents.length);
                 Color color = applyOverlay(ToRaylibColor(text.textColor));
-                DrawTextEx(font, tmp.c_str(), Vector2{rect.x, rect.y}, static_cast<float>(text.fontSize), static_cast<float>(text.letterSpacing), color);
+                // Snap the pen to whole pixels: a bilinear glyph drawn at a
+                // fractional x/y (Clay centering produces e.g. x=123.5) smears
+                // across two pixel columns and reads as blurry.
+                DrawTextEx(font, tmp.c_str(), Vector2{std::floor(rect.x), std::floor(rect.y)}, static_cast<float>(text.fontSize), static_cast<float>(text.letterSpacing), color);
                 break;
             }
             case CLAY_RENDER_COMMAND_TYPE_BORDER: {
@@ -1652,11 +1655,19 @@ int main(int argc, char **argv) {
     emscripten_set_resize_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, nullptr, EM_FALSE, ClayWidgets_OnResize);
 #endif
 
+    // Bake the glyph atlas at the size we actually draw, scaled by the display's
+    // DPI factor. raylib's HighDPI path multiplies every draw by GetWindowScaleDPI(),
+    // so baking near the largest glyph we render (~30px headings) at native pixels
+    // keeps text sampled ~1:1 instead of minifying an oversized atlas (soft small
+    // text) or upscaling a fixed 32px atlas on HiDPI displays (soft headings).
+    Vector2 dpiScale = GetWindowScaleDPI();
+    int atlasSize = static_cast<int>(std::ceil(40.0f * std::max(dpiScale.x, dpiScale.y)));
+
     Font fonts[8] = {};
     fonts[0] = GetFontDefault();
     bool customFontLoaded = false;
     if (FileExists(fontPath)) {
-        Font roboto = LoadFontEx(fontPath, 32, nullptr, 0);
+        Font roboto = LoadFontEx(fontPath, atlasSize, nullptr, 0);
         if (roboto.texture.id != 0) {
             fonts[0] = roboto;
             customFontLoaded = true;
@@ -1668,7 +1679,7 @@ int main(int argc, char **argv) {
     }
 
     if (fonts[0].texture.id != 0) {
-        SetTextureFilter(fonts[0].texture, TEXTURE_FILTER_BILINEAR);
+        SetTextureFilter(fonts[0].texture, TEXTURE_FILTER_ANISOTROPIC_4X);
     }
 
     // Procedurally generated white glyph textures used to demonstrate the image
