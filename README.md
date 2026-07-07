@@ -8,6 +8,8 @@ Widget layer built on top of Clay with a raylib demo application.
 - `clay-widgets/`: structured header tree with shared core helpers plus one header per widget.
 - `clay-widgets/themes.h`: theme preset header used by the widget layer and demo.
 - `main.cpp`: demo app showing all currently implemented widgets.
+- `embed_font.py` / `embedded_font.h`: the generator and generated header that
+  bake the UI font into the binary (see "Self-contained binary" below).
 - `Makefile`: builds raylib from source in `subprojects/raylib` and then builds the demo.
 - `subprojects/raylib`: vendored raylib source (git clone).
 - `subprojects/clay`: vendored Clay source (git clone, used for `clay.h`).
@@ -104,6 +106,23 @@ The demo is organized like a small application, with four views:
   animations toggle, a notifications toggle that gates the demo's toasts, and
   a live diagnostics card (focused widget id, pointer, fps).
 
+## Self-contained binary
+
+The desktop build is a single portable `.exe` with no external dependencies:
+
+- **No asset files.** The UI font is baked into the binary. `embed_font.py`
+  converts `assets/fonts/Roboto-Regular.ttf` into `embedded_font.h` (a byte
+  array), which `main.cpp` hands to raylib's `LoadFontFromMemory`. The demo
+  icons are already generated procedurally at startup, so nothing is read from
+  disk at runtime - the exe runs from any directory with `assets/` absent.
+  Re-run `python embed_font.py` only if the source font changes.
+- **No redistributable DLLs.** raylib is linked as a static `.a`, and the
+  Makefile passes `-static -static-libgcc -static-libstdc++` so the GCC/C++
+  runtime is linked in too. The only remaining imports are always-present
+  Windows system DLLs (`kernel32`, `user32`, `gdi32`, `opengl32`, `winmm`, ...).
+- The **web build** is likewise self-contained: because the font is embedded,
+  `build-web.py` drops `--preload-file`, so there is no separate `index.data`.
+
 ## MSYS2 setup (recommended)
 
 Open the `MSYS2 MinGW 64-bit` shell and install toolchain dependencies:
@@ -153,9 +172,9 @@ python build-web.py           # installs emsdk (first run, ~1GB) + builds
 python build-web.py --serve   # build, then serve at http://localhost:8000
 ```
 
-This produces `web/index.html` (plus `index.js`, `index.wasm`, `index.data`).
-The output must be served over HTTP - browsers won't `fetch` the `.wasm`/`.data`
-from a `file://` URL. Use `--serve`, or point any static server at `web/`.
+This produces `web/index.html` (plus `index.js`, `index.wasm`). The output must
+be served over HTTP - browsers won't `fetch` the `.wasm` from a `file://` URL.
+Use `--serve`, or point any static server at `web/`.
 
 Other flags:
 

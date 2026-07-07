@@ -9,8 +9,9 @@ What it does:
   1. Auto-installs the Emscripten SDK into subprojects/emsdk on first run.
   2. Builds raylib for PLATFORM_WEB  -> subprojects/raylib/src/libraylib.web.a
      (a separate file from the desktop libraylib.a, so the two never clash).
-  3. Compiles main.cpp with emcc, preloading assets/, into:
-       web/index.html  +  index.js  +  index.wasm  +  index.data
+  3. Compiles main.cpp with emcc into:
+       web/index.html  +  index.js  +  index.wasm
+     (the UI font is baked into the binary, so there is no preloaded index.data).
 
 Usage:
   python build-web.py                # build (installs emsdk if missing)
@@ -180,11 +181,12 @@ def build_app(env: dict) -> None:
         "-sINITIAL_MEMORY=268435456",
         "-sSTACK_SIZE=1048576",      # Clay layout + raylib recurse; give a 1MB stack
         "-sGL_ENABLE_GET_PROC_ADDRESS",
-        "--preload-file", "assets",  # bundle fonts into the virtual filesystem
+        # No --preload-file: the UI font is baked into the binary (embedded_font.h),
+        # so the web build needs no virtual filesystem / no separate index.data.
         "--shell-file", str(resolve_shell()),
         "-o", str(OUT_DIR / "index.html"),
     ]
-    # Run from the repo root so main.cpp, includes and assets/ resolve relatively.
+    # Run from the repo root so main.cpp and includes resolve relatively.
     run(cmd, cwd=ROOT, env=env)
     print(f"\nDone. Open {OUT_DIR / 'index.html'} via an HTTP server (see --serve).")
 

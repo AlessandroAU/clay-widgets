@@ -6,7 +6,10 @@ RAYLIB_SRC_DIR := $(RAYLIB_DIR)/src
 RAYLIB_LIB := $(RAYLIB_SRC_DIR)/libraylib.a
 
 INCLUDES := -I. -Isubprojects/clay -Isubprojects/raylib/src
-LDFLAGS := -L$(RAYLIB_SRC_DIR)
+# Static-link the GCC/C++ runtime and pthreads so the exe has no non-system DLL
+# dependencies (no libgcc_s_seh-1.dll / libstdc++-6.dll / libwinpthread-1.dll).
+# raylib is already a static .a; the font is baked in via embedded_font.h.
+LDFLAGS := -L$(RAYLIB_SRC_DIR) -static -static-libgcc -static-libstdc++
 LDLIBS := -lraylib -lopengl32 -lgdi32 -lwinmm
 
 BUILD_DIR := build
