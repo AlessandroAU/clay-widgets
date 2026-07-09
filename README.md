@@ -2,6 +2,8 @@
 
 Widget layer built on top of Clay with a raylib demo application.
 
+![Dashboard view of the clay-widgets demo](docs/screenshots/dashboard.png)
+
 ## Project layout
 
 The tree separates three things: the renderer-agnostic **widget library**, the
@@ -125,6 +127,16 @@ The demo is organized like a small application, with four views:
 - **Settings** (3): theme preset switching (Slate, Sand, Forest, Windows), an
   animations toggle, a notifications toggle that gates the demo's toasts, and
   a live diagnostics card (focused widget id, pointer, fps).
+
+| Dashboard | Tasks |
+| --- | --- |
+| ![Dashboard](docs/screenshots/dashboard.png) | ![Tasks](docs/screenshots/tasks.png) |
+
+| Gallery | Settings |
+| --- | --- |
+| ![Gallery](docs/screenshots/gallery.png) | ![Settings](docs/screenshots/settings.png) |
+
+The screenshots are regenerated with `python tools/screenshot_panels.py`.
 
 ## Self-contained binary
 
