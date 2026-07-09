@@ -26,6 +26,12 @@ jobs:
             make
             mingw-w64-x86_64-toolchain
 
+      - name: Run headless widget tests
+        run: make test
+
+      - name: Generate the single-header amalgam and test against it
+        run: make test-amalgam
+
       - name: Build raylib + demo
         run: make -j4
 
@@ -36,3 +42,11 @@ jobs:
         with:
           name: clay-widgets-demo
           path: clay-widgets-demo.exe
+
+      # The distributable single-file library: drop clay-widgets.h next to
+      # clay.h in any project. Only uploaded after the full unit-test suite
+      # passed against this exact generated file.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: clay-widgets-single-header
+          path: build/clay-widgets.h

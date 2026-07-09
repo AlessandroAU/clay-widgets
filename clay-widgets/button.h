@@ -33,7 +33,7 @@ bool ClayWidgets_ButtonEx(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_Stri
     // returns false. Muted fill (surfaceAlt mixed halfway to surface), muted
     // text and a plain border, with no color transition.
     if (options.disabled) {
-        Clay_Color color = ClayWidgets__MixColor(ctx->theme.surfaceAltColor, ctx->theme.surfaceColor, 0.5f);
+        Clay_Color color = ClayWidgets__MixColor(ctx->theme.surfaceAltColor, ctx->theme.surfaceColor, ctx->theme.disabledMix);
 
         CLAY(id, {
             .layout = {
@@ -88,13 +88,15 @@ bool ClayWidgets_ButtonEx(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_Stri
             base = ctx->theme.accentColor;
             hover = ClayWidgets__MixColor(ctx->theme.accentColor, (Clay_Color){255, 255, 255, 255}, 0.12f);
             pressed = ClayWidgets__MixColor(ctx->theme.accentColor, (Clay_Color){0, 0, 0, 255}, 0.15f);
-            textColor = (Clay_Color){245, 248, 255, 255};
+            textColor = ctx->theme.onAccentColor;
             break;
         case CLAY_WIDGETS_BUTTON_DANGER:
-            base = (Clay_Color){200, 64, 52, 255};
-            hover = (Clay_Color){220, 84, 72, 255};
-            pressed = (Clay_Color){170, 44, 36, 255};
-            textColor = (Clay_Color){255, 240, 238, 255};
+            // The theme's shared danger color (same as badges and toasts),
+            // with hover/pressed derived the same way as PRIMARY.
+            base = ctx->theme.dangerColor;
+            hover = ClayWidgets__MixColor(ctx->theme.dangerColor, (Clay_Color){255, 255, 255, 255}, 0.12f);
+            pressed = ClayWidgets__MixColor(ctx->theme.dangerColor, (Clay_Color){0, 0, 0, 255}, 0.15f);
+            textColor = ctx->theme.onAccentColor;
             break;
         case CLAY_WIDGETS_BUTTON_DEFAULT:
         default:

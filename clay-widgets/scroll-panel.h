@@ -53,8 +53,7 @@ Clay_ElementId ClayWidgets_BeginScrollPanel(
     uint16_t scrollbarGutter = (uint16_t)(CLAY_WIDGETS_SCROLLBAR_WIDTH + ctx->theme.spacing.sm);
 
     // Outer surface: draws the background and provides the fade margin via padding.
-    Clay__OpenElementWithId(id);
-    Clay__ConfigureOpenElement(CLAY__INIT(Clay_ElementDeclaration){
+    ClayWidgets__BeginElement(id, CLAY__INIT(Clay_ElementDeclaration){
         .layout = {
             .sizing = { .width = options.width, .height = options.height },
             .padding = { .left = padding, .right = padding, .top = fadeMargin, .bottom = fadeMargin },
@@ -66,16 +65,16 @@ Clay_ElementId ClayWidgets_BeginScrollPanel(
 
     // Inner clip element: this is the actual scroll container. Clay scissors to
     // this element's box, which is inset from the surface by the fade margin, so
-    // content disappears before the panel edge.
-    Clay__OpenElementWithId(contentId);
-    Clay__ConfigureOpenElement(CLAY__INIT(Clay_ElementDeclaration){
+    // content disappears before the panel edge. The scroll-aware Begin stamps
+    // clip.childOffset from this element's own scroll offset after opening it.
+    ClayWidgets__BeginScrollElement(contentId, CLAY__INIT(Clay_ElementDeclaration){
         .layout = {
             .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_GROW(0) },
             .padding = { .right = scrollbarGutter },
             .childGap = childGap,
             .layoutDirection = CLAY_TOP_TO_BOTTOM,
         },
-        .clip = { .vertical = true, .childOffset = Clay_GetScrollOffset() },
+        .clip = { .vertical = true },
     });
 
     return contentId;
@@ -89,8 +88,8 @@ void ClayWidgets_EndScrollPanel(ClayWidgets_Context *ctx, Clay_ElementId id) {
         ctx->scrollPanelDepth--;
     }
     ClayWidgets_ScrollBar(ctx, ClayWidgets__ScrollPanelContentId(id));
-    Clay__CloseElement(); // inner clip content
-    Clay__CloseElement(); // outer surface
+    ClayWidgets__EndElement(); // inner clip content
+    ClayWidgets__EndElement(); // outer surface
 }
 
 #endif

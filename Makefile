@@ -21,12 +21,25 @@ SRC := demo/main.cpp
 OBJ := $(BUILD_DIR)/main.o
 DEP := $(OBJ:.o=.d)
 
+# Headless unit tests: the widget library driven with synthetic input and a
+# fake text measurer. No raylib, no window - runs anywhere a compiler does.
+TEST_APP := $(BUILD_DIR)/test-widgets.exe
+TEST_SRC := tests/test-widgets.cpp
+
+# Single-file amalgam of the library (generated, not committed). test-amalgam
+# compiles the same unit tests against it - the amalgam dir shadows the split
+# tree on the include path, so tests/#include "clay-widgets/widgets.h"
+# resolves to the generated file and the split headers can't leak in.
+AMALGAM := $(BUILD_DIR)/clay-widgets.h
+AMALGAM_SHADOW := $(BUILD_DIR)/amalgam/clay-widgets/widgets.h
+AMALGAM_TEST_APP := $(BUILD_DIR)/test-widgets-amalgam.exe
+
 # Header trees the single translation unit pulls in: the widget library, the
 # raylib backend, the demo screens and the generated font header. Listed so an
 # edit to any of them forces a rebuild even before the -MMD dependency file exists.
 HEADERS := $(wildcard clay-widgets/*.h backends/raylib/*.h demo/*.h demo/screens/*.h assets/generated/*.h)
 
-.PHONY: all raylib run clean raylib-clean log font
+.PHONY: all raylib run test amalgam test-amalgam clean raylib-clean log font
 
 all: $(APP)
 
@@ -54,6 +67,25 @@ $(APP): $(OBJ) | $(RAYLIB_LIB)
 
 run: $(APP)
 	./$(APP)
+
+$(TEST_APP): $(TEST_SRC) $(HEADERS) | $(BUILD_DIR)
+	$(CXX) $(CXXFLAGS) -I. -Isubprojects/clay $(TEST_SRC) -o $(TEST_APP) -static -static-libgcc -static-libstdc++
+
+test: $(TEST_APP)
+	./$(TEST_APP)
+
+$(AMALGAM): $(wildcard clay-widgets/*.h) tools/amalgamate.py | $(BUILD_DIR)
+	python tools/amalgamate.py -o $(AMALGAM)
+
+amalgam: $(AMALGAM)
+
+$(AMALGAM_TEST_APP): $(AMALGAM) $(TEST_SRC)
+	mkdir -p $(BUILD_DIR)/amalgam/clay-widgets
+	cp $(AMALGAM) $(AMALGAM_SHADOW)
+	$(CXX) $(CXXFLAGS) -I$(BUILD_DIR)/amalgam -Isubprojects/clay $(TEST_SRC) -o $(AMALGAM_TEST_APP) -static -static-libgcc -static-libstdc++
+
+test-amalgam: $(AMALGAM_TEST_APP)
+	./$(AMALGAM_TEST_APP)
 
 # Rebuild from scratch, capturing all compiler output into build/build.log
 # (redirection syntax works under both cmd.exe and sh).

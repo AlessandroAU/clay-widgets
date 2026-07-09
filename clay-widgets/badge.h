@@ -8,8 +8,9 @@
 // A badge / chip / tag: a small, rounded, filled pill of text used for statuses
 // and counts. Display-only (no interaction). ClayWidgets_Badge picks colors
 // from a variant; ClayWidgets_BadgeColor takes explicit background/text colors.
-// The semantic variants use fixed status colors because the theme has no
-// success/warning/danger palette of its own.
+// The semantic variants draw from the theme's status palette
+// (successColor/warningColor/dangerColor), shared with toasts and danger
+// buttons so a status reads as the same color everywhere.
 typedef enum ClayWidgets_BadgeVariant {
     CLAY_WIDGETS_BADGE_NEUTRAL = 0,
     CLAY_WIDGETS_BADGE_ACCENT = 1,
@@ -22,6 +23,19 @@ void ClayWidgets_BadgeColor(ClayWidgets_Context *ctx, Clay_String text, Clay_Col
 void ClayWidgets_Badge(ClayWidgets_Context *ctx, Clay_String text, ClayWidgets_BadgeVariant variant);
 
 #ifdef CLAY_WIDGETS_IMPLEMENTATION
+
+// Maps a semantic variant to its theme fill. Shared by badges and toasts so
+// the two always agree on what "danger" looks like.
+static Clay_Color ClayWidgets__SemanticColor(const ClayWidgets_Context *ctx, ClayWidgets_BadgeVariant variant) {
+    switch (variant) {
+        case CLAY_WIDGETS_BADGE_SUCCESS: return ctx->theme.successColor;
+        case CLAY_WIDGETS_BADGE_WARNING: return ctx->theme.warningColor;
+        case CLAY_WIDGETS_BADGE_DANGER:  return ctx->theme.dangerColor;
+        case CLAY_WIDGETS_BADGE_NEUTRAL: return ctx->theme.borderColor;
+        case CLAY_WIDGETS_BADGE_ACCENT:
+        default:                         return ctx->theme.accentColor;
+    }
+}
 
 void ClayWidgets_BadgeColor(ClayWidgets_Context *ctx, Clay_String text, Clay_Color background, Clay_Color textColor) {
     if (!ctx || text.length <= 0 || !text.chars) {
@@ -55,7 +69,6 @@ void ClayWidgets_Badge(ClayWidgets_Context *ctx, Clay_String text, ClayWidgets_B
     if (!ctx) {
         return;
     }
-    Clay_Color light = { 245, 248, 252, 255 };
     Clay_Color background;
     Clay_Color textColor;
     switch (variant) {
@@ -63,22 +76,13 @@ void ClayWidgets_Badge(ClayWidgets_Context *ctx, Clay_String text, ClayWidgets_B
             background = ctx->theme.accentColor;
             textColor = ctx->theme.surfaceColor;
             break;
-        case CLAY_WIDGETS_BADGE_SUCCESS:
-            background = (Clay_Color){ 46, 160, 67, 255 };
-            textColor = light;
-            break;
-        case CLAY_WIDGETS_BADGE_WARNING:
-            background = (Clay_Color){ 191, 135, 0, 255 };
-            textColor = light;
-            break;
-        case CLAY_WIDGETS_BADGE_DANGER:
-            background = (Clay_Color){ 207, 54, 54, 255 };
-            textColor = light;
-            break;
         case CLAY_WIDGETS_BADGE_NEUTRAL:
-        default:
             background = ctx->theme.hoverColor;
             textColor = ctx->theme.textMutedColor;
+            break;
+        default:
+            background = ClayWidgets__SemanticColor(ctx, variant);
+            textColor = ctx->theme.onAccentColor;
             break;
     }
     ClayWidgets_BadgeColor(ctx, text, background, textColor);

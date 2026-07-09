@@ -27,8 +27,7 @@ void ClayWidgets_BeginCardEx(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_S
         return;
     }
 
-    Clay__OpenElementWithId(id);
-    Clay__ConfigureOpenElement(CLAY__INIT(Clay_ElementDeclaration){
+    ClayWidgets__BeginElement(id, CLAY__INIT(Clay_ElementDeclaration){
         .layout = {
             .sizing = { .width = width, .height = height },
             .padding = CLAY_PADDING_ALL(ctx->theme.spacing.lg),
@@ -64,7 +63,7 @@ void ClayWidgets_EndCard(ClayWidgets_Context *ctx, Clay_ElementId id) {
     if (!ctx) {
         return;
     }
-    Clay__CloseElement(); // card surface
+    ClayWidgets__EndElement(); // card surface
 }
 
 #endif

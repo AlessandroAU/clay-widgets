@@ -31,6 +31,35 @@ extern "C" {
 #define CLAY_WIDGETS_MAX_SCROLL_NESTING 8
 #endif
 
+// Number of scratch buffers for dynamic per-frame strings (stepper values,
+// slider value labels). Clay retains text by POINTER until render, so every
+// dynamic string alive in one frame needs its own slot; overflow is reported
+// via the error handler / CLAY_WIDGETS_ASSERT because reused slots render as
+// corrupted text. Raise this if a screen shows more dynamic values at once.
+#ifndef CLAY_WIDGETS_TEXT_SCRATCH_COUNT
+#define CLAY_WIDGETS_TEXT_SCRATCH_COUNT 8
+#endif
+
+// Maximum simultaneously visible toasts; ShowToast drops the oldest when full.
+#ifndef CLAY_WIDGETS_MAX_TOASTS
+#define CLAY_WIDGETS_MAX_TOASTS 4
+#endif
+
+// Debug backstop for cap overflows (scratch strings, focus order, table
+// columns). Fires only when no error handler is installed on the context
+// (see ClayWidgets_SetErrorHandler). Define it away, or to your own logger,
+// to change the behavior; defaults to print + abort in debug builds and to a
+// no-op when NDEBUG is set, so release builds degrade silently as before.
+#ifndef CLAY_WIDGETS_ASSERT
+#ifdef NDEBUG
+#define CLAY_WIDGETS_ASSERT(message) ((void)0)
+#else
+#include <stdio.h>
+#include <stdlib.h>
+#define CLAY_WIDGETS_ASSERT(message) (fprintf(stderr, "clay-widgets: %s\n", (message)), abort())
+#endif
+#endif
+
 typedef struct ClayWidgets_Input {
     float mouseX;
     float mouseY;
@@ -55,12 +84,26 @@ typedef struct ClayWidgets_Input {
     bool keyDown;
     bool keyEnter;
     bool keyEscape;
-    bool keyTab;
-    bool keySelectAll;
+    bool keyTab;      // with shiftDown: reverse focus traversal
+    bool keySelectAll; // e.g. Ctrl+A
+    bool keyCopy;      // e.g. Ctrl+C - copy the text-input selection
+    bool keyCut;       // e.g. Ctrl+X
+    bool keyPaste;     // e.g. Ctrl+V
     bool shiftDown;
 } ClayWidgets_Input;
 
 typedef Clay_Dimensions (*ClayWidgets_MeasureTextFunction)(Clay_StringSlice text, Clay_TextElementConfig *config, void *userData);
+
+// Clipboard bridge, injected like the measure-text function so the library
+// stays platform-agnostic. `get` returns a NUL-terminated UTF-8 string (or
+// NULL); `set` receives one. See ClayWidgets_SetClipboardFunctions.
+typedef const char *(*ClayWidgets_GetClipboardTextFunction)(void *userData);
+typedef void (*ClayWidgets_SetClipboardTextFunction)(const char *textUtf8, void *userData);
+
+// Called when a compile-time cap is exceeded at runtime (scratch strings,
+// focus order, table columns) - once per category per frame. When no handler
+// is installed the CLAY_WIDGETS_ASSERT backstop fires instead.
+typedef void (*ClayWidgets_ErrorHandlerFunction)(const char *message, void *userData);
 
 typedef struct ClayWidgets_Spacing {
     uint16_t xs;
@@ -80,6 +123,20 @@ typedef struct ClayWidgets_Theme {
     Clay_Color hoverColor;
     Clay_Color pressedColor;
     Clay_Color focusRingColor;
+
+    // Semantic status palette, shared by badges, toasts and danger buttons so
+    // a status reads as the same color everywhere and presets can restyle it.
+    Clay_Color successColor;
+    Clay_Color warningColor;
+    Clay_Color dangerColor;
+    // Text/glyphs drawn on accent or status fills (button labels, check marks,
+    // the toggle knob).
+    Clay_Color onAccentColor;
+    // The modal dimming overlay.
+    Clay_Color scrimColor;
+    // How far disabled fills/text mix toward surfaceColor (0 = unchanged,
+    // 1 = fully flattened into the surface).
+    float disabledMix;
 
     uint16_t radiusSm;
     uint16_t radiusMd;
@@ -104,11 +161,25 @@ typedef struct ClayWidgets_AnimSlot {
     float value;    // current eased value
 } ClayWidgets_AnimSlot;
 
+// One queued transient notification; see toast.h.
+typedef struct ClayWidgets_ToastSlot {
+    char message[160];
+    int32_t length;
+    float remaining;
+    int32_t variant;
+} ClayWidgets_ToastSlot;
+
 typedef struct ClayWidgets_Context {
     ClayWidgets_Input input;
     ClayWidgets_Theme theme;
     ClayWidgets_MeasureTextFunction measureText;
     void *measureTextUserData;
+    ClayWidgets_GetClipboardTextFunction getClipboardText;
+    ClayWidgets_SetClipboardTextFunction setClipboardText;
+    void *clipboardUserData;
+    ClayWidgets_ErrorHandlerFunction errorHandler;
+    void *errorHandlerUserData;
+    uint32_t frameErrorFlags; // one bit per overflow category, reset each frame (dedupes reports)
     Clay_Dimensions layoutDimensions;
 
     // When false, widgets emit no Clay transitions (colors/enter states snap
@@ -142,6 +213,14 @@ typedef struct ClayWidgets_Context {
     uint32_t focusedId;
     uint32_t focusOrder[CLAY_WIDGETS_MAX_FOCUSABLES];
     int32_t focusCount;
+
+    // Focus trap (modal). While a trap was active last frame, widgets declared
+    // outside it neither register for Tab focus nor keep keyboard focus, so
+    // Tab cycles the dialog and Enter can't activate controls behind the
+    // scrim. One frame of lag, like all pointer queries in this library.
+    uint32_t focusTrapId;     // set by BeginModal during this frame's layout
+    uint32_t focusTrapPrevId; // last frame's value; what registration checks
+    bool insideFocusTrap;     // true between BeginModal and EndModal
     uint32_t textInputId;
     int32_t textCursor;
     int32_t textSelectionAnchor;
@@ -161,6 +240,11 @@ typedef struct ClayWidgets_Context {
 
     uint32_t openComboId;
     int32_t comboHighlightIndex;
+    // Set when the keyboard moved the highlight (or the dropdown just opened)
+    // so the dropdown scrolls the highlighted item into view. Not set on
+    // pointer hover - scrolling under the pointer would re-highlight and fight
+    // the wheel.
+    bool comboScrollToHighlight;
 
     uint32_t hoverTooltipId;
     float hoverTooltipTime;
@@ -171,18 +255,22 @@ typedef struct ClayWidgets_Context {
     float contextMenuX;
     float contextMenuY;
 
-    // Ring of small buffers for dynamic strings (e.g. a stepper's number). Clay
+    // Pool of small buffers for dynamic strings (e.g. a stepper's number). Clay
     // retains text by pointer until render, so these must outlive the layout;
-    // reused across frames, reset at the start of each frame.
-    char textScratch[8][24];
+    // reused across frames, reset at the start of each frame. Exhaustion is
+    // reported via ClayWidgets__ReportError - see CLAY_WIDGETS_TEXT_SCRATCH_COUNT.
+    char textScratch[CLAY_WIDGETS_TEXT_SCRATCH_COUNT][24];
     uint32_t textScratchNext;
 
-    // Active transient toast: message plus remaining seconds. Counted down by
-    // ClayWidgets_ToastLayer each frame.
-    char toastMessage[160];
-    int32_t toastLength;
-    float toastRemaining;
-    int32_t toastVariant;
+    // NUL-termination staging for clipboard writes (a text-input selection is
+    // a slice of the caller's buffer, not a terminated string).
+    char clipboardScratch[CLAY_WIDGETS_TEXT_MAX_BYTES];
+
+    // Queue of transient toasts, oldest first. Counted down and drawn by
+    // ClayWidgets_ToastLayer each frame; ShowToast appends, evicting the
+    // oldest when full.
+    ClayWidgets_ToastSlot toasts[CLAY_WIDGETS_MAX_TOASTS];
+    int32_t toastCount;
 
     // Column widths captured by BeginTable so TableRow can size its cells to
     // match the header without the caller passing them again.
@@ -196,17 +284,20 @@ typedef struct ClayWidgets_SliderOptions {
     float step;
     bool showValue;        // draw the live value centered over the track
     int32_t valueDecimals; // decimals for the value text; <= 0 = auto from step/range
+    bool disabled;         // inert: no focus, pointer or keyboard interaction
 } ClayWidgets_SliderOptions;
 
 typedef struct ClayWidgets_StepperOptions {
     int32_t minValue;
     int32_t maxValue;
     int32_t step;
+    bool disabled; // inert: no focus, pointer or keyboard interaction
 } ClayWidgets_StepperOptions;
 
 typedef struct ClayWidgets_TextInputOptions {
     const char *placeholder;
     bool clearOnEnter;
+    bool disabled; // inert: not focusable or editable; text still shown
 } ClayWidgets_TextInputOptions;
 
 typedef struct ClayWidgets_ScrollPanelOptions {

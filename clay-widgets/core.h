@@ -8,6 +8,21 @@
 void ClayWidgets_Init(ClayWidgets_Context *ctx, ClayWidgets_Theme theme);
 void ClayWidgets_SetMeasureTextFunction(ClayWidgets_Context *ctx, ClayWidgets_MeasureTextFunction measureText, void *userData);
 
+// Optional: wire the platform clipboard (e.g. raylib's Get/SetClipboardText)
+// so a focused text input supports copy/cut/paste. Without it those keys are
+// ignored.
+void ClayWidgets_SetClipboardFunctions(
+    ClayWidgets_Context *ctx,
+    ClayWidgets_GetClipboardTextFunction getText,
+    ClayWidgets_SetClipboardTextFunction setText,
+    void *userData
+);
+
+// Optional: receive a message when a compile-time cap is exceeded at runtime
+// (scratch strings, focus order, table columns), once per category per frame.
+// With no handler installed, the CLAY_WIDGETS_ASSERT backstop fires instead.
+void ClayWidgets_SetErrorHandler(ClayWidgets_Context *ctx, ClayWidgets_ErrorHandlerFunction handler, void *userData);
+
 void ClayWidgets_BeginFrame(
     ClayWidgets_Context *ctx,
     ClayWidgets_Input input,
@@ -15,12 +30,75 @@ void ClayWidgets_BeginFrame(
     bool enableDragScroll
 );
 
-Clay_RenderCommandArray ClayWidgets_EndFrame(float deltaTime);
+Clay_RenderCommandArray ClayWidgets_EndFrame(ClayWidgets_Context *ctx);
 
 #ifdef CLAY_WIDGETS_IMPLEMENTATION
 
 #include <math.h>
 #include <string.h>
+
+// Overflow categories for ClayWidgets__ReportError; one report per category
+// per frame so a persistent overflow doesn't spam the handler.
+#define CLAY_WIDGETS__ERROR_FLAG_SCRATCH    (1u << 0)
+#define CLAY_WIDGETS__ERROR_FLAG_FOCUSABLES (1u << 1)
+#define CLAY_WIDGETS__ERROR_FLAG_TABLE_COLS (1u << 2)
+
+static void ClayWidgets__ReportError(ClayWidgets_Context *ctx, uint32_t flag, const char *message) {
+    if (!ctx || (ctx->frameErrorFlags & flag)) {
+        return;
+    }
+    ctx->frameErrorFlags |= flag;
+    if (ctx->errorHandler) {
+        ctx->errorHandler(message, ctx->errorHandlerUserData);
+        return;
+    }
+    CLAY_WIDGETS_ASSERT(message);
+}
+
+// The only places the library touches Clay's internal (double-underscore)
+// API: the open/configure/close triple that Begin/End style widgets need
+// because the CLAY() macro's block scoping can't span two function calls, and
+// the seeded string hash behind CLAY_SIDI_LOCAL. Isolated here so a Clay
+// upgrade that changes internals is a one-file fix.
+//
+// NOTE: the declaration argument is evaluated BEFORE the element opens (it's
+// a function argument), unlike the CLAY() macro where the struct is built
+// after Clay__OpenElementWithId runs. Never call open-element-sensitive
+// functions like Clay_GetScrollOffset() inside the declaration passed here -
+// they would read the parent. For scroll containers use
+// ClayWidgets__BeginScrollElement, which stamps the offset after opening.
+static void ClayWidgets__BeginElement(Clay_ElementId id, Clay_ElementDeclaration declaration) {
+    Clay__OpenElementWithId(id);
+    Clay__ConfigureOpenElementPtr(&declaration);
+}
+
+// BeginElement for scroll containers: opens the element first, then fills
+// clip.childOffset from the element's own retained scroll offset.
+// Clay_GetScrollOffset() reads the *currently open* element, so it must run
+// after the open - calling it in the declaration argument would read the
+// parent and freeze the content at offset zero.
+static void ClayWidgets__BeginScrollElement(Clay_ElementId id, Clay_ElementDeclaration declaration) {
+    Clay__OpenElementWithId(id);
+    declaration.clip.childOffset = Clay_GetScrollOffset();
+    Clay__ConfigureOpenElementPtr(&declaration);
+}
+
+static void ClayWidgets__EndElement(void) {
+    Clay__CloseElement();
+}
+
+// Derives a per-item child id from a widget's own id (used as the hash seed)
+// and an item index - the same mechanism as CLAY_SIDI_LOCAL, so items of two
+// instances of the same widget can't collide by construction.
+static Clay_ElementId ClayWidgets__ChildId(Clay_ElementId parent, Clay_String label, int32_t index) {
+    return Clay__HashStringWithOffset(label, (uint32_t)index, parent.id);
+}
+
+// One-line input field height (text input, combo trigger): the body font plus
+// vertical breathing room. Shared so mixed rows of fields line up exactly.
+static float ClayWidgets__FieldHeight(const ClayWidgets_Context *ctx) {
+    return (float)(ctx->theme.fontSizeBody + (int32_t)ctx->theme.spacing.md + 8);
+}
 
 static float ClayWidgets__Clamp(float value, float minValue, float maxValue) {
     if (value < minValue) {
@@ -64,8 +142,26 @@ static Clay_String ClayWidgets__StringFromCString(const char *text) {
     return result;
 }
 
+// Claims the next scratch buffer for a dynamic per-frame string. Clay holds
+// the returned pointer until render, so claiming more than
+// CLAY_WIDGETS_TEXT_SCRATCH_COUNT buffers in one frame reuses a live one and
+// corrupts earlier widgets' text - report that loudly instead of rendering
+// garbage silently.
+static char *ClayWidgets__ClaimScratch(ClayWidgets_Context *ctx) {
+    if (ctx->textScratchNext >= CLAY_WIDGETS_TEXT_SCRATCH_COUNT) {
+        ClayWidgets__ReportError(ctx, CLAY_WIDGETS__ERROR_FLAG_SCRATCH,
+            "text scratch pool exhausted: more than CLAY_WIDGETS_TEXT_SCRATCH_COUNT dynamic "
+            "strings (stepper/slider values) in one frame; earlier values will render corrupted. "
+            "Define CLAY_WIDGETS_TEXT_SCRATCH_COUNT larger.");
+    }
+    char *buf = ctx->textScratch[ctx->textScratchNext % CLAY_WIDGETS_TEXT_SCRATCH_COUNT];
+    ctx->textScratchNext++;
+    return buf;
+}
+
 // Formats an integer into one of the context's scratch buffers and returns a
-// Clay_String pointing at it. Valid until the buffer is reused (8 per frame).
+// Clay_String pointing at it. Valid until the buffer is reused (see
+// ClayWidgets__ClaimScratch).
 static Clay_String ClayWidgets__ScratchInt(ClayWidgets_Context *ctx, int32_t value) {
     Clay_String result = {0};
     if (!ctx) {
@@ -74,8 +170,7 @@ static Clay_String ClayWidgets__ScratchInt(ClayWidgets_Context *ctx, int32_t val
         return result;
     }
 
-    char *buf = ctx->textScratch[ctx->textScratchNext % 8];
-    ctx->textScratchNext++;
+    char *buf = ClayWidgets__ClaimScratch(ctx);
 
     char digits[16];
     int32_t digitCount = 0;
@@ -111,7 +206,8 @@ static Clay_String ClayWidgets__ScratchInt(ClayWidgets_Context *ctx, int32_t val
 
 // Formats a float into one of the context's scratch buffers with `decimals`
 // fractional digits (rounded), returning a Clay_String pointing at it. Valid
-// until the buffer is reused (8 per frame). stdio-free, like ClayWidgets__ScratchInt.
+// until the buffer is reused (see ClayWidgets__ClaimScratch). stdio-free,
+// like ClayWidgets__ScratchInt.
 static Clay_String ClayWidgets__ScratchFloat(ClayWidgets_Context *ctx, float value, int32_t decimals) {
     Clay_String result = {0};
     if (!ctx) {
@@ -122,8 +218,7 @@ static Clay_String ClayWidgets__ScratchFloat(ClayWidgets_Context *ctx, float val
     if (decimals < 0) decimals = 0;
     if (decimals > 6) decimals = 6;
 
-    char *buf = ctx->textScratch[ctx->textScratchNext % 8];
-    ctx->textScratchNext++;
+    char *buf = ClayWidgets__ClaimScratch(ctx);
     const int32_t cap = (int32_t)sizeof(ctx->textScratch[0]) - 1; // leave room for NUL
 
     bool negative = value < 0.0f;
@@ -599,6 +694,22 @@ static bool ClayWidgets__InsertTextAtCaret(
     return true;
 }
 
+// Hands a slice of a text-input buffer to the platform clipboard. Staged
+// through clipboardScratch because the platform setter wants a NUL-terminated
+// string and the selection is a slice of the caller's buffer.
+static void ClayWidgets__CopyToClipboard(ClayWidgets_Context *ctx, const char *text, int32_t length) {
+    if (!ctx || !ctx->setClipboardText || !text || length <= 0) {
+        return;
+    }
+    int32_t cap = (int32_t)sizeof(ctx->clipboardScratch) - 1;
+    if (length > cap) {
+        length = cap;
+    }
+    memcpy(ctx->clipboardScratch, text, (size_t)length);
+    ctx->clipboardScratch[length] = '\0';
+    ctx->setClipboardText(ctx->clipboardScratch, ctx->clipboardUserData);
+}
+
 static bool ClayWidgets__WasDoubleClick(ClayWidgets_Context *ctx, uint32_t id) {
     if (!ctx) {
         return false;
@@ -633,13 +744,20 @@ static int32_t ClayWidgets__FindFocusableIndex(const ClayWidgets_Context *ctx, u
     return -1;
 }
 
+// Tab moves focus forward through last frame's registration order;
+// Shift+Tab moves backward. Both wrap.
 static void ClayWidgets__AdvanceFocus(ClayWidgets_Context *ctx) {
     if (!ctx || !ctx->input.keyTab || ctx->focusCount <= 0) {
         return;
     }
 
     int32_t currentIndex = ClayWidgets__FindFocusableIndex(ctx, ctx->focusedId);
-    int32_t nextIndex = (currentIndex >= 0) ? (currentIndex + 1) % ctx->focusCount : 0;
+    int32_t nextIndex;
+    if (ctx->input.shiftDown) {
+        nextIndex = (currentIndex > 0) ? currentIndex - 1 : ctx->focusCount - 1;
+    } else {
+        nextIndex = (currentIndex >= 0) ? (currentIndex + 1) % ctx->focusCount : 0;
+    }
     ctx->focusedId = ctx->focusOrder[nextIndex];
 }
 
@@ -648,8 +766,22 @@ static bool ClayWidgets__RegisterFocusable(ClayWidgets_Context *ctx, Clay_Elemen
         return false;
     }
 
+    // While a focus trap (modal) was active last frame, widgets outside it are
+    // unreachable: they don't join the Tab order and give up keyboard focus,
+    // so Enter can't activate a control behind the scrim.
+    if (ctx->focusTrapPrevId != 0 && !ctx->insideFocusTrap) {
+        if (ctx->focusedId == id.id) {
+            ctx->focusedId = 0;
+        }
+        return false;
+    }
+
     if (ctx->focusCount < CLAY_WIDGETS_MAX_FOCUSABLES) {
         ctx->focusOrder[ctx->focusCount++] = id.id;
+    } else {
+        ClayWidgets__ReportError(ctx, CLAY_WIDGETS__ERROR_FLAG_FOCUSABLES,
+            "focus order full: more than CLAY_WIDGETS_MAX_FOCUSABLES interactive widgets in one "
+            "frame; extra widgets are skipped by Tab. Define CLAY_WIDGETS_MAX_FOCUSABLES larger.");
     }
 
     if (ctx->input.pointerPressed && over) {
@@ -723,6 +855,28 @@ void ClayWidgets_SetMeasureTextFunction(ClayWidgets_Context *ctx, ClayWidgets_Me
     ctx->measureTextUserData = userData;
 }
 
+void ClayWidgets_SetClipboardFunctions(
+    ClayWidgets_Context *ctx,
+    ClayWidgets_GetClipboardTextFunction getText,
+    ClayWidgets_SetClipboardTextFunction setText,
+    void *userData
+) {
+    if (!ctx) {
+        return;
+    }
+    ctx->getClipboardText = getText;
+    ctx->setClipboardText = setText;
+    ctx->clipboardUserData = userData;
+}
+
+void ClayWidgets_SetErrorHandler(ClayWidgets_Context *ctx, ClayWidgets_ErrorHandlerFunction handler, void *userData) {
+    if (!ctx) {
+        return;
+    }
+    ctx->errorHandler = handler;
+    ctx->errorHandlerUserData = userData;
+}
+
 void ClayWidgets_BeginFrame(
     ClayWidgets_Context *ctx,
     ClayWidgets_Input input,
@@ -737,6 +891,13 @@ void ClayWidgets_BeginFrame(
     ctx->layoutDimensions = layoutSize;
     ctx->textScratchNext = 0;
     ctx->scrollPanelDepth = 0;
+    ctx->frameErrorFlags = 0;
+    // Roll the focus trap forward: registration during this frame's layout
+    // checks last frame's trap (widgets before the modal in declaration order
+    // have already registered by the time BeginModal runs).
+    ctx->focusTrapPrevId = ctx->focusTrapId;
+    ctx->focusTrapId = 0;
+    ctx->insideFocusTrap = false;
     ctx->animFrame++;
     ctx->elapsedTime += input.deltaTime;
     ClayWidgets__AdvanceFocus(ctx);
@@ -798,8 +959,10 @@ void ClayWidgets_BeginFrame(
     Clay_BeginLayout();
 }
 
-Clay_RenderCommandArray ClayWidgets_EndFrame(float deltaTime) {
-    return Clay_EndLayout(deltaTime);
+Clay_RenderCommandArray ClayWidgets_EndFrame(ClayWidgets_Context *ctx) {
+    // Forward the frame's own deltaTime so Clay transitions and the widget
+    // animations (ClayWidgets__AnimTo) can never run on different clocks.
+    return Clay_EndLayout(ctx ? ctx->input.deltaTime : 0.0f);
 }
 
 #endif

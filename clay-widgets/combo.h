@@ -5,6 +5,10 @@
 #error "Include widgets.h before combo.h"
 #endif
 
+// A combo box (dropdown select). The dropdown caps its height (at ~40% of the
+// layout) and scrolls when the item list is longer, opens upward when there is
+// not enough room below the trigger, and keeps the keyboard-highlighted item
+// scrolled into view.
 bool ClayWidgets_Combo(
     ClayWidgets_Context *ctx,
     Clay_ElementId id,
@@ -15,6 +19,10 @@ bool ClayWidgets_Combo(
 );
 
 #ifdef CLAY_WIDGETS_IMPLEMENTATION
+
+// Defined in scroll-bar.h, which widgets.h includes after this file; the
+// dropdown reuses it for its own scroll container.
+void ClayWidgets_ScrollBar(ClayWidgets_Context *ctx, Clay_ElementId scrollContainerId);
 
 bool ClayWidgets_Combo(
     ClayWidgets_Context *ctx,
@@ -31,6 +39,10 @@ bool ClayWidgets_Combo(
     bool changed = false;
     Clay_ElementId triggerId = Clay_GetElementIdWithIndex(CLAY_STRING("ClayWidgetsComboTrigger"), id.id);
     Clay_ElementId dropdownId = Clay_GetElementIdWithIndex(CLAY_STRING("ClayWidgetsComboDropdown"), id.id);
+    // The dropdown's scroll bar floats a few pixels past the dropdown's right
+    // edge, so the dismiss-on-outside-press check below must treat it as
+    // inside. Same derivation as ClayWidgets_ScrollBar uses.
+    Clay_ElementId dropdownScrollBarId = Clay_GetElementIdWithIndex(CLAY_STRING("ClayWidgetsScrollBarTrack"), dropdownId.id);
 
     bool triggerOver = Clay_PointerOver(triggerId);
     bool anyOver = Clay_PointerOver(id) || triggerOver || Clay_PointerOver(dropdownId);
@@ -48,7 +60,7 @@ bool ClayWidgets_Combo(
     }
 
     if (isOpen && ctx->input.pointerPressed) {
-        if (!Clay_PointerOver(triggerId) && !Clay_PointerOver(dropdownId)) {
+        if (!Clay_PointerOver(triggerId) && !Clay_PointerOver(dropdownId) && !Clay_PointerOver(dropdownScrollBarId)) {
             ctx->openComboId = 0;
             isOpen = false;
         }
@@ -62,6 +74,7 @@ bool ClayWidgets_Combo(
             ctx->openComboId = id.id;
             ctx->comboHighlightIndex = (*selectedIndex >= 0 && *selectedIndex < itemCount)
                 ? *selectedIndex : 0;
+            ctx->comboScrollToHighlight = true;
             isOpen = true;
         }
     }
@@ -70,6 +83,7 @@ bool ClayWidgets_Combo(
         ctx->openComboId = id.id;
         ctx->comboHighlightIndex = (*selectedIndex >= 0 && *selectedIndex < itemCount)
             ? *selectedIndex : 0;
+        ctx->comboScrollToHighlight = true;
         isOpen = true;
     }
 
@@ -77,10 +91,12 @@ bool ClayWidgets_Combo(
         if (ctx->input.keyUp) {
             ctx->comboHighlightIndex = ctx->comboHighlightIndex > 0
                 ? ctx->comboHighlightIndex - 1 : itemCount - 1;
+            ctx->comboScrollToHighlight = true;
         }
         if (ctx->input.keyDown) {
             ctx->comboHighlightIndex = ctx->comboHighlightIndex < itemCount - 1
                 ? ctx->comboHighlightIndex + 1 : 0;
+            ctx->comboScrollToHighlight = true;
         }
         if (ctx->input.keyEnter) {
             if (ctx->comboHighlightIndex >= 0 && ctx->comboHighlightIndex < itemCount) {
@@ -94,10 +110,7 @@ bool ClayWidgets_Combo(
 
     if (isOpen) {
         for (int32_t i = 0; i < itemCount; i++) {
-            Clay_ElementId itemId = Clay_GetElementIdWithIndex(
-                CLAY_STRING("ClayWidgetsComboItem"),
-                (uint32_t)((uint64_t)id.id * 1000003u + (uint32_t)i)
-            );
+            Clay_ElementId itemId = ClayWidgets__ChildId(id, CLAY_STRING("ClayWidgetsComboItem"), i);
             bool itemOver = Clay_PointerOver(itemId);
             if (itemOver) {
                 ctx->comboHighlightIndex = i;
@@ -113,10 +126,68 @@ bool ClayWidgets_Combo(
     }
 
     Clay_ElementData triggerData = Clay_GetElementData(triggerId);
+    Clay_ElementData dropdownData = Clay_GetElementData(dropdownId);
     float dropdownMinWidth = triggerData.found ? triggerData.boundingBox.width : 0.0f;
 
-    const float fieldHeight = (float)(ctx->theme.fontSizeBody + (int32_t)ctx->theme.spacing.md + 8);
+    const float fieldHeight = ClayWidgets__FieldHeight(ctx);
     float r = (float)ctx->theme.radiusSm;
+
+    // The dropdown is a scroll container capped at a fraction of the layout
+    // height, so a long item list scrolls instead of running off the screen.
+    float itemHeightEstimate = (float)ctx->theme.fontSizeBody + 2.0f * (float)ctx->theme.spacing.sm;
+    float maxDropdownHeight = ctx->layoutDimensions.height * 0.4f;
+    if (maxDropdownHeight < itemHeightEstimate * 3.0f) {
+        maxDropdownHeight = itemHeightEstimate * 3.0f;
+    }
+    bool mayScroll = itemHeightEstimate * (float)itemCount > maxDropdownHeight;
+
+    // Open upward when the dropdown wouldn't fit below the trigger but would
+    // above it. Uses last frame's actual dropdown height once it exists (the
+    // item-height estimate on the opening frame).
+    float dropdownHeightEstimate = itemHeightEstimate * (float)itemCount + 2.0f;
+    if (dropdownHeightEstimate > maxDropdownHeight) {
+        dropdownHeightEstimate = maxDropdownHeight;
+    }
+    if (isOpen && dropdownData.found) {
+        dropdownHeightEstimate = dropdownData.boundingBox.height;
+    }
+    bool flipUp = false;
+    if (isOpen && triggerData.found) {
+        float spaceBelow = ctx->layoutDimensions.height
+            - (triggerData.boundingBox.y + triggerData.boundingBox.height);
+        float spaceAbove = triggerData.boundingBox.y;
+        flipUp = spaceBelow < dropdownHeightEstimate && spaceAbove >= dropdownHeightEstimate;
+    }
+
+    // Scroll the keyboard-highlighted item into view (set on open and on
+    // Up/Down, not on hover - scrolling under the pointer would re-highlight
+    // and fight the wheel). Uses last frame's boxes, so the first open frame
+    // leaves the flag set and applies one frame later.
+    if (isOpen && ctx->comboScrollToHighlight) {
+        Clay_ScrollContainerData dropScroll = Clay_GetScrollContainerData(dropdownId);
+        Clay_ElementId highlightId = ClayWidgets__ChildId(id, CLAY_STRING("ClayWidgetsComboItem"), ctx->comboHighlightIndex);
+        Clay_ElementData highlightData = Clay_GetElementData(highlightId);
+        if (dropScroll.found && dropScroll.scrollPosition && highlightData.found && dropdownData.found) {
+            float viewTop = dropdownData.boundingBox.y;
+            float viewBottom = viewTop + dropdownData.boundingBox.height;
+            float itemTop = highlightData.boundingBox.y;
+            float itemBottom = itemTop + highlightData.boundingBox.height;
+            float adjust = 0.0f;
+            if (itemTop < viewTop) {
+                adjust = viewTop - itemTop;
+            } else if (itemBottom > viewBottom) {
+                adjust = viewBottom - itemBottom;
+            }
+            if (adjust != 0.0f) {
+                float maxScroll = dropScroll.contentDimensions.height - dropScroll.scrollContainerDimensions.height;
+                if (maxScroll < 0.0f) {
+                    maxScroll = 0.0f;
+                }
+                dropScroll.scrollPosition->y = ClayWidgets__Clamp(dropScroll.scrollPosition->y + adjust, -maxScroll, 0.0f);
+            }
+            ctx->comboScrollToHighlight = false;
+        }
+    }
 
     Clay_String displayText = (*selectedIndex >= 0 && *selectedIndex < itemCount)
         ? items[*selectedIndex]
@@ -125,6 +196,14 @@ bool ClayWidgets_Combo(
     Clay_Color triggerBg = ctx->theme.surfaceAltColor;
     if (triggerOver || isOpen) {
         triggerBg = ctx->theme.hoverColor;
+    }
+
+    // While open, square the trigger corners on the side the dropdown joins.
+    Clay_CornerRadius triggerRadius = { r, r, r, r };
+    if (isOpen) {
+        triggerRadius = flipUp
+            ? (Clay_CornerRadius){ 0.0f, 0.0f, r, r }
+            : (Clay_CornerRadius){ r, r, 0.0f, 0.0f };
     }
 
     CLAY(id, {
@@ -159,9 +238,7 @@ bool ClayWidgets_Combo(
                 .layoutDirection = CLAY_LEFT_TO_RIGHT,
             },
             .backgroundColor = triggerBg,
-            .cornerRadius = isOpen
-                ? (Clay_CornerRadius){ r, r, 0.0f, 0.0f }
-                : (Clay_CornerRadius){ r, r, r, r },
+            .cornerRadius = triggerRadius,
             .border = {
                 .color = (focused || isOpen) ? ctx->theme.focusRingColor : ctx->theme.borderColor,
                 .width = { .left = 1, .right = 1, .top = 1, .bottom = 1 },
@@ -192,32 +269,45 @@ bool ClayWidgets_Combo(
                 .layout = {
                     .sizing = {
                         .width = CLAY_SIZING_FIT(dropdownMinWidth, 0),
-                        .height = CLAY_SIZING_FIT(0, 0),
+                        .height = CLAY_SIZING_FIT(0, maxDropdownHeight),
                     },
+                    // Reserve a gutter so items never sit under the floating
+                    // scroll bar when the list is long enough to scroll.
+                    .padding = { .right = mayScroll ? (uint16_t)(CLAY_WIDGETS_SCROLLBAR_WIDTH + ctx->theme.spacing.xs) : 0 },
                     .childGap = 0,
                     .layoutDirection = CLAY_TOP_TO_BOTTOM,
                 },
                 .backgroundColor = ctx->theme.surfaceAltColor,
-                .cornerRadius = (Clay_CornerRadius){ 0.0f, 0.0f, r, r },
+                .cornerRadius = flipUp
+                    ? (Clay_CornerRadius){ r, r, 0.0f, 0.0f }
+                    : (Clay_CornerRadius){ 0.0f, 0.0f, r, r },
                 .floating = {
                     .parentId = triggerId.id,
                     .zIndex = 10,
-                    .attachPoints = {
-                        .element = CLAY_ATTACH_POINT_LEFT_TOP,
-                        .parent = CLAY_ATTACH_POINT_LEFT_BOTTOM,
-                    },
+                    .attachPoints = flipUp
+                        ? (Clay_FloatingAttachPoints){
+                              .element = CLAY_ATTACH_POINT_LEFT_BOTTOM,
+                              .parent = CLAY_ATTACH_POINT_LEFT_TOP,
+                          }
+                        : (Clay_FloatingAttachPoints){
+                              .element = CLAY_ATTACH_POINT_LEFT_TOP,
+                              .parent = CLAY_ATTACH_POINT_LEFT_BOTTOM,
+                          },
                     .attachTo = CLAY_ATTACH_TO_ELEMENT_WITH_ID,
                 },
+                .clip = { .vertical = true, .childOffset = Clay_GetScrollOffset() },
                 .border = {
                     .color = ctx->theme.focusRingColor,
-                    .width = { .left = 1, .right = 1, .top = 0, .bottom = 1 },
+                    .width = {
+                        .left = 1,
+                        .right = 1,
+                        .top = (uint16_t)(flipUp ? 1 : 0),
+                        .bottom = (uint16_t)(flipUp ? 0 : 1),
+                    },
                 },
             }) {
                 for (int32_t i = 0; i < itemCount; i++) {
-                    Clay_ElementId itemId = Clay_GetElementIdWithIndex(
-                        CLAY_STRING("ClayWidgetsComboItem"),
-                        (uint32_t)((uint64_t)id.id * 1000003u + (uint32_t)i)
-                    );
+                    Clay_ElementId itemId = ClayWidgets__ChildId(id, CLAY_STRING("ClayWidgetsComboItem"), i);
                     bool itemOver = Clay_PointerOver(itemId);
                     bool isHighlighted = (i == ctx->comboHighlightIndex);
                     bool isSelected = (i == *selectedIndex);
@@ -249,6 +339,8 @@ bool ClayWidgets_Combo(
                         });
                     }
                 }
+
+                ClayWidgets_ScrollBar(ctx, dropdownId);
             }
         }
     }

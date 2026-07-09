@@ -54,10 +54,7 @@ bool ClayWidgets_ListBox(
 
     // Resolve row clicks before laying out so the new selection paints this frame.
     for (int32_t i = 0; i < itemCount; i++) {
-        Clay_ElementId rowId = Clay_GetElementIdWithIndex(
-            CLAY_STRING("ClayWidgetsListBoxItem"),
-            (uint32_t)((uint64_t)id.id * 2654435761u + (uint32_t)i)
-        );
+        Clay_ElementId rowId = ClayWidgets__ChildId(id, CLAY_STRING("ClayWidgetsListBoxItem"), i);
         if (ClayWidgets__ConsumeClick(ctx, Clay_PointerOver(rowId))) {
             if (*selectedIndex != i) { *selectedIndex = i; changed = true; }
         }
@@ -78,10 +75,7 @@ bool ClayWidgets_ListBox(
         },
     }) {
         for (int32_t i = 0; i < itemCount; i++) {
-            Clay_ElementId rowId = Clay_GetElementIdWithIndex(
-                CLAY_STRING("ClayWidgetsListBoxItem"),
-                (uint32_t)((uint64_t)id.id * 2654435761u + (uint32_t)i)
-            );
+            Clay_ElementId rowId = ClayWidgets__ChildId(id, CLAY_STRING("ClayWidgetsListBoxItem"), i);
             bool rowOver = Clay_PointerOver(rowId);
             bool selected = (i == *selectedIndex);
 

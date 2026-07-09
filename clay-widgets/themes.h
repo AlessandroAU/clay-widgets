@@ -45,6 +45,16 @@ static ClayWidgets_Theme ClayWidgets__BuildTheme(
     theme.pressedColor = pressedColor;
     theme.focusRingColor = focusRingColor;
 
+    // Semantic status palette and overlay colors. One set of defaults for all
+    // presets so a status reads identically across themes; presets override
+    // after building (as Win95 does with the radii) when the look demands it.
+    theme.successColor = (Clay_Color){46, 160, 67, 255};
+    theme.warningColor = (Clay_Color){191, 135, 0, 255};
+    theme.dangerColor = (Clay_Color){207, 54, 54, 255};
+    theme.onAccentColor = (Clay_Color){245, 248, 252, 255};
+    theme.scrimColor = (Clay_Color){0, 0, 0, 150};
+    theme.disabledMix = 0.5f;
+
     theme.radiusSm = 6;
     theme.radiusMd = 10;
 
@@ -134,6 +144,13 @@ ClayWidgets_Theme ClayWidgets_ThemeWin95(void) {
     // Square, beveled-era corners - the defining trait of the classic look.
     theme.radiusSm = 0;
     theme.radiusMd = 0;
+
+    // Era-appropriate status colors: the saturated primaries of the classic
+    // 16-color palette, with pure white for text on filled surfaces.
+    theme.successColor = (Clay_Color){0, 128, 0, 255};
+    theme.warningColor = (Clay_Color){128, 96, 0, 255};
+    theme.dangerColor = (Clay_Color){192, 0, 0, 255};
+    theme.onAccentColor = (Clay_Color){255, 255, 255, 255};
 
     return theme;
 }

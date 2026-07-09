@@ -35,35 +35,61 @@ float ClayWidgets_Slider(
     }
 
     float clamped = ClayWidgets__Clamp(value, minValue, maxValue);
-    bool over = Clay_PointerOver(id);
-    bool focused = ClayWidgets__RegisterFocusable(ctx, id, over);
+    bool over = options.disabled ? false : Clay_PointerOver(id);
+    bool focused = options.disabled ? false : ClayWidgets__RegisterFocusable(ctx, id, over);
 
-    if (ctx->input.pointerPressed && over) {
-        ctx->activeId = id.id;
-    }
-    if (!ctx->input.pointerDown && ctx->activeId == id.id) {
-        ctx->activeId = 0;
-    }
+    if (!options.disabled) {
+        if (ctx->input.pointerPressed && over) {
+            ctx->activeId = id.id;
+        }
+        if (!ctx->input.pointerDown && ctx->activeId == id.id) {
+            ctx->activeId = 0;
+        }
 
-    if (ctx->activeId == id.id && ctx->input.pointerDown) {
-        Clay_ElementData data = Clay_GetElementData(id);
-        if (data.found && data.boundingBox.width > 0.0f) {
-            float localX = ctx->input.mouseX - data.boundingBox.x;
-            float ratio = ClayWidgets__Clamp(localX / data.boundingBox.width, 0.0f, 1.0f);
-            clamped = minValue + (maxValue - minValue) * ratio;
+        if (ctx->activeId == id.id && ctx->input.pointerDown) {
+            Clay_ElementData data = Clay_GetElementData(id);
+            if (data.found && data.boundingBox.width > 0.0f) {
+                float localX = ctx->input.mouseX - data.boundingBox.x;
+                float ratio = ClayWidgets__Clamp(localX / data.boundingBox.width, 0.0f, 1.0f);
+                clamped = minValue + (maxValue - minValue) * ratio;
 
-            if (step > 0.0f) {
-                float steps = (clamped - minValue) / step;
-                int32_t rounded = (int32_t)(steps + (steps >= 0.0f ? 0.5f : -0.5f));
-                clamped = minValue + ((float)rounded * step);
+                if (step > 0.0f) {
+                    float steps = (clamped - minValue) / step;
+                    int32_t rounded = (int32_t)(steps + (steps >= 0.0f ? 0.5f : -0.5f));
+                    clamped = minValue + ((float)rounded * step);
+                }
+                clamped = ClayWidgets__Clamp(clamped, minValue, maxValue);
             }
-            clamped = ClayWidgets__Clamp(clamped, minValue, maxValue);
+        }
+
+        // Keyboard adjustment while focused: arrows step the value (a
+        // hundredth of the range when no step is set), Home/End jump to the
+        // ends. Keeps a Tab-focusable slider actually operable by keyboard.
+        if (focused) {
+            float keyStep = step > 0.0f ? step : (maxValue - minValue) / 100.0f;
+            if (ctx->input.keyLeft) {
+                clamped = ClayWidgets__Clamp(clamped - keyStep, minValue, maxValue);
+            }
+            if (ctx->input.keyRight) {
+                clamped = ClayWidgets__Clamp(clamped + keyStep, minValue, maxValue);
+            }
+            if (ctx->input.keyHome) {
+                clamped = minValue;
+            }
+            if (ctx->input.keyEnd) {
+                clamped = maxValue;
+            }
         }
     }
 
     float denominator = (maxValue - minValue);
     float t = denominator > 0.0f ? (clamped - minValue) / denominator : 0.0f;
     t = ClayWidgets__Clamp(t, 0.0f, 1.0f);
+
+    Clay_Color fillColor = ClayWidgets__MixColor(ctx->theme.accentMutedColor, ctx->theme.accentColor, t);
+    if (options.disabled) {
+        fillColor = ClayWidgets__MixColor(fillColor, ctx->theme.surfaceColor, ctx->theme.disabledMix);
+    }
 
     CLAY(id, {
         .layout = {
@@ -85,7 +111,7 @@ float ClayWidgets_Slider(
                     .height = CLAY_SIZING_GROW(0),
                 },
             },
-            .backgroundColor = ClayWidgets__MixColor(ctx->theme.accentMutedColor, ctx->theme.accentColor, t),
+            .backgroundColor = fillColor,
             .cornerRadius = CLAY_CORNER_RADIUS(8),
         }) {}
 
@@ -124,7 +150,7 @@ float ClayWidgets_Slider(
                 },
             }) {
                 CLAY_TEXT(valueText, {
-                    .textColor = ctx->theme.textColor,
+                    .textColor = options.disabled ? ctx->theme.textMutedColor : ctx->theme.textColor,
                     .fontId = ctx->theme.fontBody,
                     .fontSize = ctx->theme.fontSizeSmall,
                     .wrapMode = CLAY_TEXT_WRAP_NONE,
