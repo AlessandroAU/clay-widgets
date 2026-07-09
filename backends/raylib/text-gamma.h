@@ -1,4 +1,4 @@
-// text_gamma.h - optional gamma-correct font-atlas baking for the raylib text
+// text-gamma.h - optional gamma-correct font-atlas baking for the raylib text
 // path.
 //
 // raylib composites glyph coverage in gamma (sRGB) space rather than linear

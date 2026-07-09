@@ -1,0 +1,38 @@
+# Clean-clone build of the desktop demo: fetch submodules, build raylib from
+# source, build clay-widgets-demo.exe. Catches missing-submodule and
+# broken-include regressions that a warm local checkout hides.
+name: build
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          install: >-
+            make
+            mingw-w64-x86_64-toolchain
+
+      - name: Build raylib + demo
+        run: make -j4
+
+      - name: Verify the binary was produced
+        run: test -f clay-widgets-demo.exe
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: clay-widgets-demo
+          path: clay-widgets-demo.exe

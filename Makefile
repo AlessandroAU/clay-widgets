@@ -8,7 +8,8 @@ RAYLIB_LIB := $(RAYLIB_SRC_DIR)/libraylib.a
 INCLUDES := -I. -Isubprojects/clay -Isubprojects/raylib/src
 # Static-link the GCC/C++ runtime and pthreads so the exe has no non-system DLL
 # dependencies (no libgcc_s_seh-1.dll / libstdc++-6.dll / libwinpthread-1.dll).
-# raylib is already a static .a; the font is baked in via embedded_font.h.
+# raylib is already a static .a; the font is baked in via
+# assets/generated/embedded-font.h.
 LDFLAGS := -L$(RAYLIB_SRC_DIR) -static -static-libgcc -static-libstdc++
 LDLIBS := -lraylib -lopengl32 -lgdi32 -lwinmm
 
@@ -16,14 +17,14 @@ BUILD_DIR := build
 LOG := $(BUILD_DIR)/build.log
 
 APP := clay-widgets-demo.exe
-SRC := main.cpp
+SRC := demo/main.cpp
 OBJ := $(BUILD_DIR)/main.o
 DEP := $(OBJ:.o=.d)
 
 # Header trees the single translation unit pulls in: the widget library, the
-# raylib backend, and the demo screens. Listed so an edit to any of them forces
-# a rebuild even before the -MMD dependency file exists.
-HEADERS := $(wildcard clay-widgets/*.h backends/raylib/*.h demo/*.h demo/screens/*.h)
+# raylib backend, the demo screens and the generated font header. Listed so an
+# edit to any of them forces a rebuild even before the -MMD dependency file exists.
+HEADERS := $(wildcard clay-widgets/*.h backends/raylib/*.h demo/*.h demo/screens/*.h assets/generated/*.h)
 
 .PHONY: all raylib run clean raylib-clean log font
 
@@ -36,7 +37,10 @@ font:
 
 raylib: $(RAYLIB_LIB)
 
+# clay and raylib are git submodules; fail with a hint instead of a cryptic
+# "No rule to make target" if they haven't been fetched yet.
 $(RAYLIB_LIB):
+	$(if $(wildcard $(RAYLIB_SRC_DIR)/Makefile),,$(error raylib source not found in $(RAYLIB_SRC_DIR) - run: git submodule update --init))
 	$(MAKE) -C $(RAYLIB_SRC_DIR) PLATFORM=PLATFORM_DESKTOP RAYLIB_BUILD_MODE=RELEASE
 
 $(BUILD_DIR):

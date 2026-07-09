@@ -1,13 +1,15 @@
-# Emscripten SDK (installed by build-web.py, ~1GB)
+# Emscripten SDK (installed by tools/build_web.py, ~1GB)
 /subprojects/emsdk/
 
-# Web build output
-/web/
+# Web build artifact kept inside raylib's source tree
 /subprojects/raylib/src/libraylib.web.a
 
-# Build
-/build/*
+# Build output (desktop objects/logs and the build/web/ WebAssembly output)
+/build/
 *.log
 
 # Final binaries
 *.exe
+
+# Local Python virtualenv for the tools/ scripts
+/.venv/
