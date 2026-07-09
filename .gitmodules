@@ -1,0 +1,6 @@
+[submodule "subprojects/clay"]
+	path = subprojects/clay
+	url = https://github.com/nicbarker/clay
+[submodule "subprojects/raylib"]
+	path = subprojects/raylib
+	url = https://github.com/raysan5/raylib

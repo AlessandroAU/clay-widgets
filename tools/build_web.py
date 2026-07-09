@@ -9,19 +9,19 @@ What it does:
   1. Auto-installs the Emscripten SDK into subprojects/emsdk on first run.
   2. Builds raylib for PLATFORM_WEB  -> subprojects/raylib/src/libraylib.web.a
      (a separate file from the desktop libraylib.a, so the two never clash).
-  3. Compiles main.cpp with emcc into:
-       web/index.html  +  index.js  +  index.wasm
+  3. Compiles demo/main.cpp with emcc into:
+       build/web/index.html  +  index.js  +  index.wasm
      (the UI font is baked into the binary, so there is no preloaded index.data).
 
 Usage:
-  python tools/build-web.py                # build (installs emsdk if missing)
-  python tools/build-web.py --serve        # build, then serve web/ at http://localhost:8000
-  python tools/build-web.py --clean        # remove web/ and libraylib.web.a, then build
-  python tools/build-web.py --skip-raylib  # don't rebuild raylib (reuse libraylib.web.a)
-  python tools/build-web.py --emsdk-version 3.1.64   # pin a specific emsdk version
+  python tools/build_web.py                # build (installs emsdk if missing)
+  python tools/build_web.py --serve        # build, then serve build/web/ at http://localhost:8000
+  python tools/build_web.py --clean        # remove build/web/ and libraylib.web.a, then build
+  python tools/build_web.py --skip-raylib  # don't rebuild raylib (reuse libraylib.web.a)
+  python tools/build_web.py --emsdk-version 3.1.64   # pin a specific emsdk version
 
 Note: the output must be served over HTTP (browsers won't fetch .wasm/.data
-from file://). Use --serve, or any static server pointed at the web/ folder.
+from file://). Use --serve, or any static server pointed at build/web/.
 """
 
 from __future__ import annotations
@@ -39,9 +39,9 @@ RAYLIB_SRC = ROOT / "subprojects" / "raylib" / "src"
 RAYLIB_WEB_LIB = RAYLIB_SRC / "libraylib.web.a"
 # Project-owned emscripten shell: a bare full-page canvas with no raylib header
 # bar. Falls back to raylib's stock shell.html if this file is ever removed.
-SHELL_FILE = ROOT / "web-shell.html"
+SHELL_FILE = ROOT / "web" / "shell.html"
 RAYLIB_SHELL_FILE = RAYLIB_SRC / "shell.html"
-OUT_DIR = ROOT / "web"
+OUT_DIR = ROOT / "build" / "web"
 
 
 def resolve_shell() -> Path:
@@ -160,10 +160,10 @@ def build_raylib(env: dict, make: str) -> None:
 def build_app(env: dict) -> None:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     emcc = require_tool("emcc", env)
-    print("Compiling main.cpp -> web/index.html with emcc ...")
+    print("Compiling demo/main.cpp -> build/web/index.html with emcc ...")
     cmd = [
         emcc,
-        "main.cpp",
+        "demo/main.cpp",
         "-std=c++20", "-O2",
         # clang (emcc) makes C++11 brace-init narrowing a hard error by default,
         # where the desktop g++ build only warns. The widget headers rely on
@@ -181,12 +181,13 @@ def build_app(env: dict) -> None:
         "-sINITIAL_MEMORY=268435456",
         "-sSTACK_SIZE=1048576",      # Clay layout + raylib recurse; give a 1MB stack
         "-sGL_ENABLE_GET_PROC_ADDRESS",
-        # No --preload-file: the UI font is baked into the binary (embedded_font.h),
-        # so the web build needs no virtual filesystem / no separate index.data.
+        # No --preload-file: the UI font is baked into the binary (via
+        # assets/generated/embedded-font.h), so the web build needs no virtual
+        # filesystem / no separate index.data.
         "--shell-file", str(resolve_shell()),
         "-o", str(OUT_DIR / "index.html"),
     ]
-    # Run from the repo root so main.cpp and includes resolve relatively.
+    # Run from the repo root so demo/main.cpp and includes resolve relatively.
     run(cmd, cwd=ROOT, env=env)
     print(f"\nDone. Open {OUT_DIR / 'index.html'} via an HTTP server (see --serve).")
 
@@ -217,9 +218,9 @@ def serve() -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Build clay-widgets for the web via Emscripten")
-    parser.add_argument("--clean", action="store_true", help="remove web/ and libraylib.web.a before building")
+    parser.add_argument("--clean", action="store_true", help="remove build/web/ and libraylib.web.a before building")
     parser.add_argument("--skip-raylib", action="store_true", help="reuse an existing libraylib.web.a")
-    parser.add_argument("--serve", action="store_true", help="serve web/ on http://localhost:8000 after building")
+    parser.add_argument("--serve", action="store_true", help="serve build/web/ on http://localhost:8000 after building")
     parser.add_argument("--emsdk-version", default="latest", help="emsdk version to install/activate (default: latest)")
     args = parser.parse_args()
 

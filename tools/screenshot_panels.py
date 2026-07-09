@@ -14,11 +14,11 @@ The four main panels (views) are:
     3  Settings   - theme, behavior and diagnostics
 
 Usage:
-    python docs/screenshot_panels.py                 # all views, default theme
-    python docs/screenshot_panels.py --theme 3       # Forest theme
-    python docs/screenshot_panels.py --views 0 2     # only Dashboard + Gallery
-    python docs/screenshot_panels.py --out docs/img  # custom output folder
-    python docs/screenshot_panels.py --size 1600 1000
+    python tools/screenshot_panels.py                 # all views, default theme
+    python tools/screenshot_panels.py --theme 3       # Forest theme
+    python tools/screenshot_panels.py --views 0 2     # only Dashboard + Gallery
+    python tools/screenshot_panels.py --out docs/img  # custom output folder
+    python tools/screenshot_panels.py --size 1600 1000
 
 Notes:
     * raylib's TakeScreenshot writes the PNG relative to the working directory,
@@ -39,7 +39,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-# docs/ lives directly under the project root.
+# tools/ lives directly under the project root.
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 # view index -> (filename stem, human label)
@@ -50,7 +50,7 @@ VIEWS: dict[int, tuple[str, str]] = {
     3: ("settings", "Settings"),
 }
 
-# theme index -> label, matching main.cpp's --theme flag (0 keeps the default).
+# theme index -> label, matching demo/main.cpp's --theme flag (0 keeps the default).
 THEMES: dict[int, str] = {
     0: "default",
     1: "Slate",
@@ -73,7 +73,7 @@ def find_binary() -> Path:
         return Path(on_path)
     sys.exit(
         "error: could not find the demo binary. Build it first with "
-        "`python build.py` (or `mingw32-make`) from the project root."
+        "`python tools/build.py` (or `mingw32-make`) from the project root."
     )
 
 

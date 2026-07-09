@@ -2,7 +2,7 @@
 #ifndef CLAY_WIDGETS_DEMO_SETTINGS_H
 #define CLAY_WIDGETS_DEMO_SETTINGS_H
 
-#include "demo/demo_state.h"
+#include "demo/demo-state.h"
 
 namespace {
 

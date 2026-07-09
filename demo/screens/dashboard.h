@@ -2,7 +2,7 @@
 #ifndef CLAY_WIDGETS_DEMO_DASHBOARD_H
 #define CLAY_WIDGETS_DEMO_DASHBOARD_H
 
-#include "demo/demo_state.h"
+#include "demo/demo-state.h"
 
 namespace {
 

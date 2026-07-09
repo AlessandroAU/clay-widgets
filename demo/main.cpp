@@ -7,7 +7,7 @@
 //   - Gallery:   the full widget catalog, grouped into themed cards.
 //   - Settings:  theme presets, behavior toggles and live diagnostics.
 //
-// All state lives in DemoState (see demo/demo_state.h); each screen lives in its
+// All state lives in DemoState (see demo/demo-state.h); each screen lives in its
 // own file under demo/. Rendering is raylib via backends/raylib; the same file
 // compiles to desktop and WebAssembly.
 
@@ -26,16 +26,16 @@
 #include "raylib.h"
 
 // Clay -> raylib renderer, font-atlas cache, text measurement and web glue.
-#include "backends/raylib/clay_raylib_renderer.h"
+#include "backends/raylib/clay-raylib-renderer.h"
 
 // Demo state plus one file per screen.
-#include "demo/demo_state.h"
+#include "demo/demo-state.h"
 #include "demo/chrome.h"
 #include "demo/screens/dashboard.h"
 #include "demo/screens/tasks.h"
 #include "demo/screens/gallery.h"
 #include "demo/screens/settings.h"
-#include "demo/floating_layers.h"
+#include "demo/floating-layers.h"
 
 int main(int argc, char **argv) {
     // Optional headless screenshot harness so the demo can be verified without a
@@ -127,7 +127,8 @@ int main(int argc, char **argv) {
     // so glyphs sample 1:1 on screen at any DPI.
     Vector2 dpiScale = GetWindowScaleDPI();
 
-    // The UI font is baked into the binary (embedded_font.h), so there are no
+    // The UI font is baked into the binary (assets/generated/embedded-font.h),
+    // so there are no
     // external asset files. FontCache bakes one gamma-corrected atlas per pixel
     // size the UI asks for instead of scaling a single baked bitmap.
     FontCache fontCache;
