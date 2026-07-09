@@ -41,31 +41,37 @@ bool ClayWidgets_Stepper(
     Clay_ElementId minusId = Clay_GetElementIdWithIndex(CLAY_STRING("ClayWidgetsStepperMinus"), id.id);
     Clay_ElementId plusId = Clay_GetElementIdWithIndex(CLAY_STRING("ClayWidgetsStepperPlus"), id.id);
 
-    bool over = Clay_PointerOver(id);
-    bool focused = ClayWidgets__RegisterFocusable(ctx, id, over);
+    bool over = options.disabled ? false : Clay_PointerOver(id);
+    bool focused = options.disabled ? false : ClayWidgets__RegisterFocusable(ctx, id, over);
     bool changed = false;
 
     int32_t start = *value;
-    if (ClayWidgets__ConsumeClick(ctx, Clay_PointerOver(minusId))) {
-        *value -= step;
-    }
-    if (ClayWidgets__ConsumeClick(ctx, Clay_PointerOver(plusId))) {
-        *value += step;
-    }
-    if (focused) {
-        if (ctx->input.keyUp || ctx->input.keyRight) {
+    if (!options.disabled) {
+        if (ClayWidgets__ConsumeClick(ctx, Clay_PointerOver(minusId))) {
+            *value -= step;
+        }
+        if (ClayWidgets__ConsumeClick(ctx, Clay_PointerOver(plusId))) {
             *value += step;
         }
-        if (ctx->input.keyDown || ctx->input.keyLeft) {
-            *value -= step;
+        if (focused) {
+            if (ctx->input.keyUp || ctx->input.keyRight) {
+                *value += step;
+            }
+            if (ctx->input.keyDown || ctx->input.keyLeft) {
+                *value -= step;
+            }
         }
     }
     *value = ClayWidgets__MaxI32(minValue, ClayWidgets__MinI32(*value, maxValue));
     changed = (*value != start);
 
     float r = (float)ctx->theme.radiusSm;
-    bool minusOver = Clay_PointerOver(minusId);
-    bool plusOver = Clay_PointerOver(plusId);
+    bool minusOver = !options.disabled && Clay_PointerOver(minusId);
+    bool plusOver = !options.disabled && Clay_PointerOver(plusId);
+    Clay_Color buttonFace = options.disabled
+        ? ClayWidgets__MixColor(ctx->theme.surfaceAltColor, ctx->theme.surfaceColor, ctx->theme.disabledMix)
+        : ctx->theme.surfaceAltColor;
+    Clay_Color glyphColor = options.disabled ? ctx->theme.textMutedColor : ctx->theme.textColor;
 
     CLAY(id, {
         .layout = {
@@ -86,11 +92,11 @@ bool ClayWidgets_Stepper(
                 .padding = { .left = 0, .right = 0, .top = ctx->theme.spacing.sm, .bottom = ctx->theme.spacing.sm },
                 .childAlignment = { .x = CLAY_ALIGN_X_CENTER, .y = CLAY_ALIGN_Y_CENTER },
             },
-            .backgroundColor = minusOver ? ctx->theme.hoverColor : ctx->theme.surfaceAltColor,
+            .backgroundColor = minusOver ? ctx->theme.hoverColor : buttonFace,
             .cornerRadius = { .topLeft = r, .topRight = 0.0f, .bottomLeft = r, .bottomRight = 0.0f },
         }) {
             CLAY_TEXT(CLAY_STRING("-"), {
-                .textColor = ctx->theme.textColor,
+                .textColor = glyphColor,
                 .fontId = ctx->theme.fontBody,
                 .fontSize = ctx->theme.fontSizeBody,
             });
@@ -103,14 +109,14 @@ bool ClayWidgets_Stepper(
                 .padding = { .left = ctx->theme.spacing.sm, .right = ctx->theme.spacing.sm, .top = ctx->theme.spacing.sm, .bottom = ctx->theme.spacing.sm },
                 .childAlignment = { .x = CLAY_ALIGN_X_CENTER, .y = CLAY_ALIGN_Y_CENTER },
             },
-            .backgroundColor = ctx->theme.surfaceAltColor,
+            .backgroundColor = buttonFace,
             .border = {
                 .color = ctx->theme.borderColor,
                 .width = { .left = 1, .right = 1, .top = 0, .bottom = 0 },
             },
         }) {
             CLAY_TEXT(ClayWidgets__ScratchInt(ctx, *value), {
-                .textColor = ctx->theme.textColor,
+                .textColor = glyphColor,
                 .fontId = ctx->theme.fontBody,
                 .fontSize = ctx->theme.fontSizeBody,
                 .textAlignment = CLAY_TEXT_ALIGN_CENTER,
@@ -124,11 +130,11 @@ bool ClayWidgets_Stepper(
                 .padding = { .left = 0, .right = 0, .top = ctx->theme.spacing.sm, .bottom = ctx->theme.spacing.sm },
                 .childAlignment = { .x = CLAY_ALIGN_X_CENTER, .y = CLAY_ALIGN_Y_CENTER },
             },
-            .backgroundColor = plusOver ? ctx->theme.hoverColor : ctx->theme.surfaceAltColor,
+            .backgroundColor = plusOver ? ctx->theme.hoverColor : buttonFace,
             .cornerRadius = { .topLeft = 0.0f, .topRight = r, .bottomLeft = 0.0f, .bottomRight = r },
         }) {
             CLAY_TEXT(CLAY_STRING("+"), {
-                .textColor = ctx->theme.textColor,
+                .textColor = glyphColor,
                 .fontId = ctx->theme.fontBody,
                 .fontSize = ctx->theme.fontSizeBody,
             });

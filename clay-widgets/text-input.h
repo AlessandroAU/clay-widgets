@@ -35,7 +35,7 @@ bool ClayWidgets_TextInput(
     const uint16_t fontSize = ctx->theme.fontSizeBody;
     const uint16_t letterSpacing = 0;
     const float horizontalInset = (float)ctx->theme.spacing.md;
-    const float fieldHeight = (float)(ctx->theme.fontSizeBody + (int32_t)ctx->theme.spacing.md + 8);
+    const float fieldHeight = ClayWidgets__FieldHeight(ctx);
     Clay_ElementId fieldId = Clay_GetElementIdWithIndex(CLAY_STRING("ClayWidgetsTextInputField"), id.id);
     // The text/caret/selection live in an inner element that owns the horizontal
     // clip+scroll; the bordered field wraps it. Keeping the clip off the bordered
@@ -46,13 +46,20 @@ bool ClayWidgets_TextInput(
     bool over = Clay_PointerOver(id);
     // The inner element clips both axes but scrolls neither via Clay (its horizontal
     // text scroll is manual), so let a vertical wheel over the field fall through to
-    // an enclosing scroll panel instead of being swallowed.
+    // an enclosing scroll panel instead of being swallowed. Applies even when
+    // disabled - an inert field shouldn't eat the panel's scroll.
     ClayWidgets__RegisterWheelFallthrough(ctx, fieldId, over);
-    ClayWidgets__RegisterFocusable(ctx, id, over);
-    if (ctx->input.pointerPressed && !over && ctx->focusedId == id.id) {
-        ctx->focusedId = 0;
+    if (options.disabled) {
+        if (ctx->focusedId == id.id) {
+            ctx->focusedId = 0;
+        }
+    } else {
+        ClayWidgets__RegisterFocusable(ctx, id, over);
+        if (ctx->input.pointerPressed && !over && ctx->focusedId == id.id) {
+            ctx->focusedId = 0;
+        }
     }
-    bool focused = (ctx->focusedId == id.id);
+    bool focused = !options.disabled && (ctx->focusedId == id.id);
 
     if (focused && ctx->textInputId != id.id) {
         ctx->textInputId = id.id;
@@ -164,6 +171,35 @@ bool ClayWidgets_TextInput(
             }
         }
 
+        // Clipboard, via the functions injected with
+        // ClayWidgets_SetClipboardFunctions (ignored when none are set).
+        // Copy/cut act on the selection; paste inserts at the caret, replacing
+        // any selection, and stops at the first newline - this is a
+        // single-line field.
+        if ((ctx->input.keyCopy || ctx->input.keyCut) && ClayWidgets__HasSelection(ctx)) {
+            int32_t copyStart = 0;
+            int32_t copyEnd = 0;
+            ClayWidgets__SelectionRange(ctx, &copyStart, &copyEnd);
+            ClayWidgets__CopyToClipboard(ctx, buffer + copyStart, copyEnd - copyStart);
+            if (ctx->input.keyCut && ClayWidgets__DeleteSelection(buffer, &length, ctx)) {
+                changed = true;
+            }
+        }
+
+        if (ctx->input.keyPaste && ctx->getClipboardText) {
+            const char *clip = ctx->getClipboardText(ctx->clipboardUserData);
+            if (clip) {
+                int32_t clipLength = 0;
+                while (clip[clipLength] != '\0' && clip[clipLength] != '\n' && clip[clipLength] != '\r'
+                    && clipLength < CLAY_WIDGETS_TEXT_MAX_BYTES) {
+                    clipLength++;
+                }
+                if (ClayWidgets__InsertTextAtCaret(ctx, buffer, &length, capacity, clip, clipLength)) {
+                    changed = true;
+                }
+            }
+        }
+
         if (ctx->input.textUtf8 && ctx->input.textUtf8Length > 0) {
             if (ClayWidgets__InsertTextAtCaret(ctx, buffer, &length, capacity, ctx->input.textUtf8, ctx->input.textUtf8Length)) {
                 changed = true;
@@ -234,7 +270,9 @@ bool ClayWidgets_TextInput(
                 .padding = { .left = (uint16_t)horizontalInset, .right = (uint16_t)horizontalInset },
                 .childAlignment = { .x = CLAY_ALIGN_X_LEFT, .y = CLAY_ALIGN_Y_CENTER },
             },
-            .backgroundColor = focused ? ctx->theme.hoverColor : ctx->theme.surfaceAltColor,
+            .backgroundColor = options.disabled
+                ? ClayWidgets__MixColor(ctx->theme.surfaceAltColor, ctx->theme.surfaceColor, ctx->theme.disabledMix)
+                : (focused ? ctx->theme.hoverColor : ctx->theme.surfaceAltColor),
             .cornerRadius = CLAY_CORNER_RADIUS(ctx->theme.radiusMd),
             .border = {
                 .color = focused ? ctx->theme.focusRingColor : ctx->theme.borderColor,
@@ -291,7 +329,7 @@ bool ClayWidgets_TextInput(
                 }
 
                 CLAY_TEXT(displayText, {
-                    .textColor = (length > 0) ? ctx->theme.textColor : ctx->theme.textMutedColor,
+                    .textColor = (length > 0 && !options.disabled) ? ctx->theme.textColor : ctx->theme.textMutedColor,
                     .fontId = fontId,
                     .fontSize = fontSize,
                     .wrapMode = CLAY_TEXT_WRAP_NONE,

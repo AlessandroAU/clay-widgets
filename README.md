@@ -23,8 +23,11 @@ The tree separates three things: the renderer-agnostic **widget library**, the
   - `chrome.h`: header, menu bar, navigation and status bar.
   - `screens/`: one file per view (`dashboard.h`, `tasks.h`, `gallery.h`, `settings.h`).
   - `floating-layers.h`: context menus and the delete-confirmation modal.
+- `tests/`: headless unit tests for the widget library (`test-widgets.cpp`) -
+  real frames driven with synthetic input and a fake text measurer, no raylib
+  or window needed. Run with `make test`; CI runs them on every push.
 - `tools/`: all scripts - build (`build.py`, `build_web.py`), codegen
-  (`embed_font.py`) and docs (`screenshot_panels.py`).
+  (`embed_font.py`, `amalgamate.py`) and docs (`screenshot_panels.py`).
 - `assets/`: source fonts (`fonts/`, see the license note there) and generated
   code (`generated/embedded-font.h`, produced by `tools/embed_font.py`; bakes the
   UI font into the binary - see "Self-contained binary" below. Committed so the
@@ -59,7 +62,7 @@ The tree separates three things: the renderer-agnostic **widget library**, the
 - Menu bar with drop-down menus
 - Right-click context menu
 - Tooltip (hover, delayed)
-- Toast / notification (transient, auto-dismissing)
+- Toast / notification (transient, auto-dismissing, stacks up to a small queue)
 - Modal dialog (dimming scrim)
 - Card / group box (titled bordered container)
 - Collapsible / accordion section
@@ -70,9 +73,23 @@ The tree separates three things: the renderer-agnostic **widget library**, the
 ## Interaction behavior
 
 - Pointer interaction for all controls.
-- Keyboard focus traversal with `Tab` across interactive widgets.
+- Keyboard focus traversal with `Tab` (forward) and `Shift+Tab` (backward)
+  across interactive widgets.
 - Keyboard activation with `Enter` for buttons, checkboxes, and radio buttons.
-- Focused text input supports typing, `Backspace`, `Delete` to clear, and `Escape` to blur.
+- Focused sliders adjust with `Left`/`Right` (stepping by `step`, or 1% of the
+  range) and jump with `Home`/`End`; steppers step with the arrow keys.
+- Focused text input supports typing, selection, `Backspace`/`Delete`,
+  `Ctrl+A`, clipboard `Ctrl+C`/`Ctrl+X`/`Ctrl+V` (via platform callbacks
+  injected with `ClayWidgets_SetClipboardFunctions`), and `Escape` to blur.
+  Held editing/navigation keys repeat.
+- Combo dropdowns cap their height and scroll long item lists, open upward
+  when there is no room below the trigger, and keep the keyboard highlight
+  scrolled into view.
+- Open modals trap keyboard focus: `Tab` cycles the dialog's own controls and
+  `Enter` cannot activate anything behind the scrim.
+- Widgets accepting an options struct (button, slider, stepper, text input)
+  plus checkbox and toggle support a `disabled` state: inert, muted, skipped
+  by focus traversal.
 
 ## Animations
 
@@ -245,10 +262,52 @@ mingw32-make clean
 mingw32-make raylib-clean
 ```
 
+## Tests
+
+The widget library has a headless unit-test suite: Clay computes layout
+without a GPU, so the tests drive real frames (focus traversal, the modal
+focus trap, text editing and clipboard, combo keyboard/flip/scroll, panel
+scrolling, the toast queue, overflow reporting) with synthetic input and
+assert on state and render commands.
+
+```bash
+make test    # builds build/test-widgets.exe and runs it
+```
+
+CI runs the suite before the demo build on every push.
+
+## Single-header amalgam
+
+For dropping the library into another project, `tools/amalgamate.py`
+generates a single `clay-widgets.h` (the whole `clay-widgets/` tree inlined
+in include order, stb-style). It is generated, never committed - the split
+headers stay the single source of truth.
+
+```bash
+make amalgam        # writes build/clay-widgets.h
+make test-amalgam   # compiles + runs the full unit-test suite against it
+```
+
+Usage in a consuming project is identical to the split tree: put
+`clay-widgets.h` next to (or on the include path with) `clay.h` - which is
+deliberately not bundled - and define `CLAY_WIDGETS_IMPLEMENTATION` in exactly
+one translation unit before including it. CI regenerates the file, runs the
+whole test suite against it, and uploads it as the
+`clay-widgets-single-header` artifact on every push.
+
 ## Notes
 
 - `clay-widgets/widgets.h` includes `clay.h` and the sibling split headers, so the Makefile adds `subprojects/clay` to include paths.
 - Text input expects UTF-8 bytes from the platform layer. `demo/main.cpp` converts raylib codepoints to UTF-8 bytes each frame.
+- Clipboard support is injected: pass your platform's get/set functions to
+  `ClayWidgets_SetClipboardFunctions` (the demo wires raylib's). Without them,
+  the clipboard keys are ignored.
+- Exceeding a compile-time cap at runtime (scratch strings for stepper/slider
+  values, focus order, table columns) is reported through the handler set with
+  `ClayWidgets_SetErrorHandler`; with no handler, a debug build prints and
+  aborts (`CLAY_WIDGETS_ASSERT`), and a release build stays silent. The caps
+  are tunable defines (`CLAY_WIDGETS_TEXT_SCRATCH_COUNT`,
+  `CLAY_WIDGETS_MAX_FOCUSABLES`, `CLAY_WIDGETS_MAX_TOASTS`, ...).
 - Keep widget IDs stable across frames for consistent interaction behavior.
 - Image tint transport: this Clay build emits a stray RECTANGLE whenever an
   element's `backgroundColor` alpha is non-zero, so `image.h` sends the icon

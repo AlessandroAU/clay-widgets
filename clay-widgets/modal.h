@@ -21,6 +21,11 @@
 // returns false (and opens no elements) when the dialog is closed, so the body
 // and EndModal are skipped. The dialog closes on Escape, on a click of the
 // scrim outside the panel, or on the title-bar close button.
+//
+// While open, the modal traps keyboard focus: widgets outside it leave the Tab
+// order and give up focus, so Tab cycles the dialog's own controls and Enter
+// can't activate anything behind the scrim (which already captures the
+// pointer).
 bool ClayWidgets_BeginModal(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_String title, bool *open);
 void ClayWidgets_EndModal(ClayWidgets_Context *ctx, Clay_ElementId id);
 
@@ -61,16 +66,21 @@ bool ClayWidgets_BeginModal(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_St
         dialogWidth = 120.0f;
     }
 
+    // Trap keyboard focus inside the dialog while it is open: widgets outside
+    // (registered while insideFocusTrap is false) drop out of the Tab order
+    // starting next frame. See the focus trap fields on the context.
+    ctx->focusTrapId = dialogId.id;
+    ctx->insideFocusTrap = true;
+
     // Scrim: full-screen, centers the dialog, captures the pointer so the UI
     // behind it is inert.
-    Clay__OpenElementWithId(scrimId);
-    Clay__ConfigureOpenElement(CLAY__INIT(Clay_ElementDeclaration){
+    ClayWidgets__BeginElement(scrimId, CLAY__INIT(Clay_ElementDeclaration){
         .layout = {
             .sizing = { .width = CLAY_SIZING_FIXED(screenW), .height = CLAY_SIZING_FIXED(screenH) },
             .padding = CLAY_PADDING_ALL(ctx->theme.spacing.lg),
             .childAlignment = { .x = CLAY_ALIGN_X_CENTER, .y = CLAY_ALIGN_Y_CENTER },
         },
-        .backgroundColor = (Clay_Color){0, 0, 0, 150},
+        .backgroundColor = ctx->theme.scrimColor,
         .floating = {
             .zIndex = 500,
             .attachPoints = {
@@ -84,8 +94,7 @@ bool ClayWidgets_BeginModal(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_St
     });
 
     // Dialog panel.
-    Clay__OpenElementWithId(dialogId);
-    Clay__ConfigureOpenElement(CLAY__INIT(Clay_ElementDeclaration){
+    ClayWidgets__BeginElement(dialogId, CLAY__INIT(Clay_ElementDeclaration){
         .layout = {
             .sizing = { .width = CLAY_SIZING_FIXED(dialogWidth), .height = CLAY_SIZING_FIT(0, 0) },
             .padding = CLAY_PADDING_ALL(ctx->theme.spacing.lg),
@@ -145,8 +154,9 @@ void ClayWidgets_EndModal(ClayWidgets_Context *ctx, Clay_ElementId id) {
     if (!ctx) {
         return;
     }
-    Clay__CloseElement(); // dialog panel
-    Clay__CloseElement(); // scrim
+    ctx->insideFocusTrap = false;
+    ClayWidgets__EndElement(); // dialog panel
+    ClayWidgets__EndElement(); // scrim
 }
 
 #endif

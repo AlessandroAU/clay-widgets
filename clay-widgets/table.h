@@ -43,13 +43,16 @@ void ClayWidgets_BeginTable(ClayWidgets_Context *ctx, Clay_ElementId id, const C
     ClayWidgets__RegisterWheelFallthrough(ctx, id, Clay_PointerOver(id));
 
     int32_t maxCols = (int32_t)(sizeof(ctx->tableColWidths) / sizeof(ctx->tableColWidths[0]));
+    if (columnCount > maxCols) {
+        ClayWidgets__ReportError(ctx, CLAY_WIDGETS__ERROR_FLAG_TABLE_COLS,
+            "table has more columns than the per-context capture buffer; extra columns are dropped.");
+    }
     ctx->tableColCount = columnCount < maxCols ? columnCount : maxCols;
     for (int32_t i = 0; i < ctx->tableColCount; ++i) {
         ctx->tableColWidths[i] = columns[i].width;
     }
 
-    Clay__OpenElementWithId(id);
-    Clay__ConfigureOpenElement(CLAY__INIT(Clay_ElementDeclaration){
+    ClayWidgets__BeginElement(id, CLAY__INIT(Clay_ElementDeclaration){
         .layout = {
             .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_FIT(0, 0) },
             .layoutDirection = CLAY_TOP_TO_BOTTOM,
@@ -149,7 +152,7 @@ void ClayWidgets_EndTable(ClayWidgets_Context *ctx, Clay_ElementId id) {
     if (!ctx) {
         return;
     }
-    Clay__CloseElement(); // table container
+    ClayWidgets__EndElement(); // table container
 }
 
 #endif

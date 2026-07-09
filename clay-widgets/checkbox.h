@@ -33,7 +33,7 @@ bool ClayWidgets_CheckboxEx(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_St
     }
 
     Clay_Color checkFill = disabled
-        ? ClayWidgets__MixColor(ctx->theme.accentColor, ctx->theme.surfaceColor, 0.4f)
+        ? ClayWidgets__MixColor(ctx->theme.accentColor, ctx->theme.surfaceColor, ctx->theme.disabledMix)
         : ctx->theme.accentColor;
     Clay_Color labelColor = disabled ? ctx->theme.textMutedColor : ctx->theme.textColor;
 
@@ -74,7 +74,7 @@ bool ClayWidgets_CheckboxEx(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_St
         }) {
             if (*value) {
                 CLAY_TEXT(CLAY_STRING("X"), {
-                    .textColor = (Clay_Color){240, 248, 255, 255},
+                    .textColor = ctx->theme.onAccentColor,
                     .fontId = ctx->theme.fontBody,
                     .fontSize = 14,
                 });

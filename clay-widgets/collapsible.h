@@ -82,8 +82,7 @@ bool ClayWidgets_BeginCollapsible(ClayWidgets_Context *ctx, Clay_ElementId id, C
 
     // Body: indented under the header.
     Clay_ElementId bodyId = Clay_GetElementIdWithIndex(CLAY_STRING("ClayWidgetsCollapsibleBody"), id.id);
-    Clay__OpenElementWithId(bodyId);
-    Clay__ConfigureOpenElement(CLAY__INIT(Clay_ElementDeclaration){
+    ClayWidgets__BeginElement(bodyId, CLAY__INIT(Clay_ElementDeclaration){
         .layout = {
             .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_FIT(0, 0) },
             .padding = { .left = ctx->theme.spacing.lg, .right = 0, .top = ctx->theme.spacing.xs, .bottom = ctx->theme.spacing.xs },
@@ -100,7 +99,7 @@ void ClayWidgets_EndCollapsible(ClayWidgets_Context *ctx, Clay_ElementId id) {
     if (!ctx) {
         return;
     }
-    Clay__CloseElement(); // body
+    ClayWidgets__EndElement(); // body
 }
 
 #endif

@@ -51,10 +51,7 @@ bool ClayWidgets_Segmented(
 
     // Resolve clicks before layout so the new selection paints this frame.
     for (int32_t i = 0; i < segmentCount; i++) {
-        Clay_ElementId cellId = Clay_GetElementIdWithIndex(
-            CLAY_STRING("ClayWidgetsSegment"),
-            (uint32_t)((uint64_t)id.id * 2246822519u + (uint32_t)i)
-        );
+        Clay_ElementId cellId = ClayWidgets__ChildId(id, CLAY_STRING("ClayWidgetsSegment"), i);
         if (ClayWidgets__ConsumeClick(ctx, Clay_PointerOver(cellId))) {
             if (*selectedIndex != i) { *selectedIndex = i; changed = true; }
         }
@@ -75,10 +72,7 @@ bool ClayWidgets_Segmented(
         },
     }) {
         for (int32_t i = 0; i < segmentCount; i++) {
-            Clay_ElementId cellId = Clay_GetElementIdWithIndex(
-                CLAY_STRING("ClayWidgetsSegment"),
-                (uint32_t)((uint64_t)id.id * 2246822519u + (uint32_t)i)
-            );
+            Clay_ElementId cellId = ClayWidgets__ChildId(id, CLAY_STRING("ClayWidgetsSegment"), i);
             bool cellOver = Clay_PointerOver(cellId);
             bool selected = (i == *selectedIndex);
 

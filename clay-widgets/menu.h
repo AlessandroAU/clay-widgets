@@ -115,8 +115,7 @@ bool ClayWidgets_BeginMenu(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_Str
 
     // Floating item panel, anchored under the title's bottom-left corner.
     float r = (float)ctx->theme.radiusSm;
-    Clay__OpenElementWithId(dropdownId);
-    Clay__ConfigureOpenElement(CLAY__INIT(Clay_ElementDeclaration){
+    ClayWidgets__BeginElement(dropdownId, CLAY__INIT(Clay_ElementDeclaration){
         .layout = {
             .sizing = { .width = CLAY_SIZING_FIT(180, 0), .height = CLAY_SIZING_FIT(0, 0) },
             .padding = CLAY_PADDING_ALL(ctx->theme.spacing.xs),
@@ -149,7 +148,7 @@ void ClayWidgets_EndMenu(ClayWidgets_Context *ctx, Clay_ElementId id) {
     if (!ctx) {
         return;
     }
-    Clay__CloseElement(); // dropdown panel
+    ClayWidgets__EndElement(); // dropdown panel
 }
 
 bool ClayWidgets_MenuItem(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_String label) {
@@ -250,8 +249,7 @@ bool ClayWidgets_BeginContextMenu(ClayWidgets_Context *ctx, Clay_ElementId menuI
     }
 
     float r = (float)ctx->theme.radiusSm;
-    Clay__OpenElementWithId(panelId);
-    Clay__ConfigureOpenElement(CLAY__INIT(Clay_ElementDeclaration){
+    ClayWidgets__BeginElement(panelId, CLAY__INIT(Clay_ElementDeclaration){
         .layout = {
             .sizing = { .width = CLAY_SIZING_FIT(180, 0), .height = CLAY_SIZING_FIT(0, 0) },
             .padding = CLAY_PADDING_ALL(ctx->theme.spacing.xs),
@@ -283,7 +281,7 @@ void ClayWidgets_EndContextMenu(ClayWidgets_Context *ctx, Clay_ElementId menuId)
     if (!ctx) {
         return;
     }
-    Clay__CloseElement(); // context menu panel
+    ClayWidgets__EndElement(); // context menu panel
 }
 
 #endif

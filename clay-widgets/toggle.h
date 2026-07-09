@@ -9,24 +9,28 @@
 // bound bool) but reads as a sliding pill: the track fills with the accent
 // color when on and a round knob slides from left (off) to right (on). Pass an
 // empty label for a compact, label-less switch. Returns true on the frame the
-// value changes.
+// value changes. ToggleEx adds a disabled flag (inert, muted, returns false).
+bool ClayWidgets_ToggleEx(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_String text, bool *value, bool disabled);
 bool ClayWidgets_Toggle(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_String text, bool *value);
 
 #ifdef CLAY_WIDGETS_IMPLEMENTATION
 
-bool ClayWidgets_Toggle(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_String text, bool *value) {
+bool ClayWidgets_ToggleEx(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_String text, bool *value, bool disabled) {
     if (!ctx || !value) {
         return false;
     }
 
-    bool over = Clay_PointerOver(id);
-    bool focused = ClayWidgets__RegisterFocusable(ctx, id, over);
-    bool clicked = ClayWidgets__ConsumeClick(ctx, over);
-    if (!clicked && ClayWidgets__ActivateFocused(ctx, id)) {
-        clicked = true;
-    }
-    if (clicked) {
-        *value = !(*value);
+    bool over = disabled ? false : Clay_PointerOver(id);
+    bool focused = disabled ? false : ClayWidgets__RegisterFocusable(ctx, id, over);
+    bool clicked = false;
+    if (!disabled) {
+        clicked = ClayWidgets__ConsumeClick(ctx, over);
+        if (!clicked && ClayWidgets__ActivateFocused(ctx, id)) {
+            clicked = true;
+        }
+        if (clicked) {
+            *value = !(*value);
+        }
     }
 
     const float trackWidth = 40.0f;
@@ -39,9 +43,20 @@ bool ClayWidgets_Toggle(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_String
     // horizontal position is a Route B eased scalar (0 = off, 1 = on) driven into
     // the track's left padding, since a slide isn't a property of one element.
     Clay_Color trackColor = *value ? ctx->theme.accentColor : ctx->theme.surfaceAltColor;
+    Clay_Color knobColor = ctx->theme.onAccentColor;
+    if (disabled) {
+        trackColor = ClayWidgets__MixColor(trackColor, ctx->theme.surfaceColor, ctx->theme.disabledMix);
+        knobColor = ClayWidgets__MixColor(knobColor, ctx->theme.surfaceColor, ctx->theme.disabledMix);
+    }
     float knobT = ClayWidgets__AnimTo(ctx, id.id, *value ? 1.0f : 0.0f, 18.0f);
     float knobTravel = trackWidth - 2.0f * trackPad - knobSize;
     uint16_t knobLeftPad = (uint16_t)(trackPad + knobT * knobTravel + 0.5f);
+
+    // The track owns a color transition, so it needs an id that is stable
+    // across frames by contract - Clay's auto ids are derived from the parent
+    // id and child position, which happens to be stable here but is
+    // documented as unsupported for transitions.
+    Clay_ElementId trackId = Clay_GetElementIdWithIndex(CLAY_STRING("ClayWidgetsToggleTrack"), id.id);
 
     CLAY(id, {
         .layout = {
@@ -51,7 +66,7 @@ bool ClayWidgets_Toggle(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_String
             .layoutDirection = CLAY_LEFT_TO_RIGHT,
         },
     }) {
-        CLAY_AUTO_ID({
+        CLAY(trackId, {
             .layout = {
                 .sizing = {
                     .width = CLAY_SIZING_FIXED(trackWidth),
@@ -78,7 +93,7 @@ bool ClayWidgets_Toggle(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_String
                         .height = CLAY_SIZING_FIXED(knobSize),
                     },
                 },
-                .backgroundColor = (Clay_Color){248, 250, 252, 255},
+                .backgroundColor = knobColor,
                 .cornerRadius = CLAY_CORNER_RADIUS(knobSize * 0.5f),
                 .border = {
                     .color = ctx->theme.borderColor,
@@ -89,7 +104,7 @@ bool ClayWidgets_Toggle(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_String
 
         if (text.length > 0 && text.chars) {
             CLAY_TEXT(text, {
-                .textColor = ctx->theme.textColor,
+                .textColor = disabled ? ctx->theme.textMutedColor : ctx->theme.textColor,
                 .fontId = ctx->theme.fontBody,
                 .fontSize = ctx->theme.fontSizeBody,
             });
@@ -97,6 +112,10 @@ bool ClayWidgets_Toggle(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_String
     }
 
     return clicked;
+}
+
+bool ClayWidgets_Toggle(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_String text, bool *value) {
+    return ClayWidgets_ToggleEx(ctx, id, text, value, false);
 }
 
 #endif
