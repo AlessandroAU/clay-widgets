@@ -328,13 +328,15 @@ typedef struct ClayWidgets_ToastSlot {
     int32_t variant;
 } ClayWidgets_ToastSlot;
 
-// One element's queued decoration for this frame: which 3D edge to paint and
-// whether to add a drop shadow or a focus rectangle. Stored in an open-addressed
-// table keyed by element id and consumed by ClayWidgets_EndFrame.
+// One element's queued decoration for this frame: which 3D edge to paint,
+// whether to add a drop shadow or a focus rectangle, and a corner radius to
+// stamp onto its fill. Stored in an open-addressed table keyed by element id
+// and consumed by ClayWidgets_EndFrame.
 typedef struct ClayWidgets_Decoration {
     uint32_t id; // 0 = empty slot
     uint8_t edge;  // ClayWidgets_Edge
     uint8_t flags; // CLAY_WIDGETS__DECOR_*
+    Clay_CornerRadius corner; // only when flags carries the corner bit
 } ClayWidgets_Decoration;
 
 typedef struct ClayWidgets_Context {
@@ -487,6 +489,10 @@ typedef struct ClayWidgets_Context {
     float typeAheadTime;
     int32_t tableDepth;
     uint32_t tableIds[16];
+    // Last row emitted per open table, so EndTable can round the corners of the
+    // row that lands on the container's bottom edge - which is only known once
+    // the caller has stopped adding rows.
+    uint32_t tableLastRowIds[16];
     Clay_SizingAxis tableSavedWidths[16][12];
     int32_t tableSavedCounts[16];
     // Per-frame 3D edge / drop shadow requests, keyed by element id and painted

@@ -348,6 +348,16 @@ bool ClayWidgets_Combo(
                         itemBg = ctx->theme.accentMutedColor;
                     }
 
+                    // The item on the panel's rounded end has to carry that
+                    // rounding itself, or its highlight paints past the arc.
+                    Clay_CornerRadius itemRadius = CLAY__INIT(Clay_CornerRadius) CLAY__DEFAULT_STRUCT;
+                    if (flipUp && i == 0) {
+                        itemRadius.topLeft = itemRadius.topRight = r;
+                    }
+                    if (!flipUp && i == itemCount - 1) {
+                        itemRadius.bottomLeft = itemRadius.bottomRight = r;
+                    }
+
                     CLAY(itemId, {
                         .layout = {
                             .sizing = {
@@ -358,6 +368,7 @@ bool ClayWidgets_Combo(
                             .childAlignment = { .x = CLAY_ALIGN_X_LEFT, .y = CLAY_ALIGN_Y_CENTER },
                         },
                         .backgroundColor = itemBg,
+                        .cornerRadius = itemRadius,
                         .transition = ClayWidgets__ColorTransition(ctx),
                     }) {
                         CLAY_TEXT(items[i], {

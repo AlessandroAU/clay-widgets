@@ -80,6 +80,16 @@ void ClayWidgets_SetEdge(ClayWidgets_Context *ctx, Clay_ElementId id, ClayWidget
 // dialogs, toasts). A no-op while theme.shadowOffset is 0.
 void ClayWidgets_SetShadow(ClayWidgets_Context *ctx, Clay_ElementId id);
 
+// Round the corners of an element's fill after the fact. Clay clips to
+// rectangles, so a child that reaches a rounded container's corner paints a
+// square block outside the arc unless it carries the matching radius itself;
+// most widgets can pass that radius when they declare the child, but some only
+// learn which child lands on the corner later (a table's last row, say). This
+// applies the radius to the element's own background rectangle at EndFrame.
+// Unlike the edge and shadow tags it is not theme-dependent: it fixes geometry,
+// not style.
+void ClayWidgets_SetCornerRadius(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_CornerRadius radius);
+
 #ifdef CLAY_WIDGETS_IMPLEMENTATION
 
 #include <math.h>
@@ -1124,6 +1134,7 @@ static void ClayWidgets__UpdateWheelMomentum(ClayWidgets_Context *ctx, Clay_Vect
 
 #define CLAY_WIDGETS__DECOR_SHADOW (1u << 0)
 #define CLAY_WIDGETS__DECOR_FOCUS  (1u << 1)
+#define CLAY_WIDGETS__DECOR_CORNER (1u << 2)
 
 // Slot for `id` in the open-addressed decoration table, or NULL when the table
 // is full (create) or the id isn't decorated (lookup).
@@ -1149,16 +1160,28 @@ static ClayWidgets_Decoration *ClayWidgets__FindDecoration(ClayWidgets_Context *
     return NULL;
 }
 
-// Merges a decoration request into this frame's table. Requests for the same
-// element accumulate, so a widget can ask for an edge and a shadow separately.
-static void ClayWidgets__Decorate(ClayWidgets_Context *ctx, Clay_ElementId id, ClayWidgets_Edge edge, uint8_t flags) {
-    if (!ctx || id.id == 0 || ctx->theme.edgeStyle != CLAY_WIDGETS_EDGE_STYLE_BEVEL) {
-        return;
+// This frame's slot for an element, reporting the one way it can fail.
+static ClayWidgets_Decoration *ClayWidgets__DecorationSlot(ClayWidgets_Context *ctx, Clay_ElementId id) {
+    if (!ctx || id.id == 0) {
+        return NULL;
     }
     ClayWidgets_Decoration *entry = ClayWidgets__FindDecoration(ctx, id.id, true);
     if (!entry) {
         ClayWidgets__ReportError(ctx, CLAY_WIDGETS__ERROR_FLAG_DECORATIONS,
             "decoration table full - raise CLAY_WIDGETS_MAX_DECORATIONS");
+    }
+    return entry;
+}
+
+// Merges a 3D edge request into this frame's table. Requests for the same
+// element accumulate, so a widget can ask for an edge and a shadow separately.
+// Bevel-only: on a flat theme there is no edge to paint.
+static void ClayWidgets__Decorate(ClayWidgets_Context *ctx, Clay_ElementId id, ClayWidgets_Edge edge, uint8_t flags) {
+    if (!ctx || ctx->theme.edgeStyle != CLAY_WIDGETS_EDGE_STYLE_BEVEL) {
+        return;
+    }
+    ClayWidgets_Decoration *entry = ClayWidgets__DecorationSlot(ctx, id);
+    if (!entry) {
         return;
     }
     if (edge != CLAY_WIDGETS_EDGE_NONE) {
@@ -1175,6 +1198,15 @@ void ClayWidgets_SetShadow(ClayWidgets_Context *ctx, Clay_ElementId id) {
     if (ctx && ctx->theme.shadowOffset > 0) {
         ClayWidgets__Decorate(ctx, id, CLAY_WIDGETS_EDGE_NONE, CLAY_WIDGETS__DECOR_SHADOW);
     }
+}
+
+void ClayWidgets_SetCornerRadius(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_CornerRadius radius) {
+    ClayWidgets_Decoration *entry = ClayWidgets__DecorationSlot(ctx, id);
+    if (!entry) {
+        return;
+    }
+    entry->flags |= CLAY_WIDGETS__DECOR_CORNER;
+    entry->corner = radius;
 }
 
 // Draws the focus rectangle inside a beveled control. Flat themes show focus by
@@ -1348,9 +1380,10 @@ static void ClayWidgets__PaintShadow(const ClayWidgets_Theme *theme, const Clay_
 // belongs - and a shadow painted before the scissor sits under the element
 // itself. The array is rewritten back-to-front in place, which is safe because
 // the write cursor always leads the read cursor by the number of commands still
-// to be inserted.
+// to be inserted - and when there is nothing to insert the rewrite collapses to
+// a self-copy that still stamps in the corner overrides.
 static void ClayWidgets__PaintDecorations(ClayWidgets_Context *ctx, Clay_RenderCommandArray *commands) {
-    if (!ctx || ctx->decorationCount == 0 || ctx->theme.edgeStyle != CLAY_WIDGETS_EDGE_STYLE_BEVEL) {
+    if (!ctx || ctx->decorationCount == 0) {
         return;
     }
 
@@ -1368,9 +1401,6 @@ static void ClayWidgets__PaintDecorations(ClayWidgets_Context *ctx, Clay_RenderC
         if (decoration->flags & CLAY_WIDGETS__DECOR_SHADOW) {
             extra += 2;
         }
-    }
-    if (extra == 0) {
-        return;
     }
     if (commands->length + extra > commands->capacity) {
         // Every edge or none: a half-decorated frame looks broken, and the fix
@@ -1390,6 +1420,10 @@ static void ClayWidgets__PaintDecorations(ClayWidgets_Context *ctx, Clay_RenderC
         if (!decoration) {
             array[--write] = command;
             continue;
+        }
+
+        if (decoration->flags & CLAY_WIDGETS__DECOR_CORNER) {
+            command.renderData.rectangle.cornerRadius = decoration->corner;
         }
 
         int32_t after = ClayWidgets__DecorationRectsAfter(&ctx->theme, decoration);

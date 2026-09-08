@@ -42,7 +42,11 @@ static void ClayWidgets__Spacer(float height) {
     if (height <= 0) return;
     CLAY_AUTO_ID({ .layout = { .sizing = { .width = CLAY_SIZING_FIXED(1), .height = CLAY_SIZING_FIXED(height) } } }) {}
 }
-typedef struct ClayWidgets__VisibleRows { int32_t first, end; float rowHeight; } ClayWidgets__VisibleRows;
+// `first`..`end` is the slice worth emitting - a few rows wider than the
+// viewport - while `bottom` is the one row sitting on the viewport's bottom
+// edge, or -1 when the content stops short of it. Only that row can paint
+// into a rounded frame's bottom corners, so only it has to be rounded.
+typedef struct ClayWidgets__VisibleRows { int32_t first, end, bottom; float rowHeight; } ClayWidgets__VisibleRows;
 static ClayWidgets__VisibleRows ClayWidgets__BeginVirtualRows(ClayWidgets_Context *ctx, Clay_ElementId id,
     int32_t count, float height, float rowHeight, int32_t reveal) {
     height = height > 0 ? height : 240;
@@ -66,7 +70,13 @@ static ClayWidgets__VisibleRows ClayWidgets__BeginVirtualRows(ClayWidgets_Contex
         .clip = { .horizontal = true, .vertical = true },
     });
     ClayWidgets__Spacer(first * rowHeight);
-    return (ClayWidgets__VisibleRows){first, end, rowHeight};
+    // Row i spans [i * rowHeight + y, (i + 1) * rowHeight + y) in viewport
+    // coordinates, so the one crossing `height` is the row on the bottom edge.
+    int32_t bottom = (int32_t)((height - y) / rowHeight);
+    if (bottom >= count || bottom < first || bottom >= end) {
+        bottom = -1;
+    }
+    return (ClayWidgets__VisibleRows){first, end, bottom, rowHeight};
 }
 static void ClayWidgets__EndVirtualRows(ClayWidgets_Context *ctx, Clay_ElementId id, int32_t count, ClayWidgets__VisibleRows rows, bool tableColumn) {
     ClayWidgets__Spacer((count - rows.end) * rows.rowHeight);
@@ -230,6 +240,9 @@ bool ClayWidgets_DataTable(ClayWidgets_Context *ctx, Clay_ElementId id,
     for (int32_t i = 0; i < columnCount; ++i) {
         if (!(state->fixedWidthColumns & (1u << i))) state->widths[i] = growWidth;
     }
+    // What the header and the bottom row have to round to: the frame's own
+    // radius, less the padding that insets them from it.
+    const float frameRadius = fmaxf(0.0f, radius - (float)frameInset);
     ClayWidgets_SetEdge(ctx, id, CLAY_WIDGETS_EDGE_SUNKEN);
     ClayWidgets_SetEdge(ctx, headerRow, CLAY_WIDGETS_EDGE_RAISED_THIN);
     ClayWidgets__BeginElement(id, (Clay_ElementDeclaration){ .layout = {
@@ -242,6 +255,10 @@ bool ClayWidgets_DataTable(ClayWidgets_Context *ctx, Clay_ElementId id,
             .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_FIXED(headerHeight) },
             .padding = { .right = gutter } },
         .backgroundColor = ctx->theme.surfaceAltColor,
+        // The header sits on the frame's top corners, inset by its padding, and
+        // Clay clips to rectangles - without the matching radius its fill paints
+        // a square block outside the frame's arc.
+        .cornerRadius = { .topLeft = frameRadius, .topRight = frameRadius, .bottomLeft = 0, .bottomRight = 0 },
         .clip = { .horizontal = true, .vertical = true, .childOffset = {horizontalOffset,0} },
         .border = ClayWidgets__EdgeBorder(ctx, ctx->theme.borderColor, CLAY__INIT(Clay_BorderWidth){ 0, 0, 0, 1, 0 }) }) {
         for (int32_t i=0;i<columnCount;++i) {
@@ -311,8 +328,15 @@ bool ClayWidgets_DataTable(ClayWidgets_Context *ctx, Clay_ElementId id,
         if (record<0 || record>=rowCount) continue;
         Clay_ElementId row = ClayWidgets__ChildId(id, CLAY_STRING("DataRow"),record);
         if (!disabled && ClayWidgets__ConsumeClick(ctx,Clay_PointerOver(row))) ClayWidgets__TableSelect(ctx,v,rowCount,order,selection,state);
+        // Only the row against the frame's bottom edge can paint into its
+        // corners, and only while the content reaches that far.
+        Clay_CornerRadius rowRadius = CLAY__INIT(Clay_CornerRadius) CLAY__DEFAULT_STRUCT;
+        if (v == rows.bottom) {
+            rowRadius.bottomLeft = rowRadius.bottomRight = frameRadius;
+        }
         CLAY(row, { .layout = { .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_FIXED(rows.rowHeight) } },
-            .backgroundColor = selection && selection[record] ? ctx->theme.accentMutedColor : v%2 ? ctx->theme.surfaceAltColor : ctx->theme.surfaceColor }) {
+            .backgroundColor = selection && selection[record] ? ctx->theme.accentMutedColor : v%2 ? ctx->theme.surfaceAltColor : ctx->theme.surfaceColor,
+            .cornerRadius = rowRadius }) {
             for (int32_t col=0;col<columnCount;++col) {
                 Clay_ElementId cellId = ClayWidgets__ChildId(row,CLAY_STRING("DataCell"),col);
                 ClayWidgets__RegisterWheelFallthrough(ctx,cellId,Clay_PointerOver(cellId));

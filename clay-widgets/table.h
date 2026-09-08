@@ -38,6 +38,7 @@ bool ClayWidgets_BeginTable(ClayWidgets_Context *ctx, Clay_ElementId id, const C
     }
     int32_t depth = ctx->tableDepth++;
     ctx->tableIds[depth] = id.id;
+    ctx->tableLastRowIds[depth] = 0;
     ctx->tableSavedCounts[depth] = ctx->tableColCount;
     memcpy(ctx->tableSavedWidths[depth],ctx->tableColWidths,sizeof(ctx->tableColWidths));
 
@@ -72,6 +73,9 @@ bool ClayWidgets_BeginTable(ClayWidgets_Context *ctx, Clay_ElementId id, const C
     });
 
     // Header row: a darker strip with muted column titles, divided from the body.
+    // The container's padding is zero except under a beveled theme, whose corner
+    // radius is zero, so the container's radius is also the header's.
+    float radius = (float)ctx->theme.radiusMd;
     Clay_ElementId headerRowId = ClayWidgets__ChildId(id, CLAY_STRING("ClayWidgetsTableHeader"), 0);
     ClayWidgets_SetEdge(ctx, headerRowId, CLAY_WIDGETS_EDGE_RAISED_THIN);
     CLAY(headerRowId, {
@@ -81,6 +85,10 @@ bool ClayWidgets_BeginTable(ClayWidgets_Context *ctx, Clay_ElementId id, const C
             .layoutDirection = CLAY_LEFT_TO_RIGHT,
         },
         .backgroundColor = ctx->theme.surfaceColor,
+        // The header sits on the container's top corners, and Clay clips to
+        // rectangles - without the matching radius its fill paints a square
+        // block outside the container's arc.
+        .cornerRadius = { .topLeft = radius, .topRight = radius, .bottomLeft = 0, .bottomRight = 0 },
         .border = ClayWidgets__EdgeBorder(ctx, ctx->theme.borderColor, CLAY__INIT(Clay_BorderWidth){ 0, 0, 0, 1, 0 }),
     }) {
         for (int32_t i = 0; i < ctx->tableColCount; ++i) {
@@ -113,6 +121,9 @@ bool ClayWidgets_TableRow(ClayWidgets_Context *ctx, Clay_ElementId rowId, const 
         ClayWidgets__SetCursor(ctx, CLAY_WIDGETS_CURSOR_POINTER);
     }
     bool clicked = ClayWidgets__ConsumeClick(ctx, over);
+    if (ctx->tableDepth > 0) {
+        ctx->tableLastRowIds[ctx->tableDepth - 1] = rowId.id;
+    }
 
     Clay_Color rowBg = ClayWidgets__FadeToClear(ctx->theme.selectionColor);
     if (selected) {
@@ -161,6 +172,16 @@ void ClayWidgets_EndTable(ClayWidgets_Context *ctx, Clay_ElementId id) {
         return;
     }
     int32_t depth = --ctx->tableDepth;
+    // The final row closes the container's bottom corners. Which row that is
+    // only becomes known here, once the caller has stopped adding them, so the
+    // radius is stamped onto its fill after layout instead of at declaration.
+    if (ctx->tableLastRowIds[depth] && ctx->theme.radiusMd > 0) {
+        float radius = (float)ctx->theme.radiusMd;
+        Clay_ElementId lastRow = CLAY__INIT(Clay_ElementId) CLAY__DEFAULT_STRUCT;
+        lastRow.id = ctx->tableLastRowIds[depth];
+        ClayWidgets_SetCornerRadius(ctx, lastRow,
+            CLAY__INIT(Clay_CornerRadius){ 0.0f, 0.0f, radius, radius });
+    }
     ctx->tableColCount = ctx->tableSavedCounts[depth];
     memcpy(ctx->tableColWidths,ctx->tableSavedWidths[depth],sizeof(ctx->tableColWidths));
     ClayWidgets__EndElement(); // table container
