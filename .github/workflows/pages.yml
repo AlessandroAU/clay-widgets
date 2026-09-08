@@ -58,3 +58,47 @@ jobs:
     steps:
       - id: deployment
         uses: actions/deploy-pages@v4
+
+  # Regenerates the README screenshots from the same demo, so they can never
+  # drift from what main actually renders. GitHub runners have no GPU, so this
+  # builds the desktop demo for Linux and runs it under Xvfb with Mesa's
+  # llvmpipe software rasterizer. Independent of the Pages deploy above.
+  screenshots:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install X11/GL build and runtime dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends             libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev             libgl1-mesa-dev libasound2-dev xvfb libgl1-mesa-dri
+
+      - name: Build raylib + demo for Linux
+        run: make -j4
+
+      # --shot mode parks the pointer and replaces the live frame rate with a
+      # placeholder, so repeat captures of a view are byte-identical and the
+      # commit below only fires on real visual changes.
+      - name: Capture each view
+        env:
+          LIBGL_ALWAYS_SOFTWARE: "1"
+          GALLIUM_DRIVER: llvmpipe
+        run: xvfb-run -a --server-args="-screen 0 1280x800x24" python3 tools/screenshot_panels.py
+
+      - name: Commit refreshed screenshots
+        run: |
+          if git diff --quiet -- docs/screenshots; then
+            echo "Screenshots unchanged."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/screenshots
+          # [skip ci] so this commit does not trigger another run of this workflow.
+          git commit -m "docs: refresh demo screenshots [skip ci]"
+          git pull --rebase --autostash
+          git push
