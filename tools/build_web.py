@@ -9,7 +9,7 @@ What it does:
   1. Auto-installs the Emscripten SDK into subprojects/emsdk on first run.
   2. Builds raylib for PLATFORM_WEB  -> subprojects/raylib/src/libraylib.web.a
      (a separate file from the desktop libraylib.a, so the two never clash).
-  3. Compiles demo/main.cpp with emcc into:
+  3. Compiles demo/main.cpp with em++ into:
        build/web/index.html  +  index.js  +  index.wasm
      (the UI font is baked into the binary, so there is no preloaded index.data).
 
@@ -161,13 +161,17 @@ def build_raylib(env: dict, make: str) -> None:
 
 def build_app(env: dict) -> None:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    emcc = require_tool("emcc", env)
-    print("Compiling demo/main.cpp -> build/web/index.html with emcc ...")
+    # em++, not emcc: the demo is C++, and since emscripten 4.x the linker no
+    # longer infers C++ from the input extension (DEFAULT_TO_CXX now defaults
+    # off), so emcc links without libc++ and fails on "undefined symbol:
+    # operator new(unsigned long)". em++ always links the C++ runtime.
+    empp = require_tool("em++", env)
+    print("Compiling demo/main.cpp -> build/web/index.html with em++ ...")
     cmd = [
-        emcc,
+        empp,
         "demo/main.cpp",
         "-std=c++20", "-O2",
-        # clang (emcc) makes C++11 brace-init narrowing a hard error by default,
+        # clang (em++) makes C++11 brace-init narrowing a hard error by default,
         # where the desktop g++ build only warns. The widget headers rely on
         # int->float radius/spacing conversions, so match g++ and demote it.
         "-Wno-c++11-narrowing",
@@ -246,7 +250,10 @@ def main() -> int:
         else:
             ensure_emsdk(args.emsdk_version)
             env = emsdk_env()
-        require_tool("emcc", env)  # fail early with a clear message if activation failed
+        # Fail early with a clear message if activation failed. emcc builds
+        # raylib (C); em++ links the demo (C++).
+        require_tool("emcc", env)
+        require_tool("em++", env)
 
         if not args.skip_raylib or not RAYLIB_WEB_LIB.exists():
             make = find_make()
