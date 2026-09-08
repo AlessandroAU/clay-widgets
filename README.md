@@ -5,9 +5,9 @@ Widget layer built on top of Clay with a raylib demo application.
 **[Try the live demo in your browser](https://alessandroau.github.io/clay-widgets/)** -
 the same demo app, compiled to WebAssembly and deployed from `main` on every push.
 
-See [integration and new controls](docs/integration.md) for editor history and
-validation, searchable combos, virtual lists, sortable/resizable tables, split
-panes, font registration, and platform IME/accessibility adapter contracts.
+[**API reference**](docs/api.md) - every public function, the frame loop, the
+options structs, the compile-time tunables, and the platform adapter contracts
+(clipboard, IME, accessibility, font registration).
 
 [![Dashboard view of the clay-widgets demo](docs/screenshots/dashboard.png)](https://alessandroau.github.io/clay-widgets/)
 
@@ -28,11 +28,15 @@ The tree separates three things: the renderer-agnostic **widget library**, the
     `#include`s that assemble the demo into one translation unit.
   - `demo-state.h`: the `DemoState` data model and shared helpers.
   - `chrome.h`: header, menu bar, navigation and status bar.
-  - `screens/`: one file per view (`dashboard.h`, `tasks.h`, `gallery.h`, `settings.h`).
+  - `screens/`: one file per view (`dashboard.h`, `tasks.h`, `gallery.h`,
+    `settings.h`), plus `advanced-gallery.h` - the Gallery's "Editors & data"
+    card (history editor, searchable combo, 10,000-row table, split/resizable panes).
   - `floating-layers.h`: context menus and the delete-confirmation modal.
-- `tests/`: headless unit tests for the widget library (`test-widgets.cpp`) -
-  real frames driven with synthetic input and a fake text measurer, no raylib
-  or window needed. Run with `make test`; CI runs them on every push.
+- `tests/`: headless unit tests for the widget library (`test-widgets.cpp`,
+  with the newer-control cases in `test-improvements.h`) - real frames driven
+  with synthetic input and a fake text measurer, no raylib or window needed.
+  Run with `make test`; CI runs them on every push. `test-raylib.cpp` is the
+  separate backend test that does need a graphics context (`make test-backend`).
 - `tools/`: all scripts - build (`build.py`, `build_web.py`), codegen
   (`embed_font.py`, `amalgamate.py`) and docs (`screenshot_panels.py`).
 - `assets/`: source fonts (`fonts/`, see the license note there) and generated
@@ -41,7 +45,7 @@ The tree separates three things: the renderer-agnostic **widget library**, the
   project builds with just a C++ compiler).
 - `web/`: web-build inputs (`shell.html`, the emscripten page the wasm build is
   embedded into). The web *output* goes to `build/web/`.
-- `docs/`: screenshots used by this README.
+- `docs/`: `api.md` (the API reference) and the `screenshots/` used by this README.
 - `Makefile`: builds raylib from source in `subprojects/raylib` and then builds the demo.
 - `subprojects/raylib`: raylib source (git submodule).
 - `subprojects/clay`: Clay source (git submodule, used for `clay.h`).
@@ -75,7 +79,17 @@ The tree separates three things: the renderer-agnostic **widget library**, the
 - Collapsible / accordion section
 - Tree view (hierarchical expand/collapse)
 - Table / data grid (columns, header, zebra rows, selection)
+- Text area (multi-line editor, wrapping, undo/redo history)
+- Searchable combo (always-visible filter field over a dropdown)
+- Data table (click-to-sort headers, drag-resizable columns, virtualized body,
+  ctrl/shift multi-selection)
+- Split pane (draggable divider) and resizable panel
 - Scroll panel with draggable scroll bar
+
+The library also ships `ClayWidgets_VirtualList` - a windowed list for very
+large datasets - which the tests cover but the demo does not. Its options, and
+those of every control above, are documented in
+[docs/api.md](docs/api.md).
 
 ## Interaction behavior
 
@@ -89,6 +103,10 @@ The tree separates three things: the renderer-agnostic **widget library**, the
   `Ctrl+A`, clipboard `Ctrl+C`/`Ctrl+X`/`Ctrl+V` (via platform callbacks
   injected with `ClayWidgets_SetClipboardFunctions`), and `Escape` to blur.
   Held editing/navigation keys repeat.
+- Editors also support undo/redo (opt-in per-editor history), `Ctrl+Left/Right`
+  and `Ctrl+Backspace/Delete` word navigation, a `readOnly` mode that keeps
+  selection and copy working, and caller-supplied validation. See
+  [docs/api.md](docs/api.md#editors).
 - Combo dropdowns cap their height and scroll long item lists, open upward
   when there is no room below the trigger, and keep the keyboard highlight
   scrolled into view.
@@ -147,7 +165,10 @@ The demo is organized like a small application, with four views:
   and delete via a confirming modal or right-click context menu.
 - **Gallery** (2): the full widget catalog grouped into cards - buttons, text
   and choice inputs, ranges, attached tabs, toggles/checks, tree, icons,
-  badges, and overlay demos (toasts, modal, context menu, tooltips).
+  badges, and overlay demos (toasts, modal, context menu, tooltips). The
+  "Editors & data" card adds the heavier controls: an undo/redo text editor with
+  a read-only switch, a searchable combo, a sortable/resizable 10,000-row data
+  table, a split pane and a resizable panel.
 - **Settings** (3): theme preset switching (Slate, Sand, Forest, Windows), an
   animations toggle, a notifications toggle that gates the demo's toasts, and
   a live diagnostics card (focused widget id, pointer, fps).
@@ -160,7 +181,9 @@ The demo is organized like a small application, with four views:
 | --- | --- |
 | ![Gallery](docs/screenshots/gallery.png) | ![Settings](docs/screenshots/settings.png) |
 
-The screenshots are regenerated with `python tools/screenshot_panels.py`.
+The screenshots are regenerated with `python tools/screenshot_panels.py`, and
+CI re-runs that on every push to `main` (see "Screenshot harness" below), so they
+never drift from what the demo actually renders.
 
 ## Self-contained binary
 
@@ -299,10 +322,14 @@ scrolling, the toast queue, overflow reporting) with synthetic input and
 assert on state and render commands.
 
 ```bash
-make test    # builds build/test-widgets.exe and runs it
+make test           # builds build/test-widgets.exe and runs it
+make test-amalgam   # same suite, compiled against the generated single header
+make test-backend   # raylib backend tests; needs a graphics context, so local only
 ```
 
-CI runs the suite before the demo build on every push.
+`python tools/build.py --test` is the wrapper equivalent of `make test`. CI runs
+the headless suites before the demo build on every push, and the Linux job
+repeats them under the address and undefined-behavior sanitizers.
 
 ## Single-header amalgam
 
@@ -350,7 +377,7 @@ working directory) and exit. This is used to verify widgets without a human at
 the keyboard:
 
 ```
-clay-widgets-demo --shot out.png [--view N] [--frames N] [--theme N]
+clay-widgets-demo --shot out.png [--view N] [--frames N] [--theme N] [--size W H]
                   [--mouse X Y] [--mousedown] [--rightclick] [--scroll DY]
                   [--mouse2 X Y] [--mousedown2] [--openmodal] [--toast] [--no-anim]
 ```
@@ -364,10 +391,27 @@ clay-widgets-demo --shot out.png [--view N] [--frames N] [--theme N]
 - `--mouse`/`--mousedown` inject a pointer and a scripted click (`--rightclick`
   makes that a right-click, e.g. to open a context menu); `--mouse2`/
   `--mousedown2` add a second interaction phase (e.g. open a menu, then choose
-  an item).
+  an item). With no `--mouse`, the pointer is parked off-screen so the real
+  cursor can't leave a hover highlight in the capture.
+- `--size W H` sets the window size (default is the demo's own).
+
+`--shot` also makes a capture reproducible: the live frame rate is replaced with
+a placeholder, so re-running the harness on an unchanged demo produces
+byte-identical PNGs.
 
 `tools/screenshot_panels.py` drives this harness once per view to regenerate
 the README screenshots in `docs/screenshots/` in one command.
+
+### Automated in CI
+
+The `screenshots` job in `.github/workflows/pages.yml` does the same thing on
+every push to `main` and commits the PNGs back when they changed (with
+`[skip ci]`, so it doesn't retrigger itself). GitHub runners have no GPU, so it
+builds the demo for Linux and runs it under Xvfb with Mesa's llvmpipe software
+rasterizer - which is why the `Makefile` detects the platform and links
+`-lGL -lX11` there instead of `-lopengl32 -lgdi32`. Because that renderer is not
+the one on your desktop, the first CI run re-renders all four PNGs; after that
+they only change when the UI does.
 
 ## License
 
