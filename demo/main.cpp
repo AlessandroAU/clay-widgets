@@ -346,6 +346,7 @@ int main(int argc, char **argv) {
         }
 
         ui.theme = ClayWidgets_ThemeFromPreset((ClayWidgets_ThemePreset)demo.themePreset);
+        ApplyFontScale(ui.theme, demo.fontScale);
         ui.animationsEnabled = demo.animationsOn && !disableAnim;
 
         ClayWidgets_BeginFrame(

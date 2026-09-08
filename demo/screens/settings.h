@@ -21,6 +21,19 @@ static void DrawSettingsView(ClayWidgets_Context &ui, DemoState &s) {
             ClayWidgets_Radio(&ui, CLAY_ID("ThemeMacDark"), CLAY_STRING("macOS Dark"), CLAY_WIDGETS_THEME_PRESET_MAC_DARK, &s.themePreset);
 
             ClayWidgets_Separator(&ui);
+            // Drives the whole type ramp, so the page reflows under the drag -
+            // which is the point, and harmless: a slider drag tracks the pointer
+            // on the x axis only, so the control moving down the page as text
+            // grows doesn't interrupt it.
+            ClayWidgets_Label(&ui, FormatString(s, "Text size  %d%%",
+                static_cast<int>(std::lround(s.fontScale * 100.0f))));
+            if (ClayWidgets_Slider(&ui, CLAY_ID("FontScaleSlider"), &s.fontScale,
+                    ClayWidgets_SliderOptions{0.75f, 1.75f, 0.05f, false, 0})) {
+                SetStatus(s, "Text size: %d%%", static_cast<int>(std::lround(s.fontScale * 100.0f)));
+            }
+            MutedLabel(ui, CLAY_STRING("Scales the preset's body, heading and small sizes. Check boxes, radios, toggles and field heights follow it."));
+
+            ClayWidgets_Separator(&ui);
             ClayWidgets_Toggle(&ui, CLAY_ID("AnimToggle"), CLAY_STRING("Animate hover and state changes"), &s.animationsOn);
             MutedLabel(ui, CLAY_STRING("Also forced off by the --no-anim screenshot flag (reduce-motion support)."));
         }
