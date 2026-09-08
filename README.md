@@ -2,11 +2,14 @@
 
 Widget layer built on top of Clay with a raylib demo application.
 
+**[Try the live demo in your browser](https://alessandroau.github.io/clay-widgets/)** -
+the same demo app, compiled to WebAssembly and deployed from `main` on every push.
+
 See [integration and new controls](docs/integration.md) for editor history and
 validation, searchable combos, virtual lists, sortable/resizable tables, split
 panes, font registration, and platform IME/accessibility adapter contracts.
 
-![Dashboard view of the clay-widgets demo](docs/screenshots/dashboard.png)
+[![Dashboard view of the clay-widgets demo](docs/screenshots/dashboard.png)](https://alessandroau.github.io/clay-widgets/)
 
 ## Project layout
 
@@ -226,6 +229,10 @@ The same raylib app can be compiled to WebAssembly and run in a browser on an
 HTML `<canvas>`, so the web page looks identical to the desktop demo. This uses
 [Emscripten](https://emscripten.org/); `build_web.py` installs it for you.
 
+The hosted result is at
+**<https://alessandroau.github.io/clay-widgets/>** - see
+"Hosted demo (GitHub Pages)" below for how it gets there.
+
 From the project root:
 
 ```bash
@@ -252,6 +259,23 @@ Notes:
   the frame loop is driven by `emscripten_set_main_loop` instead of a native
   `while (!WindowShouldClose())` loop. The desktop build is unchanged.
 - The screenshot harness flags are desktop-only.
+
+## Hosted demo (GitHub Pages)
+
+`.github/workflows/pages.yml` runs the same `tools/build_web.py` on every push
+to `main` and publishes `build/web/` to GitHub Pages, so the browser demo always
+matches `main`. Nothing generated is committed - the wasm is built in CI and
+uploaded straight to Pages.
+
+The workflow passes `--system-emsdk`, which tells `build_web.py` to use the
+Emscripten already activated by the CI step (cached between runs) instead of
+cloning its own copy into `subprojects/emsdk/`. Locally you want the default -
+just run `python tools/build_web.py`.
+
+Pages has to be enabled once per repo/fork before the deploy step can publish:
+**Settings -> Pages -> Build and deployment -> Source: "GitHub Actions"**. On a
+fork the URL becomes `https://<your-user>.github.io/clay-widgets/`; update the
+links at the top of this README to match.
 
 ## Clean
 
