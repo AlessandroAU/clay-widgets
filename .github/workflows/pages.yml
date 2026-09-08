@@ -1,0 +1,60 @@
+# Builds the WebAssembly demo and publishes it to GitHub Pages, so the same
+# raylib app that ships as clay-widgets-demo.exe is playable in a browser at
+# https://alessandroau.github.io/clay-widgets/.
+#
+# Requires Pages to be enabled once for the repo:
+#   Settings -> Pages -> Build and deployment -> Source: "GitHub Actions".
+name: pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never run two deployments at once; a newer commit supersedes an in-flight
+# build, but let the running one finish so Pages is never left half-updated.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      # Installs + activates emsdk and puts emcc on PATH, with its own cache so
+      # the ~1GB SDK download only happens when the version changes.
+      - uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: latest
+          actions-cache-folder: emsdk-cache
+
+      - name: Build the web demo
+        run: python tools/build_web.py --system-emsdk
+
+      # Pages serves through Jekyll by default, which skips files starting with
+      # "_". The emscripten output has none today, but this keeps it verbatim.
+      - name: Disable Jekyll processing
+        run: touch build/web/.nojekyll
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/web
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

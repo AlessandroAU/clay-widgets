@@ -19,6 +19,7 @@ Usage:
   python tools/build_web.py --clean        # remove build/web/ and libraylib.web.a, then build
   python tools/build_web.py --skip-raylib  # don't rebuild raylib (reuse libraylib.web.a)
   python tools/build_web.py --emsdk-version 3.1.64   # pin a specific emsdk version
+  python tools/build_web.py --system-emsdk # use an emcc already on PATH (CI)
 
 Note: the output must be served over HTTP (browsers won't fetch .wasm/.data
 from file://). Use --serve, or any static server pointed at build/web/.
@@ -135,7 +136,8 @@ def require_tool(name: str, env: dict) -> str:
     tool = shutil.which(name, path=env.get("PATH"))
     if not tool:
         raise FileNotFoundError(
-            f"'{name}' not found after activating emsdk. The SDK may not have installed correctly."
+            f"'{name}' not found on PATH. Activate the Emscripten SDK first, or drop "
+            f"--system-emsdk to let this script install it into subprojects/emsdk."
         )
     return tool
 
@@ -222,6 +224,11 @@ def main() -> int:
     parser.add_argument("--skip-raylib", action="store_true", help="reuse an existing libraylib.web.a")
     parser.add_argument("--serve", action="store_true", help="serve build/web/ on http://localhost:8000 after building")
     parser.add_argument("--emsdk-version", default="latest", help="emsdk version to install/activate (default: latest)")
+    parser.add_argument(
+        "--system-emsdk",
+        action="store_true",
+        help="use an already-activated Emscripten on PATH instead of installing into subprojects/emsdk (used by CI)",
+    )
     args = parser.parse_args()
 
     if not resolve_shell().exists():
@@ -232,8 +239,13 @@ def main() -> int:
         if args.clean:
             clean()
 
-        ensure_emsdk(args.emsdk_version)
-        env = emsdk_env()
+        if args.system_emsdk:
+            # CI activates emsdk itself (cached between runs), so just inherit
+            # the environment it set up rather than cloning a second copy.
+            env = os.environ.copy()
+        else:
+            ensure_emsdk(args.emsdk_version)
+            env = emsdk_env()
         require_tool("emcc", env)  # fail early with a clear message if activation failed
 
         if not args.skip_raylib or not RAYLIB_WEB_LIB.exists():
