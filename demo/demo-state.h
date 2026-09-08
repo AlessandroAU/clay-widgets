@@ -169,6 +169,12 @@ constexpr int32_t kScratchBytes = 128;
 struct DemoState {
     int32_t activeView = kViewDashboard;
 
+    // Set by --shot. Live readouts (frame rate) are replaced with a placeholder
+    // so a capture of the same view is byte-identical every run - CI commits
+    // the regenerated PNGs, and a per-run frame rate would make every push a
+    // diff. Does not affect normal interactive runs.
+    bool deterministic = false;
+
     // Tasks
     DemoTask tasks[kMaxTasks] = {};
     int32_t taskCount = 0;
