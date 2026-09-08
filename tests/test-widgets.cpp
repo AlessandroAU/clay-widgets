@@ -1495,6 +1495,55 @@ static void TestBeveledEdgesAndShadows(void) {
     CHECK(countRects(Frame(MakeInput(), panel), panelId.id) == 1);
 }
 
+// Clay clips to rectangles, so a child that reaches a rounded container's
+// corner paints a square block outside the arc unless it carries the matching
+// radius itself. A table's header can take it at declaration; its last row only
+// becomes known at EndTable, which stamps the radius onto the row's fill after
+// layout.
+static void TestRoundedCornersClipChildren(void) {
+    Clay_ElementId tableId = CLAY_ID("CornerTable");
+    Clay_ElementId firstRowId = CLAY_ID("CornerRowA");
+    Clay_ElementId lastRowId = CLAY_ID("CornerRowB");
+    ClayWidgets_TableColumn columns[2] = {
+        { CLAY_STRING("Name"), CLAY_SIZING_GROW(0) },
+        { CLAY_STRING("Value"), CLAY_SIZING_GROW(0) },
+    };
+    Clay_String cells[2] = { CLAY_STRING("a"), CLAY_STRING("b") };
+    auto body = [&]() {
+        if (ClayWidgets_BeginTable(&ui, tableId, columns, 2)) {
+            // Both selected, so both actually paint a fill to inspect.
+            ClayWidgets_TableRow(&ui, firstRowId, cells, 2, 0, true);
+            ClayWidgets_TableRow(&ui, lastRowId, cells, 2, 1, true);
+            ClayWidgets_EndTable(&ui, tableId);
+        }
+    };
+    Frame(MakeInput(), body);
+    Clay_RenderCommandArray commands = Frame(MakeInput(), body);
+
+    float radius = (float)ui.theme.radiusMd;
+    CHECK(radius > 0.0f);
+
+    Clay_RenderCommand last = {};
+    CHECK(FindCommandById(commands, lastRowId.id, &last));
+    CHECK(last.commandType == CLAY_RENDER_COMMAND_TYPE_RECTANGLE);
+    CHECK(last.renderData.rectangle.cornerRadius.bottomLeft == radius);
+    CHECK(last.renderData.rectangle.cornerRadius.bottomRight == radius);
+    // Only the bottom: the header owns the top corners.
+    CHECK(last.renderData.rectangle.cornerRadius.topLeft == 0.0f);
+    CHECK(last.renderData.rectangle.cornerRadius.topRight == 0.0f);
+
+    // A row in the middle of the table touches no corner and stays square.
+    Clay_RenderCommand first = {};
+    CHECK(FindCommandById(commands, firstRowId.id, &first));
+    CHECK(first.commandType == CLAY_RENDER_COMMAND_TYPE_RECTANGLE);
+    CHECK(first.renderData.rectangle.cornerRadius.bottomLeft == 0.0f);
+    CHECK(first.renderData.rectangle.cornerRadius.topLeft == 0.0f);
+
+    // The override is geometry, not style: it applies on flat themes, which is
+    // where rounded corners exist at all.
+    CHECK(ui.theme.edgeStyle == CLAY_WIDGETS_EDGE_STYLE_FLAT);
+}
+
 // UTF-8 boundary and word-bound helpers used by the text input.
 static void TestUtf8Helpers(void) {
     const char *text = "a\xC3\xA9!b"; // a, é (2 bytes), '!', b
@@ -1570,6 +1619,7 @@ int main(void) {
         { "child id derivation", TestChildIdDerivation },
         { "danger color unified", TestDangerColorUnified },
         { "beveled edges and drop shadows", TestBeveledEdgesAndShadows },
+        { "rounded corners clip children", TestRoundedCornersClipChildren },
         { "utf-8 helpers", TestUtf8Helpers },
     };
 

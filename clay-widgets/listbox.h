@@ -108,6 +108,23 @@ bool ClayWidgets_ListBox(
                 rowText = ctx->theme.onSelectionColor;
             }
 
+            // The first and last rows sit on the box's rounded corners; inset by
+            // the box's own padding, the arc they have to follow is that much
+            // tighter than the box's.
+            float outer = (float)ctx->theme.radiusMd - (float)(beveled ? 2 : ctx->theme.spacing.xs);
+            if (outer < (float)ctx->theme.radiusSm) {
+                outer = (float)ctx->theme.radiusSm;
+            }
+            Clay_CornerRadius rowRadius = CLAY__INIT(Clay_CornerRadius){
+                (float)ctx->theme.radiusSm, (float)ctx->theme.radiusSm,
+                (float)ctx->theme.radiusSm, (float)ctx->theme.radiusSm };
+            if (i == 0) {
+                rowRadius.topLeft = rowRadius.topRight = outer;
+            }
+            if (i == itemCount - 1) {
+                rowRadius.bottomLeft = rowRadius.bottomRight = outer;
+            }
+
             CLAY(rowId, {
                 .layout = {
                     .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_FIT(0, 0) },
@@ -120,7 +137,7 @@ bool ClayWidgets_ListBox(
                     .childAlignment = { .x = CLAY_ALIGN_X_LEFT, .y = CLAY_ALIGN_Y_CENTER },
                 },
                 .backgroundColor = rowBg,
-                .cornerRadius = CLAY_CORNER_RADIUS((float)ctx->theme.radiusSm),
+                .cornerRadius = rowRadius,
                 .transition = ClayWidgets__ColorTransition(ctx),
             }) {
                 CLAY_TEXT(items[i], {
