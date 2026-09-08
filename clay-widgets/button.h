@@ -38,6 +38,9 @@ bool ClayWidgets_ButtonEx(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_Stri
     if (options.disabled) {
         Clay_Color color = ClayWidgets__MixColor(ctx->theme.surfaceAltColor, ctx->theme.surfaceColor, ctx->theme.disabledMix);
 
+        // Still raised: a classic disabled button keeps its 3D edge and greys
+        // out only the label.
+        ClayWidgets_SetEdge(ctx, id, CLAY_WIDGETS_EDGE_RAISED);
         CLAY(id, {
             .layout = {
                 .sizing = options.sizing,
@@ -46,10 +49,7 @@ bool ClayWidgets_ButtonEx(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_Stri
             },
             .backgroundColor = color,
             .cornerRadius = CLAY_CORNER_RADIUS((float)ctx->theme.radiusMd),
-            .border = {
-                .color = ctx->theme.borderColor,
-                .width = { .left = 1, .right = 1, .top = 1, .bottom = 1 },
-            },
+            .border = ClayWidgets__Border(ctx, ctx->theme.borderColor),
         }) {
             CLAY_TEXT(text, {
                 .textColor = ctx->theme.textMutedColor,
@@ -121,18 +121,29 @@ bool ClayWidgets_ButtonEx(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_Stri
         color = hover;
     }
 
+    // Pressed sinks the edge and, on a beveled theme, nudges the label a pixel
+    // down and right along with it - the classic "button goes in" cue.
+    Clay_Padding padding = CLAY_PADDING_ALL(ctx->theme.spacing.md);
+    if (active && ClayWidgets__IsBeveled(ctx) && padding.right > 0 && padding.bottom > 0) {
+        padding.left = (uint16_t)(padding.left + 1);
+        padding.top = (uint16_t)(padding.top + 1);
+        padding.right = (uint16_t)(padding.right - 1);
+        padding.bottom = (uint16_t)(padding.bottom - 1);
+    }
+    ClayWidgets_SetEdge(ctx, id, active ? CLAY_WIDGETS_EDGE_SUNKEN : CLAY_WIDGETS_EDGE_RAISED);
+    if (focused) {
+        ClayWidgets__FocusRect(ctx, id);
+    }
+
     CLAY(id, {
         .layout = {
             .sizing = options.sizing,
-            .padding = CLAY_PADDING_ALL(ctx->theme.spacing.md),
+            .padding = padding,
             .childAlignment = { .x = CLAY_ALIGN_X_CENTER, .y = CLAY_ALIGN_Y_CENTER },
         },
         .backgroundColor = color,
         .cornerRadius = CLAY_CORNER_RADIUS((float)ctx->theme.radiusMd),
-        .border = {
-            .color = focused ? ctx->theme.focusRingColor : ctx->theme.borderColor,
-            .width = { .left = 1, .right = 1, .top = 1, .bottom = 1 },
-        },
+        .border = ClayWidgets__Border(ctx, focused ? ctx->theme.focusRingColor : ctx->theme.borderColor),
         .transition = ClayWidgets__ColorTransition(ctx),
     }) {
         CLAY_TEXT(text, {

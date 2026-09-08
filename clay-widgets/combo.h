@@ -206,10 +206,21 @@ bool ClayWidgets_Combo(
         ? items[*selectedIndex]
         : CLAY_STRING("Select...");
 
-    Clay_Color triggerBg = ctx->theme.surfaceAltColor;
-    if (triggerOver || isOpen) {
+    // Classic combo: a sunken white field with a raised drop-down button pinned
+    // to its right edge, and a shadowed list panel under it.
+    bool beveled = ClayWidgets__IsBeveled(ctx);
+    Clay_ElementId arrowId = ClayWidgets__ChildId(id, CLAY_STRING("ClayWidgetsComboArrow"), 0);
+    Clay_Color triggerBg = beveled ? ctx->theme.fieldColor : ctx->theme.surfaceAltColor;
+    if ((triggerOver || isOpen) && !beveled) {
         triggerBg = ctx->theme.hoverColor;
     }
+    ClayWidgets_SetEdge(ctx, triggerId, CLAY_WIDGETS_EDGE_SUNKEN);
+    ClayWidgets_SetEdge(ctx, arrowId, isOpen ? CLAY_WIDGETS_EDGE_SUNKEN : CLAY_WIDGETS_EDGE_RAISED);
+    if (focused) {
+        ClayWidgets__FocusRect(ctx, triggerId);
+    }
+    ClayWidgets_SetEdge(ctx, dropdownId, CLAY_WIDGETS_EDGE_RAISED);
+    ClayWidgets_SetShadow(ctx, dropdownId);
 
     // While open, square the trigger corners on the side the dropdown joins.
     Clay_CornerRadius triggerRadius = { r, r, r, r };
@@ -240,11 +251,13 @@ bool ClayWidgets_Combo(
                     .width = CLAY_SIZING_GROW(0),
                     .height = CLAY_SIZING_FIXED(fieldHeight),
                 },
+                // The drop-down button sits inside the field's sunken edge, so
+                // on a beveled theme the field's own padding shrinks to it.
                 .padding = (Clay_Padding){
                     .left = ctx->theme.spacing.sm,
-                    .right = ctx->theme.spacing.sm,
-                    .top = 0,
-                    .bottom = 0,
+                    .right = (uint16_t)(beveled ? 2 : ctx->theme.spacing.sm),
+                    .top = (uint16_t)(beveled ? 2 : 0),
+                    .bottom = (uint16_t)(beveled ? 2 : 0),
                 },
                 .childGap = ctx->theme.spacing.sm,
                 .childAlignment = { .x = CLAY_ALIGN_X_LEFT, .y = CLAY_ALIGN_Y_CENTER },
@@ -252,10 +265,7 @@ bool ClayWidgets_Combo(
             },
             .backgroundColor = triggerBg,
             .cornerRadius = triggerRadius,
-            .border = {
-                .color = (focused || isOpen) ? ctx->theme.focusRingColor : ctx->theme.borderColor,
-                .width = { .left = 1, .right = 1, .top = 1, .bottom = 1 },
-            },
+            .border = ClayWidgets__Border(ctx, (focused || isOpen) ? ctx->theme.focusRingColor : ctx->theme.borderColor),
             .transition = ClayWidgets__ColorTransition(ctx),
         }) {
             CLAY_AUTO_ID({
@@ -270,11 +280,22 @@ bool ClayWidgets_Combo(
                     .wrapMode = CLAY_TEXT_WRAP_NONE,
                 });
             }
-            CLAY_TEXT(CLAY_STRING("v"), {
-                .textColor = ctx->theme.textMutedColor,
-                .fontId = ctx->theme.fontBody,
-                .fontSize = ctx->theme.fontSizeBody,
-            });
+            CLAY(arrowId, {
+                .layout = {
+                    .sizing = {
+                        .width = beveled ? CLAY_SIZING_FIXED(fieldHeight - 6.0f) : CLAY_SIZING_FIT(0, 0),
+                        .height = beveled ? CLAY_SIZING_GROW(0) : CLAY_SIZING_FIT(0, 0),
+                    },
+                    .childAlignment = { .x = CLAY_ALIGN_X_CENTER, .y = CLAY_ALIGN_Y_CENTER },
+                },
+                .backgroundColor = beveled ? ctx->theme.surfaceAltColor : (Clay_Color){ 0, 0, 0, 0 },
+            }) {
+                CLAY_TEXT(CLAY_STRING("v"), {
+                    .textColor = beveled ? ctx->theme.textColor : ctx->theme.textMutedColor,
+                    .fontId = ctx->theme.fontBody,
+                    .fontSize = ctx->theme.fontSizeBody,
+                });
+            }
         }
 
         if (isOpen && ClayWidgets__PushOverlay(ctx, 100)) {
@@ -290,7 +311,7 @@ bool ClayWidgets_Combo(
                     .childGap = 0,
                     .layoutDirection = CLAY_TOP_TO_BOTTOM,
                 },
-                .backgroundColor = ctx->theme.surfaceAltColor,
+                .backgroundColor = beveled ? ctx->theme.fieldColor : ctx->theme.surfaceAltColor,
                 .cornerRadius = flipUp
                     ? (Clay_CornerRadius){ r, r, 0.0f, 0.0f }
                     : (Clay_CornerRadius){ 0.0f, 0.0f, r, r },
@@ -309,15 +330,8 @@ bool ClayWidgets_Combo(
                     .attachTo = CLAY_ATTACH_TO_ELEMENT_WITH_ID,
                 },
                 .clip = { .vertical = true, .childOffset = Clay_GetScrollOffset() },
-                .border = {
-                    .color = ctx->theme.focusRingColor,
-                    .width = {
-                        .left = 1,
-                        .right = 1,
-                        .top = (uint16_t)(flipUp ? 1 : 0),
-                        .bottom = (uint16_t)(flipUp ? 0 : 1),
-                    },
-                },
+                .border = ClayWidgets__EdgeBorder(ctx, ctx->theme.focusRingColor, CLAY__INIT(Clay_BorderWidth){
+                    1, 1, (uint16_t)(flipUp ? 1 : 0), (uint16_t)(flipUp ? 0 : 1), 0 }),
             }) {
                 for (int32_t i = 0; i < itemCount; i++) {
                     Clay_ElementId itemId = ClayWidgets__ChildId(id, CLAY_STRING("ClayWidgetsComboItem"), i);
@@ -325,9 +339,11 @@ bool ClayWidgets_Combo(
                     bool isHighlighted = (i == ctx->comboHighlightIndex);
                     bool isSelected = (i == *selectedIndex);
 
-                    Clay_Color itemBg = ctx->theme.surfaceAltColor;
+                    Clay_Color itemBg = beveled ? ctx->theme.fieldColor : ctx->theme.surfaceAltColor;
+                    Clay_Color itemText = ctx->theme.textColor;
                     if (itemOver || isHighlighted) {
-                        itemBg = ctx->theme.hoverColor;
+                        itemBg = ctx->theme.selectionColor;
+                        itemText = ctx->theme.onSelectionColor;
                     } else if (isSelected) {
                         itemBg = ctx->theme.accentMutedColor;
                     }
@@ -345,7 +361,7 @@ bool ClayWidgets_Combo(
                         .transition = ClayWidgets__ColorTransition(ctx),
                     }) {
                         CLAY_TEXT(items[i], {
-                            .textColor = ctx->theme.textColor,
+                            .textColor = itemText,
                             .fontId = ctx->theme.fontBody,
                             .fontSize = ctx->theme.fontSizeBody,
                             .wrapMode = CLAY_TEXT_WRAP_NONE,

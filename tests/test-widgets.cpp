@@ -1413,6 +1413,88 @@ static void TestDangerColorUnified(void) {
     CHECK(SameColor(buttonCommand.renderData.rectangle.backgroundColor, ui.theme.dangerColor));
 }
 
+// A beveled theme paints its 3D edges and drop shadows into the render command
+// array after layout: extra rectangles carrying the tagged element's own id,
+// spliced around that element's background rectangle. Flat themes emit none.
+static void TestBeveledEdgesAndShadows(void) {
+    auto countRects = [](Clay_RenderCommandArray commands, uint32_t id) {
+        int32_t count = 0;
+        for (int32_t i = 0; i < commands.length; ++i) {
+            Clay_RenderCommand *command = Clay_RenderCommandArray_Get(&commands, i);
+            if (command->id == id && command->commandType == CLAY_RENDER_COMMAND_TYPE_RECTANGLE) count++;
+        }
+        return count;
+    };
+    auto indexOf = [](Clay_RenderCommandArray commands, uint32_t id) {
+        for (int32_t i = 0; i < commands.length; ++i) {
+            if (Clay_RenderCommandArray_Get(&commands, i)->id == id) return i;
+        }
+        return -1;
+    };
+
+    Clay_ElementId buttonId = CLAY_ID("BevelButton");
+    auto button = [&]() { ClayWidgets_Button(&ui, buttonId, CLAY_STRING("OK")); };
+
+    // Flat theme: the button's fill, and nothing else under its id.
+    Frame(MakeInput(), button);
+    CHECK(countRects(Frame(MakeInput(), button), buttonId.id) == 1);
+
+    ClayWidgets_Theme saved = ui.theme;
+    ui.theme = ClayWidgets_ThemeWin95();
+
+    Frame(MakeInput(), button);
+    Clay_RenderCommandArray beveled = Frame(MakeInput(), button);
+    // The fill, plus four runs for each of the two bands of a raised edge.
+    CHECK(countRects(beveled, buttonId.id) == 9);
+
+    int32_t at = indexOf(beveled, buttonId.id);
+    CHECK(at >= 0);
+    Clay_RenderCommand *fill = Clay_RenderCommandArray_Get(&beveled, at);
+    Clay_RenderCommand *top = Clay_RenderCommandArray_Get(&beveled, at + 1);
+    Clay_RenderCommand *bottom = Clay_RenderCommandArray_Get(&beveled, at + 3);
+    Clay_RenderCommand *innerTop = Clay_RenderCommandArray_Get(&beveled, at + 5);
+    CHECK(SameColor(fill->renderData.rectangle.backgroundColor, ui.theme.surfaceAltColor));
+    // Outer band catches the light on top and falls away at the bottom; the
+    // inner band repeats it one pixel in.
+    CHECK(SameColor(top->renderData.rectangle.backgroundColor, ui.theme.edgeLightColor));
+    CHECK(SameColor(bottom->renderData.rectangle.backgroundColor, ui.theme.edgeDarkColor));
+    CHECK(SameColor(innerTop->renderData.rectangle.backgroundColor, ui.theme.edgeHighlightColor));
+    CHECK(top->boundingBox.height == 1.0f);
+    CHECK(top->boundingBox.y == floorf(fill->boundingBox.y));
+    CHECK(bottom->boundingBox.y == floorf(fill->boundingBox.y + fill->boundingBox.height) - 1.0f);
+    CHECK(innerTop->boundingBox.y == top->boundingBox.y + 1.0f);
+
+    // A drop shadow goes in front of the element it falls behind, offset down
+    // and to the right of it.
+    Clay_ElementId panelId = CLAY_ID("BevelPanel");
+    auto panel = [&]() {
+        ClayWidgets_SetShadow(&ui, panelId);
+        CLAY(panelId, {
+            .layout = { .sizing = { CLAY_SIZING_FIXED(40), CLAY_SIZING_FIXED(20) } },
+            .backgroundColor = ui.theme.surfaceColor,
+        }) {}
+    };
+    Frame(MakeInput(), panel);
+    Clay_RenderCommandArray shadowed = Frame(MakeInput(), panel);
+    CHECK(countRects(shadowed, panelId.id) == 3);
+    at = indexOf(shadowed, panelId.id);
+    CHECK(at >= 0);
+    Clay_RenderCommand *right = Clay_RenderCommandArray_Get(&shadowed, at);
+    Clay_RenderCommand *under = Clay_RenderCommandArray_Get(&shadowed, at + 1);
+    Clay_RenderCommand *surface = Clay_RenderCommandArray_Get(&shadowed, at + 2);
+    CHECK(SameColor(right->renderData.rectangle.backgroundColor, ui.theme.shadowColor));
+    CHECK(SameColor(under->renderData.rectangle.backgroundColor, ui.theme.shadowColor));
+    CHECK(SameColor(surface->renderData.rectangle.backgroundColor, ui.theme.surfaceColor));
+    CHECK(right->boundingBox.x == floorf(surface->boundingBox.x + surface->boundingBox.width));
+    CHECK(under->boundingBox.y == floorf(surface->boundingBox.y + surface->boundingBox.height));
+    CHECK(right->boundingBox.width == (float)ui.theme.shadowOffset);
+
+    ui.theme = saved;
+    // Back on a flat theme the same tags produce nothing again.
+    Frame(MakeInput(), panel);
+    CHECK(countRects(Frame(MakeInput(), panel), panelId.id) == 1);
+}
+
 // UTF-8 boundary and word-bound helpers used by the text input.
 static void TestUtf8Helpers(void) {
     const char *text = "a\xC3\xA9!b"; // a, é (2 bytes), '!', b
@@ -1487,6 +1569,7 @@ int main(void) {
         { "toggle stable track id + click", TestToggleTrackAndClick },
         { "child id derivation", TestChildIdDerivation },
         { "danger color unified", TestDangerColorUnified },
+        { "beveled edges and drop shadows", TestBeveledEdgesAndShadows },
         { "utf-8 helpers", TestUtf8Helpers },
     };
 

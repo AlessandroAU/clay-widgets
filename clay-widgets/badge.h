@@ -53,8 +53,9 @@ void ClayWidgets_BadgeColor(ClayWidgets_Context *ctx, Clay_String text, Clay_Col
             .childAlignment = { .x = CLAY_ALIGN_X_CENTER, .y = CLAY_ALIGN_Y_CENTER },
         },
         .backgroundColor = background,
-        // Large radius clamps to a full pill in the renderer.
-        .cornerRadius = CLAY_CORNER_RADIUS(999),
+        // Large radius clamps to a full pill in the renderer; a square-cornered
+        // theme gets a square chip instead.
+        .cornerRadius = CLAY_CORNER_RADIUS(ctx->theme.radiusSm > 0 ? 999.0f : 0.0f),
     }) {
         CLAY_TEXT(text, {
             .textColor = textColor,

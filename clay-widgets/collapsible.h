@@ -55,10 +55,7 @@ bool ClayWidgets_BeginCollapsible(ClayWidgets_Context *ctx, Clay_ElementId id, C
         },
         .backgroundColor = over ? ctx->theme.hoverColor : ctx->theme.surfaceAltColor,
         .cornerRadius = CLAY_CORNER_RADIUS((float)ctx->theme.radiusSm),
-        .border = {
-            .color = focused ? ctx->theme.focusRingColor : transparent,
-            .width = { .left = 1, .right = 1, .top = 1, .bottom = 1 },
-        },
+        .border = ClayWidgets__Border(ctx, focused ? ctx->theme.focusRingColor : transparent),
     }) {
         CLAY_AUTO_ID({
             .layout = {

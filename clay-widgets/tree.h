@@ -43,7 +43,7 @@ static bool ClayWidgets__TreeRow(ClayWidgets_Context *ctx, Clay_ElementId id, Cl
             .childAlignment = { .x = CLAY_ALIGN_X_LEFT, .y = CLAY_ALIGN_Y_CENTER },
             .layoutDirection = CLAY_LEFT_TO_RIGHT,
         },
-        .backgroundColor = over ? ctx->theme.hoverColor : ClayWidgets__FadeToClear(ctx->theme.hoverColor),
+        .backgroundColor = over ? ctx->theme.selectionColor : ClayWidgets__FadeToClear(ctx->theme.selectionColor),
         .cornerRadius = CLAY_CORNER_RADIUS((float)ctx->theme.radiusSm),
         .transition = ClayWidgets__ColorTransition(ctx),
     }) {

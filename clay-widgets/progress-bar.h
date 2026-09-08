@@ -26,6 +26,12 @@ void ClayWidgets_ProgressBar(
 
     float t = ClayWidgets__Clamp(progress01, 0.0f, 1.0f);
 
+    // The trough is a well the fill sits in. Its padding has to clear the 3D
+    // edge, or a full bar would paint over the inner band.
+    Clay_ElementId troughId = ClayWidgets__ChildId(id, CLAY_STRING("ClayWidgetsProgressTrough"), 0);
+    uint16_t troughInset = ClayWidgets__IsBeveled(ctx) ? 2 : 1;
+    ClayWidgets_SetEdge(ctx, troughId, CLAY_WIDGETS_EDGE_SUNKEN);
+
     CLAY(id, {
         .layout = {
             .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_FIT(0, 0) },
@@ -41,24 +47,21 @@ void ClayWidgets_ProgressBar(
             });
         }
 
-        CLAY_AUTO_ID({
+        CLAY(troughId, {
             .layout = {
-                .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_FIXED(12) },
-                .padding = CLAY_PADDING_ALL(1),
+                .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_FIXED(ClayWidgets__IsBeveled(ctx) ? 14.0f : 12.0f) },
+                .padding = CLAY_PADDING_ALL(troughInset),
             },
             .backgroundColor = ctx->theme.surfaceAltColor,
-            .cornerRadius = CLAY_CORNER_RADIUS(6),
-            .border = {
-                .color = ctx->theme.borderColor,
-                .width = { .left = 1, .right = 1, .top = 1, .bottom = 1 },
-            },
+            .cornerRadius = CLAY_CORNER_RADIUS((float)ctx->theme.radiusSm),
+            .border = ClayWidgets__Border(ctx, ctx->theme.borderColor),
         }) {
             CLAY_AUTO_ID({
                 .layout = {
                     .sizing = { .width = CLAY_SIZING_PERCENT(t), .height = CLAY_SIZING_GROW(0) },
                 },
                 .backgroundColor = ctx->theme.accentColor,
-                .cornerRadius = CLAY_CORNER_RADIUS(5),
+                .cornerRadius = CLAY_CORNER_RADIUS(ctx->theme.radiusSm > 0 ? (float)(ctx->theme.radiusSm - 1) : 0.0f),
             }) {}
         }
     }

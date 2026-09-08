@@ -87,10 +87,9 @@ void ClayWidgets_TooltipEx(ClayWidgets_Context *ctx, Clay_ElementId anchorId, Cl
             .pointerCaptureMode = CLAY_POINTER_CAPTURE_MODE_PASSTHROUGH,
             .attachTo = CLAY_ATTACH_TO_ELEMENT_WITH_ID,
         },
-        .border = {
-            .color = ctx->theme.borderColor,
-            .width = { .left = 1, .right = 1, .top = 1, .bottom = 1 },
-        },
+        // A classic tooltip is a flat panel with a hard one-pixel outline, not a
+        // beveled control - it isn't something you can press.
+        .border = ClayWidgets__Border(ctx, ctx->theme.borderColor),
     }) {
         CLAY_TEXT(text, {
             .textColor = ctx->theme.textColor,

@@ -30,11 +30,11 @@ bool ClayWidgets_SelectRowEx(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_C
     // no focus is registered here - only a pointer click selects them.
     bool clicked = ClayWidgets__ConsumeClick(ctx, over);
 
-    Clay_Color rowBg = ClayWidgets__FadeToClear(ctx->theme.hoverColor);
+    Clay_Color rowBg = ClayWidgets__FadeToClear(ctx->theme.selectionColor);
     if (selected) {
         rowBg = ctx->theme.accentMutedColor;
     } else if (over) {
-        rowBg = ctx->theme.hoverColor;
+        rowBg = ctx->theme.selectionColor;
     }
 
     CLAY(id, {

@@ -259,6 +259,10 @@ bool ClayWidgets_TextInput(
         displayText = ClayWidgets__StringFromCString("");
     }
 
+    // A classic entry field is a white well sunk into the dialog surface; it
+    // stays white when focused, where a flat theme tints its background.
+    ClayWidgets_SetEdge(ctx, fieldId, CLAY_WIDGETS_EDGE_SUNKEN);
+
     CLAY(id, {
         .layout = {
             .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_FIT(0, 0) },
@@ -288,13 +292,10 @@ bool ClayWidgets_TextInput(
                 .childAlignment = { .x = CLAY_ALIGN_X_LEFT, .y = CLAY_ALIGN_Y_CENTER },
             },
             .backgroundColor = options.disabled
-                ? ClayWidgets__MixColor(ctx->theme.surfaceAltColor, ctx->theme.surfaceColor, ctx->theme.disabledMix)
-                : (focused ? ctx->theme.hoverColor : ctx->theme.surfaceAltColor),
+                ? ClayWidgets__MixColor(ctx->theme.fieldColor, ctx->theme.surfaceColor, ctx->theme.disabledMix)
+                : ((focused && !ClayWidgets__IsBeveled(ctx)) ? ctx->theme.hoverColor : ctx->theme.fieldColor),
             .cornerRadius = CLAY_CORNER_RADIUS((float)ctx->theme.radiusMd),
-            .border = {
-                .color = focused ? ctx->theme.focusRingColor : ctx->theme.borderColor,
-                .width = { .left = 1, .right = 1, .top = 1, .bottom = 1 },
-            },
+            .border = ClayWidgets__Border(ctx, focused ? ctx->theme.focusRingColor : ctx->theme.borderColor),
         }) {
             // Inner element sits inside the padding and owns the horizontal
             // clip+scroll, so the text is clipped at the padding boundary (never
