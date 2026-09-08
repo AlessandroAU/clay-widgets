@@ -230,6 +230,7 @@ int main(int argc, char **argv) {
     DemoState demo;
     SeedTasks(demo);
 
+    demo.deterministic = shotPath != nullptr;
     if (shotView >= kViewDashboard && shotView <= kViewSettings) {
         demo.activeView = shotView;
     }
@@ -326,6 +327,17 @@ int main(int argc, char **argv) {
             input.pointerPressed = press && !rightClick;
             input.pointerReleased = release && !rightClick;
             input.pointerRightPressed = press && rightClick;
+        }
+        // No scripted pointer: park it off-screen so the real cursor's position
+        // can't leak a hover highlight (or a "Pointer: x, y" readout) into the
+        // capture, which would differ from run to run.
+        if (shotPath && forceMouseX < 0.0f) {
+            input.mouseX = -1.0f;
+            input.mouseY = -1.0f;
+            input.pointerDown = false;
+            input.pointerPressed = false;
+            input.pointerReleased = false;
+            input.pointerRightPressed = false;
         }
         if (shotPath && forceScrollY != 0.0f) {
             // Feed the wheel delta on every frame but the last, so the panel has

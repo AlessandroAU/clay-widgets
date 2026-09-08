@@ -138,7 +138,11 @@ static void DrawStatusBar(ClayWidgets_Context &ui, DemoState &s) {
             },
         }) {}
 
-        MutedLabel(ui, FormatString(s, "focus %u  |  %d fps", ui.focusedId, GetFPS()));
+        if (s.deterministic) {
+            MutedLabel(ui, FormatString(s, "focus %u  |  -- fps", ui.focusedId));
+        } else {
+            MutedLabel(ui, FormatString(s, "focus %u  |  %d fps", ui.focusedId, GetFPS()));
+        }
     }
 }
 

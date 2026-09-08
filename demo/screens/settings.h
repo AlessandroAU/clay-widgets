@@ -45,7 +45,11 @@ static void DrawSettingsView(ClayWidgets_Context &ui, DemoState &s) {
             ClayWidgets_Label(&ui, FormatString(s, "Screen: %d x %d", GetScreenWidth(), GetScreenHeight()));
             ClayWidgets_Label(&ui, FormatString(s, "Pointer: %.0f, %.0f", ui.input.mouseX, ui.input.mouseY));
             ClayWidgets_Label(&ui, FormatString(s, "Focused widget id: %u", ui.focusedId));
-            ClayWidgets_Label(&ui, FormatString(s, "Frame rate: %d fps", GetFPS()));
+            if (s.deterministic) {
+                ClayWidgets_Label(&ui, FormatString(s, "Frame rate: -- fps"));
+            } else {
+                ClayWidgets_Label(&ui, FormatString(s, "Frame rate: %d fps", GetFPS()));
+            }
             ClayWidgets_Label(&ui, FormatString(s, "Animations: %s", ui.animationsEnabled ? "on" : "off"));
 
             ClayWidgets_Separator(&ui);
