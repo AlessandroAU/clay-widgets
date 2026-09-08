@@ -5,24 +5,29 @@
 #error "Include widgets.h before slider.h"
 #endif
 
-float ClayWidgets_Slider(
+// Edits *value in place; returns true when it changed this frame (drag,
+// keyboard, or clamping into [minValue, maxValue]).
+bool ClayWidgets_Slider(
     ClayWidgets_Context *ctx,
     Clay_ElementId id,
-    float value,
+    float *value,
     ClayWidgets_SliderOptions options
 );
 
 #ifdef CLAY_WIDGETS_IMPLEMENTATION
 
-float ClayWidgets_Slider(
+bool ClayWidgets_Slider(
     ClayWidgets_Context *ctx,
     Clay_ElementId id,
-    float value,
+    float *value,
     ClayWidgets_SliderOptions options
 ) {
-    if (!ctx) {
-        return value;
+    if (!ctx || !value) {
+        return false;
     }
+    options.disabled = options.disabled || ctx->disabledDepth > 0;
+    if (options.disabled && ctx->activeId == id.id) ctx->activeId = 0;
+
 
     float minValue = options.minValue;
     float maxValue = options.maxValue;
@@ -34,8 +39,13 @@ float ClayWidgets_Slider(
         maxValue = temp;
     }
 
-    float clamped = ClayWidgets__Clamp(value, minValue, maxValue);
+    float clamped = ClayWidgets__Clamp(*value, minValue, maxValue);
     bool over = options.disabled ? false : Clay_PointerOver(id);
+    // Keep the pointer cursor for the whole drag, even when the pointer
+    // wanders off the track mid-drag.
+    if (over || ctx->activeId == id.id) {
+        ClayWidgets__SetCursor(ctx, CLAY_WIDGETS_CURSOR_POINTER);
+    }
     bool focused = options.disabled ? false : ClayWidgets__RegisterFocusable(ctx, id, over);
 
     if (!options.disabled) {
@@ -55,8 +65,7 @@ float ClayWidgets_Slider(
 
                 if (step > 0.0f) {
                     float steps = (clamped - minValue) / step;
-                    int32_t rounded = (int32_t)(steps + (steps >= 0.0f ? 0.5f : -0.5f));
-                    clamped = minValue + ((float)rounded * step);
+                    clamped = minValue + (roundf(steps) * step);
                 }
                 clamped = ClayWidgets__Clamp(clamped, minValue, maxValue);
             }
@@ -140,7 +149,7 @@ float ClayWidgets_Slider(
                 },
                 .floating = {
                     .parentId = id.id,
-                    .zIndex = 1,
+                    .zIndex = ClayWidgets__OverlayZ(ctx, 1),
                     .attachPoints = {
                         .element = CLAY_ATTACH_POINT_CENTER_CENTER,
                         .parent = CLAY_ATTACH_POINT_CENTER_CENTER,
@@ -159,7 +168,10 @@ float ClayWidgets_Slider(
         }
     }
 
-    return clamped;
+    bool changed = clamped != *value;
+    *value = clamped;
+    ClayWidgets__Describe(ctx,id,CLAY_WIDGETS_ROLE_SLIDER,CLAY_STRING(""),false,options.disabled);
+    return changed;
 }
 
 #endif

@@ -19,8 +19,13 @@ bool ClayWidgets_ToggleEx(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_Stri
     if (!ctx || !value) {
         return false;
     }
+    disabled = disabled || ctx->disabledDepth > 0;
+
 
     bool over = disabled ? false : Clay_PointerOver(id);
+    if (over) {
+        ClayWidgets__SetCursor(ctx, CLAY_WIDGETS_CURSOR_POINTER);
+    }
     bool focused = disabled ? false : ClayWidgets__RegisterFocusable(ctx, id, over);
     bool clicked = false;
     if (!disabled) {
@@ -111,6 +116,7 @@ bool ClayWidgets_ToggleEx(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_Stri
         }
     }
 
+    ClayWidgets__Describe(ctx,id,CLAY_WIDGETS_ROLE_CHECKBOX,text,*value,disabled);
     return clicked;
 }
 

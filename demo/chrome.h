@@ -48,7 +48,7 @@ static void DrawMenuBar(ClayWidgets_Context &ui, DemoState &s) {
             .layoutDirection = CLAY_LEFT_TO_RIGHT,
         },
         .backgroundColor = ui.theme.surfaceAltColor,
-        .cornerRadius = CLAY_CORNER_RADIUS(ui.theme.radiusSm),
+        .cornerRadius = CLAY_CORNER_RADIUS((float)ui.theme.radiusSm),
     }) {
         if (ClayWidgets_BeginMenu(&ui, CLAY_ID("FileMenu"), CLAY_STRING("File"))) {
             if (ClayWidgets_MenuItem(&ui, CLAY_ID("MenuNewTask"), CLAY_STRING("New Sample Task"))) {
@@ -128,7 +128,7 @@ static void DrawStatusBar(ClayWidgets_Context &ui, DemoState &s) {
             .layoutDirection = CLAY_LEFT_TO_RIGHT,
         },
         .backgroundColor = ui.theme.surfaceAltColor,
-        .cornerRadius = CLAY_CORNER_RADIUS(ui.theme.radiusSm),
+        .cornerRadius = CLAY_CORNER_RADIUS((float)ui.theme.radiusSm),
     }) {
         ClayWidgets_Label(&ui, ClayStringFromCString(s.statusLine));
 

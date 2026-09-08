@@ -7,6 +7,20 @@
 namespace {
 
 static void DrawFloatingLayers(ClayWidgets_Context &ui, DemoState &s) {
+    ClayWidgets_ModalOptions popupOptions = {s.galleryModalDraggable, 440};
+    auto popupId = CLAY_ID("GalleryPopup");
+    if (ClayWidgets_BeginModalEx(&ui, popupId,
+            s.galleryModalDraggable ? CLAY_STRING("Draggable popup") : CLAY_STRING("Fixed popup"),
+            &s.showGalleryModal, popupOptions)) {
+        ClayWidgets_Label(&ui, s.galleryModalDraggable
+            ? CLAY_STRING("Drag the title bar to move this dialog.")
+            : CLAY_STRING("This dialog stays centered in the window."));
+        static char popupName[128] = "New project";
+        ClayWidgets_TextInput(&ui, CLAY_ID("PopupName"), CLAY_STRING("Project name"), popupName, sizeof(popupName), {});
+        MutedLabel(ui, CLAY_STRING("Press Escape, click outside, or use Close to dismiss."));
+        if (ClayWidgets_Button(&ui, CLAY_ID("PopupDone"), CLAY_STRING("Close"))) s.showGalleryModal = false;
+        ClayWidgets_EndModal(&ui, popupId);
+    }
     if (ClayWidgets_BeginContextMenu(&ui, CLAY_ID("TaskMenu"))) {
         bool valid = s.contextTask >= 0 && s.contextTask < s.taskCount;
         if (valid) {

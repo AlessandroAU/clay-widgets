@@ -73,6 +73,7 @@ int main(int argc, char **argv) {
     float forceScrollY = 0.0f;
     int shotTheme = -1;
     bool shotOpenModal = false;
+    int shotPopup = 0;
     // Optional second interaction phase (e.g. open a menu, then act on an item).
     float forceMouse2X = -1.0f;
     float forceMouse2Y = -1.0f;
@@ -101,6 +102,8 @@ int main(int argc, char **argv) {
             shotTheme = std::atoi(argv[++i]);
         } else if (std::strcmp(argv[i], "--openmodal") == 0) {
             shotOpenModal = true;
+        } else if (std::strcmp(argv[i], "--popup") == 0 && i + 1 < argc) {
+            shotPopup = std::strcmp(argv[++i], "draggable") == 0 ? 2 : 1;
         } else if (std::strcmp(argv[i], "--mouse2") == 0 && i + 2 < argc) {
             forceMouse2X = (float)std::atof(argv[++i]);
             forceMouse2Y = (float)std::atof(argv[++i]);
@@ -236,6 +239,8 @@ int main(int argc, char **argv) {
     if (shotOpenModal) {
         demo.showDeleteModal = true;
     }
+    demo.showGalleryModal = shotPopup != 0;
+    demo.galleryModalDraggable = shotPopup == 2;
     if (shotToast) {
         ClayWidgets_ShowToast(&ui, CLAY_STRING("Changes applied"), CLAY_WIDGETS_BADGE_SUCCESS, 6.0f);
     }
@@ -285,9 +290,13 @@ int main(int argc, char **argv) {
         input.keyUp = keyRepeat(KEY_UP);
         input.keyDown = keyRepeat(KEY_DOWN);
         input.keyEnter = IsKeyPressed(KEY_ENTER);
+        input.keySpace = IsKeyPressed(KEY_SPACE);
         input.keyEscape = IsKeyPressed(KEY_ESCAPE);
         input.keyTab = keyRepeat(KEY_TAB);
         bool ctrlDown = IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL);
+        input.controlDown = ctrlDown;
+        input.keyUndo = ctrlDown && IsKeyPressed(KEY_Z) && !(IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT));
+        input.keyRedo = ctrlDown && (IsKeyPressed(KEY_Y) || ((IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT)) && IsKeyPressed(KEY_Z)));
         input.keySelectAll = ctrlDown && IsKeyPressed(KEY_A);
         input.keyCopy = ctrlDown && IsKeyPressed(KEY_C);
         input.keyCut = ctrlDown && IsKeyPressed(KEY_X);
@@ -374,6 +383,17 @@ int main(int argc, char **argv) {
         }
 
         Clay_RenderCommandArray commands = ClayWidgets_EndFrame(&ui);
+
+        // Reflect the hovered widget's cursor hint: hand over click targets,
+        // I-beam over editable text, arrow otherwise.
+        switch (ClayWidgets_GetCursor(&ui)) {
+            case CLAY_WIDGETS_CURSOR_POINTER: SetMouseCursor(MOUSE_CURSOR_POINTING_HAND); break;
+            case CLAY_WIDGETS_CURSOR_TEXT:    SetMouseCursor(MOUSE_CURSOR_IBEAM); break;
+            case CLAY_WIDGETS_CURSOR_RESIZE_X: SetMouseCursor(MOUSE_CURSOR_RESIZE_EW); break;
+            case CLAY_WIDGETS_CURSOR_RESIZE_Y: SetMouseCursor(MOUSE_CURSOR_RESIZE_NS); break;
+            case CLAY_WIDGETS_CURSOR_RESIZE_XY: SetMouseCursor(MOUSE_CURSOR_RESIZE_NWSE); break;
+            default:                          SetMouseCursor(MOUSE_CURSOR_DEFAULT); break;
+        }
 
         BeginDrawing();
         ClearBackground(Color{18, 20, 25, 255});

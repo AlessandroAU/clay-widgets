@@ -46,6 +46,9 @@ bool ClayWidgets_Combo(
 
     bool triggerOver = Clay_PointerOver(triggerId);
     bool anyOver = Clay_PointerOver(id) || triggerOver || Clay_PointerOver(dropdownId);
+    if (triggerOver || Clay_PointerOver(dropdownId)) {
+        ClayWidgets__SetCursor(ctx, CLAY_WIDGETS_CURSOR_POINTER);
+    }
     bool focused = ClayWidgets__RegisterFocusable(ctx, id, anyOver);
     bool isOpen = (ctx->openComboId == id.id);
 
@@ -79,7 +82,8 @@ bool ClayWidgets_Combo(
         }
     }
 
-    if (focused && !isOpen && ClayWidgets__ActivateFocused(ctx, id)) {
+    bool openedByKeyboard = focused && !isOpen && ClayWidgets__ActivateFocused(ctx, id);
+    if (openedByKeyboard) {
         ctx->openComboId = id.id;
         ctx->comboHighlightIndex = (*selectedIndex >= 0 && *selectedIndex < itemCount)
             ? *selectedIndex : 0;
@@ -88,6 +92,15 @@ bool ClayWidgets_Combo(
     }
 
     if (focused && isOpen) {
+        if (ctx->input.keyHome) { ctx->comboHighlightIndex = 0; ctx->comboScrollToHighlight = true; }
+        if (ctx->input.keyEnd) { ctx->comboHighlightIndex = itemCount - 1; ctx->comboScrollToHighlight = true; }
+        if (ClayWidgets__TypeAhead(ctx, id.id)) {
+            for (int32_t i = 0; i < itemCount; ++i) {
+                if (ClayWidgets__PrefixMatches(items[i], ctx->typeAhead, ctx->typeAheadLength)) {
+                    ctx->comboHighlightIndex = i; ctx->comboScrollToHighlight = true; break;
+                }
+            }
+        }
         if (ctx->input.keyUp) {
             ctx->comboHighlightIndex = ctx->comboHighlightIndex > 0
                 ? ctx->comboHighlightIndex - 1 : itemCount - 1;
@@ -98,10 +111,10 @@ bool ClayWidgets_Combo(
                 ? ctx->comboHighlightIndex + 1 : 0;
             ctx->comboScrollToHighlight = true;
         }
-        if (ctx->input.keyEnter) {
+        if ((ctx->input.keyEnter || ctx->input.keySpace) && !openedByKeyboard) {
             if (ctx->comboHighlightIndex >= 0 && ctx->comboHighlightIndex < itemCount) {
+                changed = *selectedIndex != ctx->comboHighlightIndex;
                 *selectedIndex = ctx->comboHighlightIndex;
-                changed = true;
             }
             ctx->openComboId = 0;
             isOpen = false;
@@ -116,10 +129,10 @@ bool ClayWidgets_Combo(
                 ctx->comboHighlightIndex = i;
             }
             if (ClayWidgets__ConsumeClick(ctx, itemOver)) {
+                changed = *selectedIndex != i;
                 *selectedIndex = i;
                 ctx->openComboId = 0;
                 isOpen = false;
-                changed = true;
                 break;
             }
         }
@@ -264,7 +277,7 @@ bool ClayWidgets_Combo(
             });
         }
 
-        if (isOpen) {
+        if (isOpen && ClayWidgets__PushOverlay(ctx, 100)) {
             CLAY(dropdownId, {
                 .layout = {
                     .sizing = {
@@ -273,7 +286,7 @@ bool ClayWidgets_Combo(
                     },
                     // Reserve a gutter so items never sit under the floating
                     // scroll bar when the list is long enough to scroll.
-                    .padding = { .right = mayScroll ? (uint16_t)(CLAY_WIDGETS_SCROLLBAR_WIDTH + ctx->theme.spacing.xs) : 0 },
+                    .padding = { .right = (uint16_t)(mayScroll ? CLAY_WIDGETS_SCROLLBAR_WIDTH + ctx->theme.spacing.xs : 0) },
                     .childGap = 0,
                     .layoutDirection = CLAY_TOP_TO_BOTTOM,
                 },
@@ -283,7 +296,7 @@ bool ClayWidgets_Combo(
                     : (Clay_CornerRadius){ 0.0f, 0.0f, r, r },
                 .floating = {
                     .parentId = triggerId.id,
-                    .zIndex = 10,
+                    .zIndex = ClayWidgets__OverlayZ(ctx, 0),
                     .attachPoints = flipUp
                         ? (Clay_FloatingAttachPoints){
                               .element = CLAY_ATTACH_POINT_LEFT_BOTTOM,
@@ -342,6 +355,7 @@ bool ClayWidgets_Combo(
 
                 ClayWidgets_ScrollBar(ctx, dropdownId);
             }
+            ClayWidgets__PopOverlay(ctx);
         }
     }
 

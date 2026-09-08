@@ -35,7 +35,7 @@ void ClayWidgets_BeginCardEx(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_S
             .layoutDirection = CLAY_TOP_TO_BOTTOM,
         },
         .backgroundColor = ctx->theme.surfaceAltColor,
-        .cornerRadius = CLAY_CORNER_RADIUS(ctx->theme.radiusMd),
+        .cornerRadius = CLAY_CORNER_RADIUS((float)ctx->theme.radiusMd),
         .border = {
             .color = ctx->theme.borderColor,
             .width = { .left = 1, .right = 1, .top = 1, .bottom = 1 },

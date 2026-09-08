@@ -27,9 +27,13 @@ bool ClayWidgets_TextInput(
     if (!ctx || !buffer || capacity <= 0) {
         return false;
     }
+    options.disabled = options.disabled || ctx->disabledDepth > 0;
+    if (options.disabled && ctx->activeId == id.id) ctx->activeId = 0;
+
 
     int32_t length = ClayWidgets__StrLenBounded(buffer, capacity - 1);
     bool changed = false;
+    if (options.result) memset(options.result, 0, sizeof(*options.result));
 
     const uint16_t fontId = ctx->theme.fontBody;
     const uint16_t fontSize = ctx->theme.fontSizeBody;
@@ -44,6 +48,11 @@ bool ClayWidgets_TextInput(
     Clay_ElementId innerId = Clay_GetElementIdWithIndex(CLAY_STRING("ClayWidgetsTextInputInner"), id.id);
 
     bool over = Clay_PointerOver(id);
+    // I-beam over the editable text, held through a drag-selection even when
+    // the pointer leaves the field.
+    if (!options.disabled && (over || (ctx->textInputId == id.id && ctx->textPointerSelecting))) {
+        ClayWidgets__SetCursor(ctx, CLAY_WIDGETS_CURSOR_TEXT);
+    }
     // The inner element clips both axes but scrolls neither via Clay (its horizontal
     // text scroll is manual), so let a vertical wheel over the field fall through to
     // an enclosing scroll panel instead of being swallowed. Applies even when
@@ -71,6 +80,8 @@ bool ClayWidgets_TextInput(
     }
     if (ctx->textInputId == id.id) {
         ClayWidgets__ClampSelectionToLength(ctx, length);
+        while (ctx->textCursor > 0 && ctx->textCursor < length && ClayWidgets__IsUtf8ContinuationByte((unsigned char)buffer[ctx->textCursor])) --ctx->textCursor;
+        while (ctx->textSelectionAnchor > 0 && ctx->textSelectionAnchor < length && ClayWidgets__IsUtf8ContinuationByte((unsigned char)buffer[ctx->textSelectionAnchor])) --ctx->textSelectionAnchor;
     }
 
     // innerData is the padded content area (the clip element sits inside the
@@ -112,7 +123,10 @@ bool ClayWidgets_TextInput(
         ctx->textPointerSelecting = false;
     }
 
+    ClayWidgets__EditTransaction transaction = {0};
     if (focused) {
+        transaction = ClayWidgets__BeginEdit(ctx, id, buffer, &length, capacity, options.readOnly,
+            options.history, options.validate, options.result);
         bool extend = ctx->input.shiftDown;
         bool hadSelection = ClayWidgets__HasSelection(ctx);
         int32_t selStart = 0;
@@ -128,14 +142,14 @@ bool ClayWidgets_TextInput(
         if (ctx->input.keyLeft) {
             int32_t target = (hadSelection && !extend)
                 ? selStart
-                : ClayWidgets__Utf8PrevBoundary(buffer, ctx->textCursor);
+                : (ctx->input.controlDown ? ClayWidgets__WordLeft(buffer, ctx->textCursor) : ClayWidgets__Utf8PrevBoundary(buffer, ctx->textCursor));
             ClayWidgets__MoveCaret(ctx, target, extend);
         }
 
         if (ctx->input.keyRight) {
             int32_t target = (hadSelection && !extend)
                 ? selEnd
-                : ClayWidgets__Utf8NextBoundary(buffer, length, ctx->textCursor);
+                : (ctx->input.controlDown ? ClayWidgets__WordRight(buffer, length, ctx->textCursor) : ClayWidgets__Utf8NextBoundary(buffer, length, ctx->textCursor));
             ClayWidgets__MoveCaret(ctx, target, extend);
         }
 
@@ -151,7 +165,7 @@ bool ClayWidgets_TextInput(
             if (ClayWidgets__DeleteSelection(buffer, &length, ctx)) {
                 changed = true;
             } else if (ctx->textCursor > 0) {
-                int32_t from = ClayWidgets__Utf8PrevBoundary(buffer, ctx->textCursor);
+                int32_t from = ctx->input.controlDown ? ClayWidgets__WordLeft(buffer, ctx->textCursor) : ClayWidgets__Utf8PrevBoundary(buffer, ctx->textCursor);
                 memmove(buffer + from, buffer + ctx->textCursor, (size_t)(length - ctx->textCursor + 1));
                 length -= (ctx->textCursor - from);
                 ClayWidgets__MoveCaret(ctx, from, false);
@@ -163,7 +177,7 @@ bool ClayWidgets_TextInput(
             if (ClayWidgets__DeleteSelection(buffer, &length, ctx)) {
                 changed = true;
             } else if (ctx->textCursor < length) {
-                int32_t to = ClayWidgets__Utf8NextBoundary(buffer, length, ctx->textCursor);
+                int32_t to = ctx->input.controlDown ? ClayWidgets__WordRight(buffer, length, ctx->textCursor) : ClayWidgets__Utf8NextBoundary(buffer, length, ctx->textCursor);
                 memmove(buffer + ctx->textCursor, buffer + to, (size_t)(length - to + 1));
                 length -= (to - ctx->textCursor);
                 ctx->caretBlinkTime = 0.0f;
@@ -180,8 +194,8 @@ bool ClayWidgets_TextInput(
             int32_t copyStart = 0;
             int32_t copyEnd = 0;
             ClayWidgets__SelectionRange(ctx, &copyStart, &copyEnd);
-            ClayWidgets__CopyToClipboard(ctx, buffer + copyStart, copyEnd - copyStart);
-            if (ctx->input.keyCut && ClayWidgets__DeleteSelection(buffer, &length, ctx)) {
+            bool copied = ClayWidgets__CopyToClipboard(ctx, buffer + copyStart, copyEnd - copyStart);
+            if (copied && ctx->input.keyCut && ClayWidgets__DeleteSelection(buffer, &length, ctx)) {
                 changed = true;
             }
         }
@@ -191,7 +205,7 @@ bool ClayWidgets_TextInput(
             if (clip) {
                 int32_t clipLength = 0;
                 while (clip[clipLength] != '\0' && clip[clipLength] != '\n' && clip[clipLength] != '\r'
-                    && clipLength < CLAY_WIDGETS_TEXT_MAX_BYTES) {
+                    && clipLength < capacity - 1) {
                     clipLength++;
                 }
                 if (ClayWidgets__InsertTextAtCaret(ctx, buffer, &length, capacity, clip, clipLength)) {
@@ -212,6 +226,9 @@ bool ClayWidgets_TextInput(
             ClayWidgets__MoveCaret(ctx, 0, false);
             changed = true;
         }
+
+        changed = ClayWidgets__EndEdit(ctx, buffer, &length, changed, options.history, options.validate,
+            options.validationUserData, options.result, transaction, false, options.readOnly);
 
         if (ctx->input.keyEscape) {
             ctx->focusedId = 0;
@@ -235,7 +252,7 @@ bool ClayWidgets_TextInput(
 
     Clay_String displayText;
     if (length > 0) {
-        displayText = ClayWidgets__StringFromCString(buffer);
+        displayText = (Clay_String){ .length = length, .chars = buffer };
     } else if (options.placeholder) {
         displayText = ClayWidgets__StringFromCString(options.placeholder);
     } else {
@@ -273,7 +290,7 @@ bool ClayWidgets_TextInput(
             .backgroundColor = options.disabled
                 ? ClayWidgets__MixColor(ctx->theme.surfaceAltColor, ctx->theme.surfaceColor, ctx->theme.disabledMix)
                 : (focused ? ctx->theme.hoverColor : ctx->theme.surfaceAltColor),
-            .cornerRadius = CLAY_CORNER_RADIUS(ctx->theme.radiusMd),
+            .cornerRadius = CLAY_CORNER_RADIUS((float)ctx->theme.radiusMd),
             .border = {
                 .color = focused ? ctx->theme.focusRingColor : ctx->theme.borderColor,
                 .width = { .left = 1, .right = 1, .top = 1, .bottom = 1 },
@@ -295,7 +312,7 @@ bool ClayWidgets_TextInput(
                 // before, and thus hidden behind, an enclosing panel's opaque
                 // background. Their x offset subtracts textScrollX by hand because
                 // floating children don't inherit the clip's childOffset.
-                const int16_t overlayZ = 500;
+                const int16_t overlayZ = ClayWidgets__OverlayZ(ctx, 1);
                 if (focused && ClayWidgets__HasSelection(ctx) && length > 0) {
                     int32_t selStart = 0;
                     int32_t selEnd = 0;
@@ -364,6 +381,15 @@ bool ClayWidgets_TextInput(
 
     (void)textOffsetY;
 
+    ClayWidgets_SemanticNode semantic = {0};
+    semantic.id = id; semantic.role = CLAY_WIDGETS_ROLE_TEXT_FIELD; semantic.label = label;
+    semantic.value = (Clay_String){ .length = length, .chars = buffer };
+    semantic.disabled = options.disabled; semantic.readOnly = options.readOnly;
+    ClayWidgets_Semantic(ctx, semantic);
+    if (focused && !options.readOnly) {
+        float caretX = ClayWidgets__MeasureWidth(ctx,buffer,ctx->textCursor,fontId,fontSize,letterSpacing) - textScrollX;
+        ClayWidgets__Composition(ctx,innerId,caretX,textOffsetY,textHeight);
+    }
     return changed;
 }
 

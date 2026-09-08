@@ -93,7 +93,7 @@ void ClayWidgets_ToastLayer(ClayWidgets_Context *ctx) {
         },
         .floating = {
             .offset = { .x = 0.0f, .y = -28.0f },
-            .zIndex = 600,
+            .zIndex = 30000,
             .attachPoints = {
                 .element = CLAY_ATTACH_POINT_CENTER_BOTTOM,
                 .parent = CLAY_ATTACH_POINT_CENTER_BOTTOM,
@@ -119,7 +119,7 @@ void ClayWidgets_ToastLayer(ClayWidgets_Context *ctx) {
                     .padding = { .left = (uint16_t)stripeWidth, .right = 0, .top = 0, .bottom = 0 },
                 },
                 .backgroundColor = accent,
-                .cornerRadius = CLAY_CORNER_RADIUS(ctx->theme.radiusMd),
+                .cornerRadius = CLAY_CORNER_RADIUS((float)ctx->theme.radiusMd),
                 .border = {
                     .color = ctx->theme.borderColor,
                     .width = { .left = 1, .right = 1, .top = 1, .bottom = 1 },

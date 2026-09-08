@@ -23,6 +23,9 @@ bool ClayWidgets_SelectRowEx(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_C
     }
 
     bool over = Clay_PointerOver(id);
+    if (over) {
+        ClayWidgets__SetCursor(ctx, CLAY_WIDGETS_CURSOR_POINTER);
+    }
     // List rows are not tab-focusable (matching the ListBox row convention), so
     // no focus is registered here - only a pointer click selects them.
     bool clicked = ClayWidgets__ConsumeClick(ctx, over);
@@ -48,7 +51,7 @@ bool ClayWidgets_SelectRowEx(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_C
             .layoutDirection = CLAY_LEFT_TO_RIGHT,
         },
         .backgroundColor = rowBg,
-        .cornerRadius = CLAY_CORNER_RADIUS(ctx->theme.radiusSm),
+        .cornerRadius = CLAY_CORNER_RADIUS((float)ctx->theme.radiusSm),
         .transition = ClayWidgets__ColorTransition(ctx),
     }) {
         if (swatch.a > 0) {
@@ -60,7 +63,7 @@ bool ClayWidgets_SelectRowEx(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_C
                     },
                 },
                 .backgroundColor = swatch,
-                .cornerRadius = CLAY_CORNER_RADIUS(ctx->theme.radiusSm),
+                .cornerRadius = CLAY_CORNER_RADIUS((float)ctx->theme.radiusSm),
             }) {}
         }
 
@@ -91,6 +94,7 @@ bool ClayWidgets_SelectRowEx(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_C
         }
     }
 
+    ClayWidgets__Describe(ctx,id,CLAY_WIDGETS_ROLE_ROW,text,selected,false);
     return clicked;
 }
 

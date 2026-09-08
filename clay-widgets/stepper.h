@@ -30,6 +30,9 @@ bool ClayWidgets_Stepper(
     if (!ctx || !value) {
         return false;
     }
+    options.disabled = options.disabled || ctx->disabledDepth > 0;
+    if (options.disabled && ctx->activeId == id.id) ctx->activeId = 0;
+
 
     int32_t minValue = options.minValue;
     int32_t maxValue = options.maxValue;
@@ -42,27 +45,31 @@ bool ClayWidgets_Stepper(
     Clay_ElementId plusId = Clay_GetElementIdWithIndex(CLAY_STRING("ClayWidgetsStepperPlus"), id.id);
 
     bool over = options.disabled ? false : Clay_PointerOver(id);
+    if (!options.disabled && (Clay_PointerOver(minusId) || Clay_PointerOver(plusId))) {
+        ClayWidgets__SetCursor(ctx, CLAY_WIDGETS_CURSOR_POINTER); // only the +/- buttons are click targets
+    }
     bool focused = options.disabled ? false : ClayWidgets__RegisterFocusable(ctx, id, over);
     bool changed = false;
 
     int32_t start = *value;
+    int64_t candidate = *value;
     if (!options.disabled) {
         if (ClayWidgets__ConsumeClick(ctx, Clay_PointerOver(minusId))) {
-            *value -= step;
+            candidate -= step;
         }
         if (ClayWidgets__ConsumeClick(ctx, Clay_PointerOver(plusId))) {
-            *value += step;
+            candidate += step;
         }
         if (focused) {
             if (ctx->input.keyUp || ctx->input.keyRight) {
-                *value += step;
+                candidate += step;
             }
             if (ctx->input.keyDown || ctx->input.keyLeft) {
-                *value -= step;
+                candidate -= step;
             }
         }
     }
-    *value = ClayWidgets__MaxI32(minValue, ClayWidgets__MinI32(*value, maxValue));
+    *value = (int32_t)(candidate < minValue ? minValue : candidate > maxValue ? maxValue : candidate);
     changed = (*value != start);
 
     float r = (float)ctx->theme.radiusSm;

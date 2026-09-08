@@ -15,11 +15,16 @@ bool ClayWidgets_CheckboxEx(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_St
     if (!ctx || !value) {
         return false;
     }
+    disabled = disabled || ctx->disabledDepth > 0;
+
 
     // Disabled: inert. No focus registration, no click; always returns false.
     // The box keeps a plain border (never the focus ring), the check fill is a
     // muted accent, and the label text is muted.
     bool over = disabled ? false : Clay_PointerOver(id);
+    if (over) {
+        ClayWidgets__SetCursor(ctx, CLAY_WIDGETS_CURSOR_POINTER);
+    }
     bool focused = disabled ? false : ClayWidgets__RegisterFocusable(ctx, id, over);
     bool clicked = false;
     if (!disabled) {
@@ -66,7 +71,7 @@ bool ClayWidgets_CheckboxEx(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_St
                 .childAlignment = { .x = CLAY_ALIGN_X_CENTER, .y = CLAY_ALIGN_Y_CENTER },
             },
             .backgroundColor = boxBg,
-            .cornerRadius = CLAY_CORNER_RADIUS(ctx->theme.radiusSm),
+            .cornerRadius = CLAY_CORNER_RADIUS((float)ctx->theme.radiusSm),
             .border = {
                 .color = boxBorder,
                 .width = { .left = 1, .right = 1, .top = 1, .bottom = 1 },
@@ -88,6 +93,7 @@ bool ClayWidgets_CheckboxEx(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_St
         });
     }
 
+    ClayWidgets__Describe(ctx,id,CLAY_WIDGETS_ROLE_CHECKBOX,text,*value,disabled);
     return clicked;
 }
 

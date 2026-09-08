@@ -141,6 +141,15 @@ static bool SameColor(Clay_Color a, Clay_Color b) {
     return a.r == b.r && a.g == b.g && a.b == b.b && a.a == b.a;
 }
 
+static Clay_BoundingBox IntersectBox(Clay_BoundingBox a, Clay_BoundingBox b) {
+    float x1 = a.x > b.x ? a.x : b.x;
+    float y1 = a.y > b.y ? a.y : b.y;
+    float x2 = (a.x + a.width) < (b.x + b.width) ? (a.x + a.width) : (b.x + b.width);
+    float y2 = (a.y + a.height) < (b.y + b.height) ? (a.y + a.height) : (b.y + b.height);
+    Clay_BoundingBox r = { x1, y1, x2 > x1 ? x2 - x1 : 0.0f, y2 > y1 ? y2 - y1 : 0.0f };
+    return r;
+}
+
 // Pointer-click helper: returns the input for the "press" frame; follow with
 // ReleaseAt. ConsumeClick fires on the release frame.
 static ClayWidgets_Input PressAt(float x, float y) {
@@ -222,6 +231,8 @@ static void TestModalFocusTrap(void) {
     open = true;
     Frame(MakeInput(), body);
 
+    CHECK(ui.focusedId == modalClose.id); // the modal assigns initial focus
+    ui.focusedId = inside.id; // activate a body control, not the close button
     // Enter must NOT click the still-focused background button; the trap
     // strips its focus during registration instead.
     ClayWidgets_Input enter = MakeInput();
@@ -244,6 +255,116 @@ static void TestModalFocusTrap(void) {
     Frame(MakeInput(), body);
     Frame(tab, body);
     CHECK(ui.focusedId == outside.id);
+}
+
+// A button clicks on press+release over it (not press alone, not a release
+// elsewhere), activates from the keyboard when focused, and is inert disabled.
+static void TestButtonClickAndKeyboard(void) {
+    Clay_ElementId buttonId = CLAY_ID("ClickButton");
+    bool clicked = false;
+    auto body = [&]() {
+        clicked = ClayWidgets_Button(&ui, buttonId, CLAY_STRING("Click"));
+    };
+
+    Frame(MakeInput(), body); // establish geometry
+    Clay_ElementData buttonData = Clay_GetElementData(buttonId);
+    CHECK(buttonData.found);
+    float cx = buttonData.boundingBox.x + buttonData.boundingBox.width * 0.5f;
+    float cy = buttonData.boundingBox.y + buttonData.boundingBox.height * 0.5f;
+
+    // Press alone is not a click; the release over the button completes it.
+    Frame(PressAt(cx, cy), body);
+    CHECK(!clicked);
+    Frame(ReleaseAt(cx, cy), body);
+    CHECK(clicked);
+
+    // Press on the button but release off it: no click.
+    Frame(PressAt(cx, cy), body);
+    Frame(ReleaseAt(-50.0f, -50.0f), body);
+    CHECK(!clicked);
+
+    // Keyboard: Tab focuses the button, Enter activates it.
+    ClayWidgets_Input tab = MakeInput();
+    tab.keyTab = true;
+    Frame(tab, body);
+    CHECK(ui.focusedId == buttonId.id);
+    ClayWidgets_Input enter = MakeInput();
+    enter.keyEnter = true;
+    Frame(enter, body);
+    CHECK(clicked);
+
+    // Disabled: never clicks, never takes focus.
+    Clay_ElementId disabledId = CLAY_ID("DisabledButton");
+    bool disabledClicked = false;
+    ClayWidgets_ButtonOptions disabledOptions = {};
+    disabledOptions.disabled = true;
+    auto disabledBody = [&]() {
+        disabledClicked = ClayWidgets_ButtonEx(&ui, disabledId, CLAY_STRING("Nope"), disabledOptions);
+    };
+    ui.focusedId = 0;
+    Frame(MakeInput(), disabledBody);
+    Clay_ElementData disabledData = Clay_GetElementData(disabledId);
+    float dx = disabledData.boundingBox.x + disabledData.boundingBox.width * 0.5f;
+    float dy = disabledData.boundingBox.y + disabledData.boundingBox.height * 0.5f;
+    Frame(PressAt(dx, dy), disabledBody);
+    Frame(ReleaseAt(dx, dy), disabledBody);
+    CHECK(!disabledClicked);
+    Frame(tab, disabledBody);
+    CHECK(ui.focusedId == 0);
+}
+
+// Clicking a checkbox flips the bound value each time and reports the change;
+// keyboard activation toggles too; disabled checkboxes are inert.
+static void TestCheckboxToggle(void) {
+    Clay_ElementId checkId = CLAY_ID("ToggleCheckbox");
+    bool value = false;
+    bool changed = false;
+    auto body = [&]() {
+        changed = ClayWidgets_Checkbox(&ui, checkId, CLAY_STRING("Check me"), &value);
+    };
+
+    Frame(MakeInput(), body);
+    Clay_ElementData checkData = Clay_GetElementData(checkId);
+    CHECK(checkData.found);
+    float cx = checkData.boundingBox.x + checkData.boundingBox.width * 0.5f;
+    float cy = checkData.boundingBox.y + checkData.boundingBox.height * 0.5f;
+
+    // Click checks it, a second click unchecks it.
+    Frame(PressAt(cx, cy), body);
+    Frame(ReleaseAt(cx, cy), body);
+    CHECK(changed);
+    CHECK(value == true);
+    Frame(PressAt(cx, cy), body);
+    Frame(ReleaseAt(cx, cy), body);
+    CHECK(changed);
+    CHECK(value == false);
+
+    // Keyboard: Tab focuses, Enter toggles.
+    ClayWidgets_Input tab = MakeInput();
+    tab.keyTab = true;
+    Frame(tab, body);
+    CHECK(ui.focusedId == checkId.id);
+    ClayWidgets_Input enter = MakeInput();
+    enter.keyEnter = true;
+    Frame(enter, body);
+    CHECK(value == true);
+
+    // Disabled: value inert, focus unreachable.
+    Clay_ElementId disabledId = CLAY_ID("DisabledCheckbox");
+    bool disabledValue = false;
+    auto disabledBody = [&]() {
+        ClayWidgets_CheckboxEx(&ui, disabledId, CLAY_STRING("Inert"), &disabledValue, true);
+    };
+    ui.focusedId = 0;
+    Frame(MakeInput(), disabledBody);
+    Clay_ElementData disabledData = Clay_GetElementData(disabledId);
+    float dx = disabledData.boundingBox.x + disabledData.boundingBox.width * 0.5f;
+    float dy = disabledData.boundingBox.y + disabledData.boundingBox.height * 0.5f;
+    Frame(PressAt(dx, dy), disabledBody);
+    Frame(ReleaseAt(dx, dy), disabledBody);
+    CHECK(disabledValue == false);
+    Frame(tab, disabledBody);
+    CHECK(ui.focusedId == 0);
 }
 
 // Click to focus, edit UTF-8 text, and drive the clipboard through the
@@ -342,20 +463,364 @@ static void TestTextInputDisabled(void) {
     CHECK(std::strcmp(buffer, "keep") == 0);
 }
 
+// Multi-line editing in the text area: Enter inserts newlines, Up/Down move
+// by line remembering the preferred column, Home/End are line-scoped,
+// backspace at a line start merges lines, copy carries newlines, and paste
+// keeps them (normalizing CRLF and lone CR to LF).
+static void TestTextAreaEditingAndNavigation(void) {
+    Clay_ElementId areaId = CLAY_ID("EditArea");
+    char buffer[128] = "";
+    bool changed = false;
+    ClayWidgets_TextAreaOptions options = {};
+    auto body = [&]() {
+        changed = ClayWidgets_TextArea(&ui, areaId, CLAY_STRING(""), buffer, (int32_t)sizeof(buffer), options);
+    };
+
+    Frame(MakeInput(), body); // establish geometry
+    Clay_ElementData areaData = Clay_GetElementData(areaId);
+    CHECK(areaData.found);
+    float cx = areaData.boundingBox.x + areaData.boundingBox.width * 0.5f;
+    float cy = areaData.boundingBox.y + areaData.boundingBox.height * 0.5f;
+    Frame(PressAt(cx, cy), body);
+    CHECK(ui.focusedId == areaId.id);
+    Frame(ReleaseAt(cx, cy), body);
+
+    // Type three lines: "abcdef" / "ab" / "abcdef".
+    ClayWidgets_Input enter = MakeInput();
+    enter.keyEnter = true;
+    ClayWidgets_Input typeLong = MakeInput();
+    typeLong.textUtf8 = "abcdef";
+    typeLong.textUtf8Length = 6;
+    ClayWidgets_Input typeShort = MakeInput();
+    typeShort.textUtf8 = "ab";
+    typeShort.textUtf8Length = 2;
+    Frame(typeLong, body);
+    Frame(enter, body);
+    CHECK(changed);
+    Frame(typeShort, body);
+    Frame(enter, body);
+    Frame(typeLong, body);
+    CHECK(std::strcmp(buffer, "abcdef\nab\nabcdef") == 0);
+    CHECK(ui.textCursor == 16);
+
+    // Up into the short line clamps to its end; Up again restores the
+    // remembered column in the long first line. Down retraces both moves.
+    ClayWidgets_Input up = MakeInput();
+    up.keyUp = true;
+    ClayWidgets_Input down = MakeInput();
+    down.keyDown = true;
+    Frame(up, body);
+    CHECK(ui.textCursor == 9); // "ab" line: clamped to column 2 (offset 7 + 2)
+    Frame(up, body);
+    CHECK(ui.textCursor == 6); // first line: preferred column 6 restored
+    Frame(down, body);
+    CHECK(ui.textCursor == 9);
+    Frame(down, body);
+    CHECK(ui.textCursor == 16);
+    Frame(up, body);
+    Frame(up, body);
+    Frame(up, body); // Up with no line above goes to the very start
+    CHECK(ui.textCursor == 0);
+
+    // Home/End work within the caret's line, not the whole document.
+    Frame(down, body);
+    CHECK(ui.textCursor == 7); // line 1, column 0
+    ClayWidgets_Input end = MakeInput();
+    end.keyEnd = true;
+    Frame(end, body);
+    CHECK(ui.textCursor == 9);
+    ClayWidgets_Input home = MakeInput();
+    home.keyHome = true;
+    Frame(home, body);
+    CHECK(ui.textCursor == 7);
+
+    // Backspace at a line start merges the line into the previous one.
+    ClayWidgets_Input backspace = MakeInput();
+    backspace.keyBackspace = true;
+    Frame(backspace, body);
+    CHECK(std::strcmp(buffer, "abcdefab\nabcdef") == 0);
+    CHECK(ui.textCursor == 6);
+
+    // Copy carries the newline; multi-line paste replaces the selection and
+    // normalizes CRLF and lone CR to LF.
+    ClayWidgets_Input selectAll = MakeInput();
+    selectAll.keySelectAll = true;
+    Frame(selectAll, body);
+    ClayWidgets_Input copy = MakeInput();
+    copy.keyCopy = true;
+    Frame(copy, body);
+    CHECK(g_clipboard == "abcdefab\nabcdef");
+
+    g_clipboard = "one\r\ntwo\rthree";
+    Frame(selectAll, body);
+    ClayWidgets_Input paste = MakeInput();
+    paste.keyPaste = true;
+    Frame(paste, body);
+    CHECK(changed);
+    CHECK(std::strcmp(buffer, "one\ntwo\nthree") == 0);
+
+    // Escape releases focus.
+    ClayWidgets_Input escape = MakeInput();
+    escape.keyEscape = true;
+    Frame(escape, body);
+    CHECK(ui.focusedId == 0);
+}
+
+// Text area pointer and scroll behavior: a click places the caret on the hit
+// line and column, moving the caret out of view scrolls it back in (both
+// directions), and a disabled area is inert.
+static void TestTextAreaPointerAndScroll(void) {
+    Clay_ElementId areaId = CLAY_ID("ScrollArea");
+    Clay_ElementId contentId = Clay_GetElementIdWithIndex(CLAY_STRING("ClayWidgetsTextAreaContent"), areaId.id);
+    char buffer[128] = "line0\nline1\nline2\nline3\nline4\nline5\nline6\nline7\nline8\nline9";
+    const int32_t textLength = (int32_t)std::strlen(buffer);
+    ClayWidgets_TextAreaOptions options = {};
+    options.height = 3.0f * kFakeLineHeight; // far less than the 10 lines of content
+    auto body = [&]() {
+        ClayWidgets_TextArea(&ui, areaId, CLAY_STRING(""), buffer, (int32_t)sizeof(buffer), options);
+    };
+
+    Frame(MakeInput(), body);
+    Frame(MakeInput(), body);
+    Clay_ElementData contentData = Clay_GetElementData(contentId);
+    CHECK(contentData.found);
+
+    // Click on line 1 between its 2nd and 3rd characters: the caret lands at
+    // that line and column ("line0\n" is 6 bytes, so offset 6 + 2).
+    float px = contentData.boundingBox.x + 2.0f * kFakeCharWidth + 1.0f;
+    float py = contentData.boundingBox.y + 1.5f * kFakeLineHeight;
+    Frame(PressAt(px, py), body);
+    CHECK(ui.focusedId == areaId.id);
+    CHECK(ui.textCursor == 8);
+    Frame(ReleaseAt(px, py), body);
+
+    // Caret to the end of the document (select-all, then Right collapses to
+    // the selection end): the view scrolls down to follow it.
+    ClayWidgets_Input selectAll = MakeInput();
+    selectAll.keySelectAll = true;
+    Frame(selectAll, body);
+    ClayWidgets_Input right = MakeInput();
+    right.keyRight = true;
+    Frame(right, body);
+    CHECK(ui.textCursor == textLength);
+    Frame(MakeInput(), body);
+    Clay_ScrollContainerData scrollData = Clay_GetScrollContainerData(contentId);
+    CHECK(scrollData.found);
+    CHECK(scrollData.scrollPosition != NULL);
+    CHECK(scrollData.scrollPosition->y < 0.0f);
+
+    // Caret back to the start: the view scrolls up again.
+    Frame(selectAll, body);
+    ClayWidgets_Input left = MakeInput();
+    left.keyLeft = true;
+    Frame(left, body);
+    CHECK(ui.textCursor == 0);
+    Frame(MakeInput(), body);
+    scrollData = Clay_GetScrollContainerData(contentId);
+    CHECK(scrollData.scrollPosition->y == 0.0f);
+
+    // The wheel scrolls the overflowing content directly (Clay's scroll
+    // container consumes it; no caret movement involved, and caret-follow
+    // must not fight it back).
+    ClayWidgets_Input wheel = MakeInput();
+    wheel.mouseX = px;
+    wheel.mouseY = py;
+    wheel.scrollY = -3.0f;
+    Frame(wheel, body);
+    Frame(wheel, body);
+    Frame(MakeInput(), body);
+    scrollData = Clay_GetScrollContainerData(contentId);
+    CHECK(scrollData.scrollPosition->y < 0.0f);
+
+    // Disabled: not focusable, ignores clicks and typing, buffer untouched.
+    ui.focusedId = 0;
+    options.disabled = true;
+    Frame(MakeInput(), body);
+    Frame(PressAt(px, py), body);
+    CHECK(ui.focusedId == 0);
+    Frame(ReleaseAt(px, py), body);
+    ClayWidgets_Input type = MakeInput();
+    type.textUtf8 = "x";
+    type.textUtf8Length = 1;
+    Frame(type, body);
+    CHECK(std::strcmp(buffer, "line0\nline1\nline2\nline3\nline4\nline5\nline6\nline7\nline8\nline9") == 0);
+}
+
+// Soft word wrap: a single long hard line becomes multiple visual rows,
+// breaks fall after spaces, Up/Down move between rows of the same hard line,
+// and noWrap collapses it back to one horizontally-scrolling row.
+static void TestTextAreaSoftWrap(void) {
+    Clay_ElementId areaId = CLAY_ID("WrapArea");
+    Clay_ElementId contentId = Clay_GetElementIdWithIndex(CLAY_STRING("ClayWidgetsTextAreaContent"), areaId.id);
+    // One hard line of 40 five-byte words ("wwww "), 200 chars = 1600px at
+    // the fake font: far wider than the ~770px content, so it must wrap.
+    char buffer[256];
+    for (int32_t i = 0; i < 40; ++i) {
+        std::memcpy(buffer + i * 5, "wwww ", 5);
+    }
+    buffer[200] = '\0';
+    ClayWidgets_TextAreaOptions options = {};
+    auto body = [&]() {
+        ClayWidgets_TextArea(&ui, areaId, CLAY_STRING(""), buffer, (int32_t)sizeof(buffer), options);
+    };
+
+    Frame(MakeInput(), body); // establish geometry (first frame renders unwrapped)
+    Frame(MakeInput(), body);
+    Clay_ScrollContainerData scrollData = Clay_GetScrollContainerData(contentId);
+    CHECK(scrollData.found);
+    CHECK(scrollData.contentDimensions.height > kFakeLineHeight * 1.5f); // wrapped into rows
+
+    // Clicking at the far left of the second visual row lands the caret at a
+    // word start: wrap breaks fall after spaces, and words are 5-byte aligned.
+    Clay_ElementData contentData = Clay_GetElementData(contentId);
+    CHECK(contentData.found);
+    float px = contentData.boundingBox.x + 1.0f;
+    float py = contentData.boundingBox.y + 1.5f * kFakeLineHeight;
+    Frame(PressAt(px, py), body);
+    CHECK(ui.focusedId == areaId.id);
+    int32_t rowTwoStart = ui.textCursor;
+    CHECK(rowTwoStart > 0);
+    CHECK(rowTwoStart < 200);
+    CHECK(buffer[rowTwoStart - 1] == ' ');
+    CHECK(rowTwoStart % 5 == 0);
+    Frame(ReleaseAt(px, py), body);
+
+    // Up/Down move between visual rows of the SAME hard line (there is no
+    // '\n' anywhere in the buffer).
+    ClayWidgets_Input up = MakeInput();
+    up.keyUp = true;
+    Frame(up, body);
+    CHECK(ui.textCursor == 0);
+    ClayWidgets_Input down = MakeInput();
+    down.keyDown = true;
+    Frame(down, body);
+    CHECK(ui.textCursor == rowTwoStart);
+
+    // noWrap: the same content is one row again (and scrolls horizontally).
+    ui.focusedId = 0;
+    options.noWrap = true;
+    Frame(MakeInput(), body);
+    Frame(MakeInput(), body);
+    scrollData = Clay_GetScrollContainerData(contentId);
+    CHECK(scrollData.found);
+    CHECK(scrollData.contentDimensions.height <= kFakeLineHeight * 1.5f);
+    CHECK(scrollData.contentDimensions.width > 1000.0f);
+}
+
+// A text area nested in a scroll panel, straddling the panel's bottom edge:
+// its selection overlays and scrollbar must not be visible past the panel
+// clip. Regression test - Clay scissors a floating root only to its own clip
+// element's box (never the enclosing panel's), so these painted over the
+// elements below the panel until the overlays were clamped by hand and the
+// scrollbar got CLAY_CLIP_TO_ATTACHED_PARENT.
+static void TestTextAreaOverlaysClippedToPanel(void) {
+    Clay_ElementId panelId = CLAY_ID("ClipPanel");
+    Clay_ElementId panelContentId = Clay_GetElementIdWithIndex(CLAY_STRING("ClayWidgetsScrollPanelContent"), panelId.id);
+    Clay_ElementId areaId = CLAY_ID("ClipArea");
+    Clay_ElementId areaContentId = Clay_GetElementIdWithIndex(CLAY_STRING("ClayWidgetsTextAreaContent"), areaId.id);
+    Clay_ElementId thumbId = Clay_GetElementIdWithIndex(CLAY_STRING("ClayWidgetsScrollBarThumb"), areaContentId.id);
+    char buffer[128] = "l0\nl1\nl2\nl3\nl4\nl5\nl6\nl7\nl8\nl9";
+    ClayWidgets_ScrollPanelOptions panelOptions = {};
+    panelOptions.width = CLAY_SIZING_FIXED(400);
+    panelOptions.height = CLAY_SIZING_FIXED(150);
+    ClayWidgets_TextAreaOptions options = {};
+    options.height = 6.0f * kFakeLineHeight; // 10 lines of content: overflows, so the scrollbar shows
+    auto body = [&]() {
+        ClayWidgets_BeginScrollPanel(&ui, panelId, panelOptions);
+        CLAY(CLAY_ID("ClipFiller"), {
+            .layout = { .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_FIXED(60) } },
+        }) {}
+        ClayWidgets_TextArea(&ui, areaId, CLAY_STRING(""), buffer, (int32_t)sizeof(buffer), options);
+        ClayWidgets_EndScrollPanel(&ui, panelId);
+    };
+
+    Frame(MakeInput(), body);
+    Frame(MakeInput(), body);
+    Clay_ElementData panelClipData = Clay_GetElementData(panelContentId);
+    Clay_ElementData fieldData = Clay_GetElementData(areaContentId);
+    CHECK(panelClipData.found);
+    CHECK(fieldData.found);
+    // The scenario only bites if the field actually straddles the panel edge.
+    float panelBottom = panelClipData.boundingBox.y + panelClipData.boundingBox.height;
+    CHECK(fieldData.boundingBox.y < panelBottom);
+    CHECK(fieldData.boundingBox.y + fieldData.boundingBox.height > panelBottom);
+
+    // Focus via a click in the visible sliver of the field, then select all.
+    float px = fieldData.boundingBox.x + 4.0f;
+    float py = (fieldData.boundingBox.y + panelBottom) * 0.5f;
+    Frame(PressAt(px, py), body);
+    CHECK(ui.focusedId == areaId.id);
+    Frame(ReleaseAt(px, py), body);
+    ClayWidgets_Input selectAll = MakeInput();
+    selectAll.keySelectAll = true;
+    Clay_RenderCommandArray commands = Frame(selectAll, body);
+
+    // Walk the commands like a renderer: scissors nest by intersection and
+    // apply to subsequent draws. Every visible piece of a selection rect or
+    // the text area's scroll thumb must lie within the panel clip.
+    std::vector<Clay_BoundingBox> scissors;
+    int32_t selectionRects = 0;
+    bool sawThumb = false;
+    for (int32_t i = 0; i < commands.length; ++i) {
+        Clay_RenderCommand *cmd = Clay_RenderCommandArray_Get(&commands, i);
+        if (cmd->commandType == CLAY_RENDER_COMMAND_TYPE_SCISSOR_START) {
+            Clay_BoundingBox box = cmd->boundingBox;
+            if (!scissors.empty()) {
+                box = IntersectBox(scissors.back(), box);
+            }
+            scissors.push_back(box);
+            continue;
+        }
+        if (cmd->commandType == CLAY_RENDER_COMMAND_TYPE_SCISSOR_END) {
+            if (!scissors.empty()) {
+                scissors.pop_back();
+            }
+            continue;
+        }
+        if (cmd->commandType != CLAY_RENDER_COMMAND_TYPE_RECTANGLE) {
+            continue;
+        }
+        bool isSelection = SameColor(cmd->renderData.rectangle.backgroundColor, ui.theme.accentMutedColor);
+        bool isThumb = cmd->id == thumbId.id;
+        if (!isSelection && !isThumb) {
+            continue;
+        }
+        if (isSelection) {
+            selectionRects++;
+        }
+        if (isThumb) {
+            sawThumb = true;
+        }
+        Clay_BoundingBox visible = cmd->boundingBox;
+        if (!scissors.empty()) {
+            visible = IntersectBox(scissors.back(), visible);
+        }
+        if (visible.width <= 0.0f || visible.height <= 0.0f) {
+            continue; // fully scissored away - fine
+        }
+        CHECK(visible.y >= panelClipData.boundingBox.y - 0.5f);
+        CHECK(visible.y + visible.height <= panelBottom + 0.5f);
+    }
+    CHECK(selectionRects > 0);
+    CHECK(sawThumb);
+}
+
 // A focused slider is keyboard-operable: arrows step, Home/End jump. Disabled
 // sliders ignore keys and never take focus.
 static void TestSliderKeyboard(void) {
     Clay_ElementId sliderId = CLAY_ID("KeySlider");
     float value = 5.0f;
+    bool changed = false;
     ClayWidgets_SliderOptions options = {};
     options.minValue = 0.0f;
     options.maxValue = 10.0f;
     options.step = 1.0f;
     auto body = [&]() {
-        value = ClayWidgets_Slider(&ui, sliderId, value, options);
+        changed = ClayWidgets_Slider(&ui, sliderId, &value, options);
     };
 
     Frame(MakeInput(), body);
+    CHECK(!changed); // idle: value untouched
     ClayWidgets_Input tab = MakeInput();
     tab.keyTab = true;
     Frame(tab, body);
@@ -365,6 +830,14 @@ static void TestSliderKeyboard(void) {
     right.keyRight = true;
     Frame(right, body);
     CHECK(value == 6.0f);
+    CHECK(changed);
+
+    // An out-of-range value is clamped in place, and that counts as changed.
+    value = 42.0f;
+    Frame(MakeInput(), body);
+    CHECK(value == 10.0f);
+    CHECK(changed);
+    value = 6.0f;
 
     ClayWidgets_Input end = MakeInput();
     end.keyEnd = true;
@@ -466,6 +939,238 @@ static void TestTableColumnsOverflowReported(void) {
     });
     CHECK(g_errors.size() == 1);
     CHECK(ErrorsContain("columns"));
+}
+
+// The per-widget state pool: zero-initialized on first claim, persistent and
+// pointer-stable across frames, per-id isolated, invalid requests refused,
+// stale slots recycled least-recently-used, and exhaustion reported when
+// every slot is live.
+static void TestStatePool(void) {
+    Frame(MakeInput(), []() {});
+    int32_t *a = (int32_t *)ClayWidgets_GetState(&ui, 101, (int32_t)sizeof(int32_t));
+    CHECK(a != NULL);
+    CHECK(*a == 0);
+    *a = 42;
+
+    Frame(MakeInput(), []() {});
+    int32_t *aAgain = (int32_t *)ClayWidgets_GetState(&ui, 101, (int32_t)sizeof(int32_t));
+    CHECK(aAgain == a);
+    CHECK(*aAgain == 42);
+    int32_t *b = (int32_t *)ClayWidgets_GetState(&ui, 202, (int32_t)sizeof(int32_t));
+    CHECK(b != NULL);
+    CHECK(b != a);
+    CHECK(*b == 0);
+
+    // Invalid requests: id 0 (the empty-slot sentinel) and sizes outside the
+    // slot capacity are refused; the size overflow is reported.
+    CHECK(ClayWidgets_GetState(&ui, 0, 4) == NULL);
+    CHECK(ClayWidgets_GetState(&ui, 303, CLAY_WIDGETS_STATE_SLOT_SIZE + 1) == NULL);
+    CHECK(ErrorsContain("CLAY_WIDGETS_STATE_SLOT_SIZE"));
+
+    // Two idle frames age out ids 101/202, so claiming a full pool's worth of
+    // fresh ids in one frame succeeds (empty slots first, then recycled ones)...
+    g_errors.clear();
+    Frame(MakeInput(), []() {});
+    Frame(MakeInput(), []() {});
+    for (uint32_t i = 0; i < CLAY_WIDGETS_MAX_STATE_SLOTS; ++i) {
+        CHECK(ClayWidgets_GetState(&ui, 1000 + i, 8) != NULL);
+    }
+    CHECK(g_errors.empty());
+    // ...but one more, while every slot was touched this frame, is refused loudly.
+    CHECK(ClayWidgets_GetState(&ui, 9999, 8) == NULL);
+    CHECK(g_errors.size() == 1);
+    CHECK(ErrorsContain("state pool exhausted"));
+
+    // Recycling is least-recently-used: keep one id warm across frames, then
+    // claim a new id - a stale slot is recycled, the warm slot survives intact.
+    int32_t *warm = (int32_t *)ClayWidgets_GetState(&ui, 1000, (int32_t)sizeof(int32_t));
+    CHECK(warm != NULL);
+    *warm = 7;
+    Frame(MakeInput(), []() {});
+    ClayWidgets_GetState(&ui, 1000, (int32_t)sizeof(int32_t));
+    Frame(MakeInput(), []() {});
+    ClayWidgets_GetState(&ui, 1000, (int32_t)sizeof(int32_t));
+    Frame(MakeInput(), []() {});
+    int32_t *fresh = (int32_t *)ClayWidgets_GetState(&ui, 7777, (int32_t)sizeof(int32_t));
+    CHECK(fresh != NULL);
+    CHECK(*fresh == 0);
+    int32_t *warmAgain = (int32_t *)ClayWidgets_GetState(&ui, 1000, (int32_t)sizeof(int32_t));
+    CHECK(warmAgain == warm);
+    CHECK(*warmAgain == 7);
+}
+
+// Dragging the scroll bar thumb scrolls the container; releasing ends the
+// drag. Exercises the per-thumb drag state in the state pool.
+static void TestScrollBarThumbDrag(void) {
+    Clay_ElementId panelId = CLAY_ID("DragPanel");
+    Clay_ElementId contentId = Clay_GetElementIdWithIndex(CLAY_STRING("ClayWidgetsScrollPanelContent"), panelId.id);
+    Clay_ElementId thumbId = Clay_GetElementIdWithIndex(CLAY_STRING("ClayWidgetsScrollBarThumb"), contentId.id);
+    ClayWidgets_ScrollPanelOptions options = {};
+    options.width = CLAY_SIZING_FIXED(300);
+    options.height = CLAY_SIZING_FIXED(200);
+    auto body = [&]() {
+        ClayWidgets_BeginScrollPanel(&ui, panelId, options);
+        for (int32_t i = 0; i < 30; ++i) {
+            CLAY(CLAY_IDI("DragRow", i), {
+                .layout = { .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_FIXED(24) } },
+            }) {}
+        }
+        ClayWidgets_EndScrollPanel(&ui, panelId);
+    };
+
+    Frame(MakeInput(), body);
+    Frame(MakeInput(), body); // scroll bar appears once container geometry exists
+    Clay_ElementData thumbData = Clay_GetElementData(thumbId);
+    CHECK(thumbData.found);
+    float cx = thumbData.boundingBox.x + thumbData.boundingBox.width * 0.5f;
+    float cy = thumbData.boundingBox.y + thumbData.boundingBox.height * 0.5f;
+
+    // Press the thumb, then drag downward while holding.
+    Frame(PressAt(cx, cy), body);
+    CHECK(ui.activeId == thumbId.id);
+    ClayWidgets_Input dragInput = MakeInput();
+    dragInput.mouseX = cx;
+    dragInput.mouseY = cy + 50.0f;
+    dragInput.pointerDown = true;
+    Frame(dragInput, body);
+
+    Clay_ScrollContainerData scrollData = Clay_GetScrollContainerData(contentId);
+    CHECK(scrollData.found);
+    CHECK(scrollData.scrollPosition != NULL);
+    CHECK(scrollData.scrollPosition->y < 0.0f);
+    float draggedY = scrollData.scrollPosition->y;
+
+    // Release ends the drag; further pointer movement leaves the scroll alone.
+    Frame(ReleaseAt(cx, cy + 50.0f), body);
+    CHECK(ui.activeId == 0);
+    ClayWidgets_Input moveInput = MakeInput();
+    moveInput.mouseX = cx;
+    moveInput.mouseY = cy + 120.0f;
+    Frame(moveInput, body);
+    scrollData = Clay_GetScrollContainerData(contentId);
+    CHECK(scrollData.scrollPosition->y == draggedY);
+}
+
+// A tooltip appears after the pointer dwells on its anchor, and leaving the
+// anchor restarts the dwell timer. Exercises the per-anchor state pool timer.
+static void TestTooltipDwell(void) {
+    Clay_ElementId anchorId = CLAY_ID("TipAnchor");
+    Clay_ElementId tooltipId = Clay_GetElementIdWithIndex(CLAY_STRING("ClayWidgetsTooltip"), anchorId.id);
+    const float delay = 0.03f; // ~2 frames at the test dt of 1/60
+    auto body = [&]() {
+        ClayWidgets_Button(&ui, anchorId, CLAY_STRING("Hover me"));
+        ClayWidgets_TooltipEx(&ui, anchorId, CLAY_STRING("Tip"), delay);
+    };
+
+    Frame(MakeInput(), body);
+    Clay_ElementData anchorData = Clay_GetElementData(anchorId);
+    CHECK(anchorData.found);
+    ClayWidgets_Input hover = MakeInput();
+    hover.mouseX = anchorData.boundingBox.x + anchorData.boundingBox.width * 0.5f;
+    hover.mouseY = anchorData.boundingBox.y + anchorData.boundingBox.height * 0.5f;
+
+    // First hover frame starts the timer at zero: no tooltip yet.
+    Clay_RenderCommandArray commands = Frame(hover, body);
+    CHECK(!FindCommandById(commands, tooltipId.id, NULL));
+    // Dwell past the delay: tooltip appears.
+    Frame(hover, body);
+    commands = Frame(hover, body);
+    CHECK(FindCommandById(commands, tooltipId.id, NULL));
+
+    // Leaving the anchor and returning restarts the timer from zero.
+    Frame(MakeInput(), body);
+    Frame(MakeInput(), body);
+    commands = Frame(hover, body);
+    CHECK(!FindCommandById(commands, tooltipId.id, NULL));
+    Frame(hover, body);
+    commands = Frame(hover, body);
+    CHECK(FindCommandById(commands, tooltipId.id, NULL));
+}
+
+// Cursor hints: pointer over click targets, I-beam over editable text,
+// default over nothing and over disabled widgets; the text area's scrollbar
+// thumb overrides the I-beam; a slider drag keeps the pointer cursor after
+// the mouse leaves the track.
+static void TestCursorHints(void) {
+    Clay_ElementId buttonId = CLAY_ID("CursorButton");
+    Clay_ElementId disabledId = CLAY_ID("CursorDisabled");
+    Clay_ElementId inputId = CLAY_ID("CursorInput");
+    Clay_ElementId sliderId = CLAY_ID("CursorSlider");
+    Clay_ElementId areaId = CLAY_ID("CursorArea");
+    Clay_ElementId areaContentId = Clay_GetElementIdWithIndex(CLAY_STRING("ClayWidgetsTextAreaContent"), areaId.id);
+    Clay_ElementId thumbId = Clay_GetElementIdWithIndex(CLAY_STRING("ClayWidgetsScrollBarThumb"), areaContentId.id);
+    char inputBuffer[16] = "x";
+    char areaBuffer[64] = "l0\nl1\nl2\nl3\nl4\nl5\nl6\nl7";
+    float sliderValue = 5.0f;
+    ClayWidgets_ButtonOptions disabledOptions = {};
+    disabledOptions.disabled = true;
+    ClayWidgets_TextInputOptions inputOptions = {};
+    ClayWidgets_SliderOptions sliderOptions = {};
+    sliderOptions.minValue = 0.0f;
+    sliderOptions.maxValue = 10.0f;
+    ClayWidgets_TextAreaOptions areaOptions = {};
+    areaOptions.height = 3.0f * kFakeLineHeight; // overflows: scrollbar appears
+    auto body = [&]() {
+        ClayWidgets_Button(&ui, buttonId, CLAY_STRING("Click"));
+        ClayWidgets_ButtonEx(&ui, disabledId, CLAY_STRING("Nope"), disabledOptions);
+        ClayWidgets_TextInput(&ui, inputId, CLAY_STRING(""), inputBuffer, (int32_t)sizeof(inputBuffer), inputOptions);
+        ClayWidgets_Slider(&ui, sliderId, &sliderValue, sliderOptions);
+        ClayWidgets_TextArea(&ui, areaId, CLAY_STRING(""), areaBuffer, (int32_t)sizeof(areaBuffer), areaOptions);
+    };
+
+    auto centerOf = [](Clay_ElementId id, float *x, float *y) {
+        Clay_ElementData data = Clay_GetElementData(id);
+        *x = data.boundingBox.x + data.boundingBox.width * 0.5f;
+        *y = data.boundingBox.y + data.boundingBox.height * 0.5f;
+        return data.found;
+    };
+    auto hoverAt = [&](float x, float y) {
+        ClayWidgets_Input input = MakeInput();
+        input.mouseX = x;
+        input.mouseY = y;
+        Frame(input, body);
+    };
+
+    Frame(MakeInput(), body); // establish geometry
+    Frame(MakeInput(), body);
+    CHECK(ClayWidgets_GetCursor(&ui) == CLAY_WIDGETS_CURSOR_DEFAULT); // nothing hovered
+
+    float x = 0.0f;
+    float y = 0.0f;
+    CHECK(centerOf(buttonId, &x, &y));
+    hoverAt(x, y);
+    CHECK(ClayWidgets_GetCursor(&ui) == CLAY_WIDGETS_CURSOR_POINTER);
+
+    CHECK(centerOf(disabledId, &x, &y));
+    hoverAt(x, y);
+    CHECK(ClayWidgets_GetCursor(&ui) == CLAY_WIDGETS_CURSOR_DEFAULT);
+
+    CHECK(centerOf(inputId, &x, &y));
+    hoverAt(x, y);
+    CHECK(ClayWidgets_GetCursor(&ui) == CLAY_WIDGETS_CURSOR_TEXT);
+
+    CHECK(centerOf(areaId, &x, &y));
+    hoverAt(x, y);
+    CHECK(ClayWidgets_GetCursor(&ui) == CLAY_WIDGETS_CURSOR_TEXT);
+
+    // Over the text area's own scrollbar thumb, the pointer wins over the I-beam.
+    CHECK(centerOf(thumbId, &x, &y));
+    hoverAt(x, y);
+    CHECK(ClayWidgets_GetCursor(&ui) == CLAY_WIDGETS_CURSOR_POINTER);
+
+    // Dragging the slider keeps the pointer cursor even off the track.
+    CHECK(centerOf(sliderId, &x, &y));
+    Frame(PressAt(x, y), body);
+    CHECK(ClayWidgets_GetCursor(&ui) == CLAY_WIDGETS_CURSOR_POINTER);
+    ClayWidgets_Input dragAway = MakeInput();
+    dragAway.mouseX = x;
+    dragAway.mouseY = y + 200.0f; // far below the track
+    dragAway.pointerDown = true;
+    Frame(dragAway, body);
+    CHECK(ClayWidgets_GetCursor(&ui) == CLAY_WIDGETS_CURSOR_POINTER);
+    Frame(ReleaseAt(x, y + 200.0f), body);
+    Frame(MakeInput(), body);
+    CHECK(ClayWidgets_GetCursor(&ui) == CLAY_WIDGETS_CURSOR_DEFAULT);
 }
 
 // Toasts queue up to the cap, expire on their own timers, and evict oldest
@@ -735,6 +1440,8 @@ struct TestCase {
     void (*fn)(void);
 };
 
+#include "test-improvements.h"
+
 int main(void) {
     uint32_t clayMemorySize = Clay_MinMemorySize();
     void *clayMemory = std::malloc(clayMemorySize);
@@ -747,15 +1454,32 @@ int main(void) {
     Clay_SetMeasureTextFunction(FakeMeasureText, nullptr);
 
     const TestCase tests[] = {
+        { "review regressions", TestReviewRegressions },
+        { "editor history, validation, adapters", TestEditorFeatures },
+        { "virtual collections and panels", TestCollectionsAndPanels },
+        { "keyboard menus", TestKeyboardMenu },
+        { "fixed and draggable modals", TestDraggableModal },
+        { "wheel momentum", TestWheelMomentum },
+        { "nested focus and table scrolling", TestNestedComposition },
         { "focus traversal (Tab / Shift+Tab)", TestFocusTraversal },
         { "modal focus trap", TestModalFocusTrap },
+        { "button click + keyboard + disabled", TestButtonClickAndKeyboard },
+        { "checkbox toggle + keyboard + disabled", TestCheckboxToggle },
         { "text input editing + clipboard", TestTextInputEditingAndClipboard },
         { "text input disabled", TestTextInputDisabled },
+        { "text area editing + line navigation", TestTextAreaEditingAndNavigation },
+        { "text area pointer + caret-follow scroll", TestTextAreaPointerAndScroll },
+        { "text area soft word wrap", TestTextAreaSoftWrap },
+        { "text area overlays clipped to panel", TestTextAreaOverlaysClippedToPanel },
         { "slider keyboard + disabled", TestSliderKeyboard },
         { "stepper disabled", TestStepperDisabled },
         { "scratch overflow reported", TestScratchOverflowReported },
         { "focusables overflow reported", TestFocusablesOverflowReported },
         { "table columns overflow reported", TestTableColumnsOverflowReported },
+        { "state pool: persistence, recycling, overflow", TestStatePool },
+        { "scroll bar thumb drag", TestScrollBarThumbDrag },
+        { "tooltip dwell + restart", TestTooltipDwell },
+        { "cursor hints", TestCursorHints },
         { "toast queue", TestToastQueue },
         { "combo keyboard, edge flip, scroll", TestComboKeyboardFlipAndScroll },
         { "scroll panel wheel moves content", TestScrollPanelWheelMovesContent },

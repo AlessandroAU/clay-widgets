@@ -46,6 +46,7 @@ def main() -> int:
         action="store_true",
         help="run clean and raylib-clean before building",
     )
+    parser.add_argument('--test', action='store_true', help='run headless tests instead of building the demo')
     args = parser.parse_args()
 
     project_root = Path(__file__).resolve().parent.parent
@@ -61,7 +62,7 @@ def main() -> int:
             run_command([make, "clean"], cwd=project_root)
             run_command([make, "raylib-clean"], cwd=project_root)
 
-        run_command([make], cwd=project_root)
+        run_command([make, 'test'] if args.test else [make], cwd=project_root)
     except subprocess.CalledProcessError as err:
         return err.returncode
 

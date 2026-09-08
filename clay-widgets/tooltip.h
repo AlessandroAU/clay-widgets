@@ -25,30 +25,40 @@ void ClayWidgets_TooltipEx(ClayWidgets_Context *ctx, Clay_ElementId anchorId, Cl
 
 #ifdef CLAY_WIDGETS_IMPLEMENTATION
 
+// Per-anchor hover dwell, kept in the state pool only while the pointer is
+// over the anchor. `lastFrame` detects a hover that lapsed: the pool slot may
+// outlive the hover, so a stale stamp means the pointer left and came back
+// and the timer must restart rather than resume.
+typedef struct ClayWidgets__TooltipState {
+    float dwell;
+    uint32_t lastFrame;
+} ClayWidgets__TooltipState;
+
 void ClayWidgets_TooltipEx(ClayWidgets_Context *ctx, Clay_ElementId anchorId, Clay_String text, float delaySeconds) {
     if (!ctx || text.length <= 0 || !text.chars) {
         return;
     }
 
-    bool over = Clay_PointerOver(anchorId);
-
-    // Track a single hovered anchor and accumulate dwell time. Moving to a new
-    // anchor (or off all of them) restarts the timer so tooltips do not flash as
-    // the pointer sweeps across a row of controls.
-    if (over) {
-        if (ctx->hoverTooltipId != anchorId.id) {
-            ctx->hoverTooltipId = anchorId.id;
-            ctx->hoverTooltipTime = 0.0f;
-        } else {
-            ctx->hoverTooltipTime += ctx->input.deltaTime;
-        }
-    } else if (ctx->hoverTooltipId == anchorId.id) {
-        ctx->hoverTooltipId = 0;
-        ctx->hoverTooltipTime = 0.0f;
+    if (!Clay_PointerOver(anchorId)) {
+        return;
     }
 
-    bool show = over && ctx->hoverTooltipTime >= delaySeconds;
-    if (!show) {
+    // Accumulate dwell time while hovered; sweeping across a row of controls
+    // restarts each anchor's timer so tooltips don't flash. A NULL from an
+    // exhausted pool means no timer, so the tooltip simply never appears.
+    ClayWidgets__TooltipState *state =
+        (ClayWidgets__TooltipState *)ClayWidgets_GetState(ctx, anchorId.id, (int32_t)sizeof(*state));
+    if (!state) {
+        return;
+    }
+    if (ctx->animFrame - state->lastFrame > 1) {
+        state->dwell = 0.0f; // fresh slot, or the hover lapsed - restart
+    } else {
+        state->dwell += ctx->input.deltaTime;
+    }
+    state->lastFrame = ctx->animFrame;
+
+    if (state->dwell < delaySeconds) {
         return;
     }
 
@@ -65,11 +75,11 @@ void ClayWidgets_TooltipEx(ClayWidgets_Context *ctx, Clay_ElementId anchorId, Cl
             },
         },
         .backgroundColor = ctx->theme.surfaceColor,
-        .cornerRadius = CLAY_CORNER_RADIUS(ctx->theme.radiusSm),
+        .cornerRadius = CLAY_CORNER_RADIUS((float)ctx->theme.radiusSm),
         .floating = {
             .offset = { .x = 0.0f, .y = 6.0f },
             .parentId = anchorId.id,
-            .zIndex = 200,
+            .zIndex = ClayWidgets__OverlayZ(ctx, 200),
             .attachPoints = {
                 .element = CLAY_ATTACH_POINT_LEFT_TOP,
                 .parent = CLAY_ATTACH_POINT_LEFT_BOTTOM,

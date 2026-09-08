@@ -2,6 +2,10 @@
 
 Widget layer built on top of Clay with a raylib demo application.
 
+See [integration and new controls](docs/integration.md) for editor history and
+validation, searchable combos, virtual lists, sortable/resizable tables, split
+panes, font registration, and platform IME/accessibility adapter contracts.
+
 ![Dashboard view of the clay-widgets demo](docs/screenshots/dashboard.png)
 
 ## Project layout
