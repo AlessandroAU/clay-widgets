@@ -100,7 +100,7 @@ bool ClayWidgets_VirtualList(ClayWidgets_Context *ctx, Clay_ElementId id, int32_
         if (over) ClayWidgets__SetCursor(ctx, CLAY_WIDGETS_CURSOR_POINTER);
         CLAY(row, { .layout = { .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_FIXED(rows.rowHeight) },
                 .padding = { .left = ctx->theme.spacing.sm }, .childAlignment = { .y = CLAY_ALIGN_Y_CENTER } },
-            .backgroundColor = *selected == i ? ctx->theme.accentMutedColor : over ? ctx->theme.hoverColor : ctx->theme.surfaceColor,
+            .backgroundColor = *selected == i ? ctx->theme.accentMutedColor : over ? ctx->theme.selectionColor : ctx->theme.fieldColor,
         }) { CLAY_TEXT(text(i, data), { .textColor = disabled ? ctx->theme.textMutedColor : ctx->theme.textColor,
             .fontId = ctx->theme.fontBody, .fontSize = ctx->theme.fontSizeBody, .wrapMode = CLAY_TEXT_WRAP_NONE }); }
     }
@@ -207,7 +207,9 @@ bool ClayWidgets_DataTable(ClayWidgets_Context *ctx, Clay_ElementId id,
     const float radius = (float)ctx->theme.radiusMd;
     // Clay's scissor is rectangular. Keep child fills inside the rounded frame
     // so scrolling rows cannot paint over its corners.
-    const uint16_t frameInset = (uint16_t)fmaxf(1.0f, ceilf(radius * 0.3f));
+    // The frame inset has to clear the 3D edge on a beveled theme, or the
+    // header row would paint over its inner band.
+    const uint16_t frameInset = (uint16_t)fmaxf(ClayWidgets__IsBeveled(ctx) ? 2.0f : 1.0f, ceilf(radius * 0.3f));
     const float headerHeight = (float)ctx->theme.fontSizeBody + 2 * ctx->theme.spacing.sm;
     Clay_ElementData tableBox = Clay_GetElementData(id);
     float fixedWidth = 0;
@@ -228,18 +230,20 @@ bool ClayWidgets_DataTable(ClayWidgets_Context *ctx, Clay_ElementId id,
     for (int32_t i = 0; i < columnCount; ++i) {
         if (!(state->fixedWidthColumns & (1u << i))) state->widths[i] = growWidth;
     }
+    ClayWidgets_SetEdge(ctx, id, CLAY_WIDGETS_EDGE_SUNKEN);
+    ClayWidgets_SetEdge(ctx, headerRow, CLAY_WIDGETS_EDGE_RAISED_THIN);
     ClayWidgets__BeginElement(id, (Clay_ElementDeclaration){ .layout = {
         .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_FIT(0) },
         .padding = CLAY_PADDING_ALL(frameInset), .layoutDirection = CLAY_TOP_TO_BOTTOM },
-        .backgroundColor = ctx->theme.surfaceAltColor,
+        .backgroundColor = ctx->theme.fieldColor,
         .cornerRadius = CLAY_CORNER_RADIUS(radius),
-        .border = { .color = ctx->theme.borderColor, .width = {1,1,1,1} } });
+        .border = ClayWidgets__Border(ctx, ctx->theme.borderColor) });
     CLAY(headerRow, { .layout = {
             .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_FIXED(headerHeight) },
             .padding = { .right = gutter } },
         .backgroundColor = ctx->theme.surfaceAltColor,
         .clip = { .horizontal = true, .vertical = true, .childOffset = {horizontalOffset,0} },
-        .border = { .color = ctx->theme.borderColor, .width = { .bottom = 1 } } }) {
+        .border = ClayWidgets__EdgeBorder(ctx, ctx->theme.borderColor, CLAY__INIT(Clay_BorderWidth){ 0, 0, 0, 1, 0 }) }) {
         for (int32_t i=0;i<columnCount;++i) {
             Clay_ElementId header = ClayWidgets__ChildId(id, CLAY_STRING("TableHeader"), i);
             Clay_ElementId handle = ClayWidgets__ChildId(id, CLAY_STRING("TableResize"), i);
@@ -273,8 +277,8 @@ bool ClayWidgets_DataTable(ClayWidgets_Context *ctx, Clay_ElementId id,
                 },
                 .backgroundColor = overHeader && compare ? ctx->theme.hoverColor : ctx->theme.surfaceAltColor,
                 .clip = { .horizontal = true, .vertical = true },
-                .border = { .color = headerFocused ? ctx->theme.focusRingColor : ctx->theme.borderColor,
-                    .width = { .right = 1, .bottom = (uint16_t)(headerFocused ? 2 : 0) } },
+                .border = ClayWidgets__EdgeBorder(ctx, headerFocused ? ctx->theme.focusRingColor : ctx->theme.borderColor,
+                    CLAY__INIT(Clay_BorderWidth){ 0, 1, 0, (uint16_t)(headerFocused ? 2 : 0), 0 }),
             }) {
                 CLAY_TEXT(columns[i].title, { .textColor = disabled ? ctx->theme.textMutedColor : ctx->theme.textColor,
                     .fontId = ctx->theme.fontBody, .fontSize = ctx->theme.fontSizeBody, .wrapMode = CLAY_TEXT_WRAP_NONE });
@@ -336,10 +340,10 @@ bool ClayWidgets_DataTable(ClayWidgets_Context *ctx, Clay_ElementId id,
             .attachPoints = { .element = CLAY_ATTACH_POINT_RIGHT_TOP, .parent = CLAY_ATTACH_POINT_RIGHT_TOP },
             .pointerCaptureMode = CLAY_POINTER_CAPTURE_MODE_PASSTHROUGH,
             .attachTo = CLAY_ATTACH_TO_ELEMENT_WITH_ID, .clipTo = CLAY_CLIP_TO_ATTACHED_PARENT },
-        .border = { .color = ctx->theme.borderColor, .width = { .left = 1 } }
+        .border = ClayWidgets__EdgeBorder(ctx, ctx->theme.borderColor, CLAY__INIT(Clay_BorderWidth){ 1, 0, 0, 0, 0 })
     }) {
         CLAY_AUTO_ID({ .layout = { .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_FIXED(headerHeight) } },
-            .border = { .color = ctx->theme.borderColor, .width = { .bottom = 1 } } }) {}
+            .border = ClayWidgets__EdgeBorder(ctx, ctx->theme.borderColor, CLAY__INIT(Clay_BorderWidth){ 0, 0, 0, 1, 0 }) }) {}
     }
     ClayWidgets__EndElement();
     return state->sortChanged || state->selectionChanged || state->widthChanged;

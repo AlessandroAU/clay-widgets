@@ -51,10 +51,14 @@ void ClayWidgets_NextSplit(ClayWidgets_Context *ctx, Clay_ElementId id, bool ver
     if (!ctx) return;
     ClayWidgets__EndElement();
     Clay_ElementId divider = ClayWidgets__ChildId(id,CLAY_STRING("SplitDivider"),0);
+    // Classic split bars are raised control face, not a drawn line.
+    bool beveled = ClayWidgets__IsBeveled(ctx);
+    ClayWidgets_SetEdge(ctx, divider, CLAY_WIDGETS_EDGE_RAISED_THIN);
     CLAY(divider, { .layout = { .sizing = {
         .width = vertical ? CLAY_SIZING_GROW(0) : CLAY_SIZING_FIXED(6),
         .height = vertical ? CLAY_SIZING_FIXED(6) : CLAY_SIZING_GROW(0) } },
-        .backgroundColor = ctx->focusedId == divider.id ? ctx->theme.focusRingColor : ctx->theme.borderColor }) {}
+        .backgroundColor = ctx->focusedId == divider.id ? ctx->theme.focusRingColor
+            : (beveled ? ctx->theme.surfaceAltColor : ctx->theme.borderColor) }) {}
     ClayWidgets__BeginElement(ClayWidgets__ChildId(id,CLAY_STRING("SecondPane"),0), (Clay_ElementDeclaration){ .layout = {
         .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_GROW(0) }, .layoutDirection = CLAY_TOP_TO_BOTTOM },
         .clip = { .horizontal = true, .vertical = true } });
@@ -89,8 +93,9 @@ bool ClayWidgets_BeginResizablePanel(ClayWidgets_Context *ctx, Clay_ElementId id
         .sizing = { .width = CLAY_SIZING_FIXED(size->width), .height = CLAY_SIZING_FIXED(size->height) },
         .padding = { .right=14,.bottom=14 }, .layoutDirection=CLAY_TOP_TO_BOTTOM },
         .backgroundColor=ctx->theme.surfaceAltColor, .clip={.horizontal=true,.vertical=true} });
+    ClayWidgets_SetEdge(ctx, handle, CLAY_WIDGETS_EDGE_RAISED);
     CLAY(handle,{ .layout={ .sizing={.width=CLAY_SIZING_FIXED(14),.height=CLAY_SIZING_FIXED(14)} },
-        .backgroundColor=ctx->theme.borderColor,
+        .backgroundColor=ClayWidgets__IsBeveled(ctx) ? ctx->theme.surfaceAltColor : ctx->theme.borderColor,
         .floating={ .parentId=id.id,.zIndex=ClayWidgets__OverlayZ(ctx,20),
             .attachPoints={.element=CLAY_ATTACH_POINT_RIGHT_BOTTOM,.parent=CLAY_ATTACH_POINT_RIGHT_BOTTOM},
             .attachTo=CLAY_ATTACH_TO_ELEMENT_WITH_ID,.clipTo=CLAY_CLIP_TO_ATTACHED_PARENT } }) {}

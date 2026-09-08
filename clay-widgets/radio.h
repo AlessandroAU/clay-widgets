@@ -53,7 +53,9 @@ bool ClayWidgets_Radio(
     }) {
         CLAY_AUTO_ID({
             .layout = { .sizing = { .width = CLAY_SIZING_FIXED(20), .height = CLAY_SIZING_FIXED(20) } },
-            .backgroundColor = ctx->theme.surfaceAltColor,
+            // Round, so it keeps its flat outline under every theme - the edge
+            // painter draws rectangles and would square off the circle.
+            .backgroundColor = ctx->theme.fieldColor,
             .cornerRadius = CLAY_CORNER_RADIUS(10),
             .border = {
                 .color = (focused || over) ? ctx->theme.focusRingColor : ctx->theme.borderColor,

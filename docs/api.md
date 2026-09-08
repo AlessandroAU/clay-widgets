@@ -144,9 +144,45 @@ time, including per frame. It carries colors (`textColor`, `textMutedColor`,
 palette (`successColor`, `warningColor`, `dangerColor`) used by badges, toasts
 and danger buttons alike, `onAccentColor` for glyphs drawn on those fills,
 `scrimColor`, `disabledMix` (how far disabled fills flatten toward the surface),
-the `radiusSm`/`radiusMd` corner radii, font ids (`fontBody`, `fontHeading`,
+`fieldColor` (the background of anything typed or picked into - text fields, list
+boxes, table bodies), `selectionColor`/`onSelectionColor` (the highlight bar
+behind a hovered menu item, dropdown item or list row, and its text), the
+`radiusSm`/`radiusMd` corner radii, font ids (`fontBody`, `fontHeading`,
 `fontMono`), font sizes (`fontSizeBody`, `fontSizeHeading`, `fontSizeSmall`) and
 a `spacing` scale (`xs`, `sm`, `md`, `lg`).
+
+### 3D edges and drop shadows
+
+`edgeStyle` picks how widgets draw their edges. `CLAY_WIDGETS_EDGE_STYLE_FLAT`
+(the default, and what every preset but Win95 uses) draws a 1px line in
+`borderColor`. `CLAY_WIDGETS_EDGE_STYLE_BEVEL` draws the classic Windows 3.x/9x
+two-tone edges instead, built from `edgeLightColor` / `edgeHighlightColor` on the
+top-left and `edgeShadowColor` / `edgeDarkColor` on the bottom-right, and lets
+floating chrome cast a hard drop shadow (`shadowColor`, `shadowOffset`; offset 0
+disables it).
+
+A Clay element carries one border color and a classic edge needs four, so beveled
+edges are not Clay borders: a widget tags its element and `ClayWidgets_EndFrame`
+paints the bands straight into the render command array, around the element's own
+background rectangle. That costs no layout elements and needs no renderer
+support - a renderer only ever sees ordinary rectangles - but it does need room
+in Clay's render command array, so a beveled UI wants a little extra headroom in
+`Clay_Initialize`'s element count.
+
+Custom widgets can ask for the same treatment:
+
+```c
+// No-ops unless the theme is beveled (SetShadow: unless shadowOffset > 0), so
+// both are safe to call unconditionally.
+void ClayWidgets_SetEdge(ClayWidgets_Context *ctx, Clay_ElementId id, ClayWidgets_Edge edge);
+void ClayWidgets_SetShadow(ClayWidgets_Context *ctx, Clay_ElementId id);
+```
+
+`ClayWidgets_Edge` is `NONE`, `RAISED` and `SUNKEN` (the 2px control edges),
+`RAISED_THIN` / `SUNKEN_THIN` (1px, for strips and etched grooves) and `FRAME`
+(a 1px hard outline). The element must paint a background - the edge is anchored
+to its background rectangle - and `CLAY_WIDGETS_MAX_DECORATIONS` (512) caps how
+many elements can be tagged in one frame.
 
 ```c
 ClayWidgets_Theme ClayWidgets_DefaultTheme(void);

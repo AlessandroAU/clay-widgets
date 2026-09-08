@@ -69,21 +69,26 @@ bool ClayWidgets_Segmented(
             .layoutDirection = CLAY_LEFT_TO_RIGHT,
         },
         .cornerRadius = CLAY_CORNER_RADIUS(r),
-        .border = {
-            .color = focused ? ctx->theme.focusRingColor : ctx->theme.borderColor,
-            .width = { .left = 1, .right = 1, .top = 1, .bottom = 1 },
-        },
+        .border = ClayWidgets__Border(ctx, focused ? ctx->theme.focusRingColor : ctx->theme.borderColor),
     }) {
         for (int32_t i = 0; i < segmentCount; i++) {
             Clay_ElementId cellId = ClayWidgets__ChildId(id, CLAY_STRING("ClayWidgetsSegment"), i);
             bool cellOver = Clay_PointerOver(cellId);
             bool selected = (i == *selectedIndex);
 
+            // Classic segments are a row of toolbar buttons: the chosen one is
+            // pushed in and keeps the control face, rather than filling with the
+            // accent color the way the flat themes mark it.
+            bool beveled = ClayWidgets__IsBeveled(ctx);
             Clay_Color cellBg = ctx->theme.surfaceAltColor;
             if (selected) {
-                cellBg = ctx->theme.accentColor;
+                cellBg = beveled ? ctx->theme.pressedColor : ctx->theme.accentColor;
             } else if (cellOver) {
                 cellBg = ctx->theme.hoverColor;
+            }
+            ClayWidgets_SetEdge(ctx, cellId, selected ? CLAY_WIDGETS_EDGE_SUNKEN : CLAY_WIDGETS_EDGE_RAISED);
+            if (focused && selected) {
+                ClayWidgets__FocusRect(ctx, cellId);
             }
 
             // Round only the outer corners of the two end cells so the group's
@@ -105,14 +110,12 @@ bool ClayWidgets_Segmented(
                 },
                 .backgroundColor = cellBg,
                 .cornerRadius = cr,
-                .border = {
-                    .color = ctx->theme.borderColor,
-                    .width = { .left = (uint16_t)(i > 0 ? 1 : 0), .right = 0, .top = 0, .bottom = 0 },
-                },
+                .border = ClayWidgets__EdgeBorder(ctx, ctx->theme.borderColor,
+                    CLAY__INIT(Clay_BorderWidth){ (uint16_t)(i > 0 ? 1 : 0), 0, 0, 0, 0 }),
                 .transition = ClayWidgets__ColorTransition(ctx),
             }) {
                 CLAY_TEXT(segments[i], {
-                    .textColor = selected ? ctx->theme.surfaceColor : ctx->theme.textColor,
+                    .textColor = (selected && !beveled) ? ctx->theme.surfaceColor : ctx->theme.textColor,
                     .fontId = ctx->theme.fontBody,
                     .fontSize = ctx->theme.fontSizeBody,
                     .wrapMode = CLAY_TEXT_WRAP_NONE,

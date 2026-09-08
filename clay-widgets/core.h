@@ -68,6 +68,18 @@ ClayWidgets_Cursor ClayWidgets_GetCursor(const ClayWidgets_Context *ctx);
 bool ClayWidgets_BeginDisabled(ClayWidgets_Context *ctx);
 void ClayWidgets_EndDisabled(ClayWidgets_Context *ctx);
 
+// Ask for a classic 3D edge on the element with this id, painted by EndFrame
+// into the render command array (see ClayWidgets_Edge). A no-op unless the
+// theme's edgeStyle is BEVEL, so calling it unconditionally is safe: on a flat
+// theme the element keeps whatever Clay border it declared. Call it in the same
+// frame the element is declared - before or after, order doesn't matter.
+void ClayWidgets_SetEdge(ClayWidgets_Context *ctx, Clay_ElementId id, ClayWidgets_Edge edge);
+
+// Ask for a hard drop shadow behind the element with this id - for floating
+// chrome that should look like it lifts off the surface (menus, dropdowns,
+// dialogs, toasts). A no-op while theme.shadowOffset is 0.
+void ClayWidgets_SetShadow(ClayWidgets_Context *ctx, Clay_ElementId id);
+
 #ifdef CLAY_WIDGETS_IMPLEMENTATION
 
 #include <math.h>
@@ -80,6 +92,7 @@ void ClayWidgets_EndDisabled(ClayWidgets_Context *ctx);
 #define CLAY_WIDGETS__ERROR_FLAG_FOCUSABLES (1u << 1)
 #define CLAY_WIDGETS__ERROR_FLAG_TABLE_COLS (1u << 2)
 #define CLAY_WIDGETS__ERROR_FLAG_STATE      (1u << 3)
+#define CLAY_WIDGETS__ERROR_FLAG_DECORATIONS (1u << 4)
 
 static int16_t ClayWidgets__OverlayZ(ClayWidgets_Context *ctx, int16_t offset) {
     int32_t base = ctx->overlayDepth ? ctx->overlayBases[ctx->overlayDepth - 1] : 0;
@@ -1098,6 +1111,309 @@ static void ClayWidgets__UpdateWheelMomentum(ClayWidgets_Context *ctx, Clay_Vect
     }
 }
 
+// Classic 3D edges and drop shadows ------------------------------------------
+//
+// Under a beveled theme an element's edge is four colors (an outer and an inner
+// band, each split across the top/left and bottom/right diagonal) and a Clay
+// element carries exactly one border color. Nesting four wrapper elements per
+// control to get four colors would cost layout elements, distort hit testing
+// and touch every widget's sizing, so the edges are painted after layout
+// instead: widgets tag their element with ClayWidgets_SetEdge, and EndFrame
+// splices plain rectangle commands into the render command array around each
+// tagged element's own background rectangle. Renderers see ordinary rectangles.
+
+#define CLAY_WIDGETS__DECOR_SHADOW (1u << 0)
+#define CLAY_WIDGETS__DECOR_FOCUS  (1u << 1)
+
+// Slot for `id` in the open-addressed decoration table, or NULL when the table
+// is full (create) or the id isn't decorated (lookup).
+static ClayWidgets_Decoration *ClayWidgets__FindDecoration(ClayWidgets_Context *ctx, uint32_t id, bool create) {
+    uint32_t mask = (uint32_t)CLAY_WIDGETS_MAX_DECORATIONS - 1u;
+    uint32_t slot = id & mask;
+    for (uint32_t probe = 0; probe <= mask; ++probe) {
+        ClayWidgets_Decoration *entry = &ctx->decorations[(slot + probe) & mask];
+        if (entry->id == id) {
+            return entry;
+        }
+        if (entry->id == 0) {
+            if (!create) {
+                return NULL;
+            }
+            entry->id = id;
+            entry->edge = CLAY_WIDGETS_EDGE_NONE;
+            entry->flags = 0;
+            ctx->decorationCount++;
+            return entry;
+        }
+    }
+    return NULL;
+}
+
+// Merges a decoration request into this frame's table. Requests for the same
+// element accumulate, so a widget can ask for an edge and a shadow separately.
+static void ClayWidgets__Decorate(ClayWidgets_Context *ctx, Clay_ElementId id, ClayWidgets_Edge edge, uint8_t flags) {
+    if (!ctx || id.id == 0 || ctx->theme.edgeStyle != CLAY_WIDGETS_EDGE_STYLE_BEVEL) {
+        return;
+    }
+    ClayWidgets_Decoration *entry = ClayWidgets__FindDecoration(ctx, id.id, true);
+    if (!entry) {
+        ClayWidgets__ReportError(ctx, CLAY_WIDGETS__ERROR_FLAG_DECORATIONS,
+            "decoration table full - raise CLAY_WIDGETS_MAX_DECORATIONS");
+        return;
+    }
+    if (edge != CLAY_WIDGETS_EDGE_NONE) {
+        entry->edge = (uint8_t)edge;
+    }
+    entry->flags |= flags;
+}
+
+void ClayWidgets_SetEdge(ClayWidgets_Context *ctx, Clay_ElementId id, ClayWidgets_Edge edge) {
+    ClayWidgets__Decorate(ctx, id, edge, 0);
+}
+
+void ClayWidgets_SetShadow(ClayWidgets_Context *ctx, Clay_ElementId id) {
+    if (ctx && ctx->theme.shadowOffset > 0) {
+        ClayWidgets__Decorate(ctx, id, CLAY_WIDGETS_EDGE_NONE, CLAY_WIDGETS__DECOR_SHADOW);
+    }
+}
+
+// Draws the focus rectangle inside a beveled control. Flat themes show focus by
+// recoloring the border instead, so this is bevel-only.
+static void ClayWidgets__FocusRect(ClayWidgets_Context *ctx, Clay_ElementId id) {
+    ClayWidgets__Decorate(ctx, id, CLAY_WIDGETS_EDGE_NONE, CLAY_WIDGETS__DECOR_FOCUS);
+}
+
+// True while the theme draws classic beveled chrome instead of flat borders.
+// Widgets consult it only where the two looks genuinely differ in more than a
+// color - a white field that must not tint on focus, a check mark instead of a
+// filled chip, a label that shifts into a pressed edge.
+static bool ClayWidgets__IsBeveled(const ClayWidgets_Context *ctx) {
+    return ctx && ctx->theme.edgeStyle == CLAY_WIDGETS_EDGE_STYLE_BEVEL;
+}
+
+// The Clay border a widget declares for one of its edges: the usual flat line,
+// or nothing at all under a beveled theme, where the edge is painted from the
+// decoration table instead and a flat line would just box it in.
+static Clay_BorderElementConfig ClayWidgets__EdgeBorder(const ClayWidgets_Context *ctx, Clay_Color color, Clay_BorderWidth width) {
+    Clay_BorderElementConfig border = CLAY__INIT(Clay_BorderElementConfig) CLAY__DEFAULT_STRUCT;
+    if (!ctx || ctx->theme.edgeStyle == CLAY_WIDGETS_EDGE_STYLE_BEVEL) {
+        return border;
+    }
+    border.color = color;
+    border.width = width;
+    return border;
+}
+
+// The common case: a 1px line on all four sides.
+static Clay_BorderElementConfig ClayWidgets__Border(const ClayWidgets_Context *ctx, Clay_Color color) {
+    Clay_BorderWidth width = CLAY__INIT(Clay_BorderWidth) CLAY__DEFAULT_STRUCT;
+    width.left = 1;
+    width.right = 1;
+    width.top = 1;
+    width.bottom = 1;
+    return ClayWidgets__EdgeBorder(ctx, color, width);
+}
+
+// One band of a 3D edge: the color of its top/left run and of its bottom/right
+// run. A raised edge is {light, dark} outside and {highlight, shadow} inside; a
+// sunken edge is that mirrored, which is what makes it read as a hole.
+typedef struct ClayWidgets__EdgeBand {
+    Clay_Color topLeft;
+    Clay_Color bottomRight;
+} ClayWidgets__EdgeBand;
+
+// Fills `bands` (outermost first) for an edge role and returns how many there
+// are: 2 for the full classic edge, 1 for the thin variants, 0 for none.
+static int32_t ClayWidgets__EdgeBands(const ClayWidgets_Theme *theme, ClayWidgets_Edge edge, ClayWidgets__EdgeBand bands[2]) {
+    switch (edge) {
+        case CLAY_WIDGETS_EDGE_RAISED:
+            bands[0] = CLAY__INIT(ClayWidgets__EdgeBand){ theme->edgeLightColor, theme->edgeDarkColor };
+            bands[1] = CLAY__INIT(ClayWidgets__EdgeBand){ theme->edgeHighlightColor, theme->edgeShadowColor };
+            return 2;
+        case CLAY_WIDGETS_EDGE_SUNKEN:
+            bands[0] = CLAY__INIT(ClayWidgets__EdgeBand){ theme->edgeDarkColor, theme->edgeHighlightColor };
+            bands[1] = CLAY__INIT(ClayWidgets__EdgeBand){ theme->edgeShadowColor, theme->edgeLightColor };
+            return 2;
+        case CLAY_WIDGETS_EDGE_RAISED_THIN:
+            bands[0] = CLAY__INIT(ClayWidgets__EdgeBand){ theme->edgeHighlightColor, theme->edgeShadowColor };
+            return 1;
+        case CLAY_WIDGETS_EDGE_SUNKEN_THIN:
+            bands[0] = CLAY__INIT(ClayWidgets__EdgeBand){ theme->edgeShadowColor, theme->edgeHighlightColor };
+            return 1;
+        case CLAY_WIDGETS_EDGE_FRAME:
+            bands[0] = CLAY__INIT(ClayWidgets__EdgeBand){ theme->edgeDarkColor, theme->edgeDarkColor };
+            return 1;
+        case CLAY_WIDGETS_EDGE_NONE:
+        default:
+            return 0;
+    }
+}
+
+// Rectangles painted after the element's background: the edge bands, then the
+// focus rectangle. Four per band, four for the focus rect.
+static int32_t ClayWidgets__DecorationRectsAfter(const ClayWidgets_Theme *theme, const ClayWidgets_Decoration *decoration) {
+    ClayWidgets__EdgeBand bands[2];
+    int32_t count = ClayWidgets__EdgeBands(theme, (ClayWidgets_Edge)decoration->edge, bands) * 4;
+    if (decoration->flags & CLAY_WIDGETS__DECOR_FOCUS) {
+        count += 4;
+    }
+    return count;
+}
+
+static Clay_RenderCommand ClayWidgets__DecorationRect(const Clay_RenderCommand *source, float x, float y, float width, float height, Clay_Color color) {
+    Clay_RenderCommand command = CLAY__INIT(Clay_RenderCommand) CLAY__DEFAULT_STRUCT;
+    command.boundingBox = CLAY__INIT(Clay_BoundingBox){ x, y, width, height };
+    command.renderData.rectangle.backgroundColor = color;
+    command.userData = source->userData;
+    command.id = source->id;
+    command.zIndex = source->zIndex;
+    command.commandType = CLAY_RENDER_COMMAND_TYPE_RECTANGLE;
+    return command;
+}
+
+// Paints the bands (and focus rectangle) for one decorated element into `out`,
+// in draw order, and returns how many commands were written - always exactly
+// what ClayWidgets__DecorationRectsAfter promised, so a band with no room left
+// degrades to empty rectangles rather than desynchronising the splice.
+// Geometry is snapped to whole pixels: a half-pixel highlight reads as a smear.
+static int32_t ClayWidgets__PaintEdge(
+    const ClayWidgets_Theme *theme,
+    const ClayWidgets_Decoration *decoration,
+    const Clay_RenderCommand *source,
+    Clay_RenderCommand *out
+) {
+    ClayWidgets__EdgeBand bands[2];
+    int32_t bandCount = ClayWidgets__EdgeBands(theme, (ClayWidgets_Edge)decoration->edge, bands);
+    float x = floorf(source->boundingBox.x);
+    float y = floorf(source->boundingBox.y);
+    float width = floorf(source->boundingBox.x + source->boundingBox.width) - x;
+    float height = floorf(source->boundingBox.y + source->boundingBox.height) - y;
+    int32_t written = 0;
+
+    for (int32_t band = 0; band < bandCount; ++band) {
+        float inset = (float)band;
+        float bandWidth = width - inset * 2.0f;
+        float bandHeight = height - inset * 2.0f;
+        if (bandWidth < 1.0f || bandHeight < 1.0f) {
+            for (int32_t i = 0; i < 4; ++i) {
+                out[written++] = ClayWidgets__DecorationRect(source, x, y, 0.0f, 0.0f, bands[band].topLeft);
+            }
+            continue;
+        }
+        // Top/left first, bottom/right second: the second run wins the two
+        // corners they share, which is what gives the classic mitred edge.
+        out[written++] = ClayWidgets__DecorationRect(source, x + inset, y + inset, bandWidth, 1.0f, bands[band].topLeft);
+        out[written++] = ClayWidgets__DecorationRect(source, x + inset, y + inset, 1.0f, bandHeight, bands[band].topLeft);
+        out[written++] = ClayWidgets__DecorationRect(source, x + inset, y + height - inset - 1.0f, bandWidth, 1.0f, bands[band].bottomRight);
+        out[written++] = ClayWidgets__DecorationRect(source, x + width - inset - 1.0f, y + inset, 1.0f, bandHeight, bands[band].bottomRight);
+    }
+
+    if (decoration->flags & CLAY_WIDGETS__DECOR_FOCUS) {
+        // Inset past the edge bands, like the focus rectangle a classic button
+        // draws around its label.
+        float inset = (float)bandCount + 2.0f;
+        float rectWidth = width - inset * 2.0f;
+        float rectHeight = height - inset * 2.0f;
+        if (rectWidth < 1.0f || rectHeight < 1.0f) {
+            rectWidth = 0.0f;
+            rectHeight = 0.0f;
+        }
+        Clay_Color focus = theme->focusRingColor;
+        out[written++] = ClayWidgets__DecorationRect(source, x + inset, y + inset, rectWidth, 1.0f, focus);
+        out[written++] = ClayWidgets__DecorationRect(source, x + inset, y + height - inset - 1.0f, rectWidth, 1.0f, focus);
+        out[written++] = ClayWidgets__DecorationRect(source, x + inset, y + inset, 1.0f, rectHeight, focus);
+        out[written++] = ClayWidgets__DecorationRect(source, x + width - inset - 1.0f, y + inset, 1.0f, rectHeight, focus);
+    }
+
+    return written;
+}
+
+// The two strips of a hard drop shadow: down the right side and along the
+// bottom, offset diagonally so the element looks lifted off the surface.
+static void ClayWidgets__PaintShadow(const ClayWidgets_Theme *theme, const Clay_RenderCommand *source, Clay_RenderCommand *out) {
+    float offset = (float)theme->shadowOffset;
+    float x = floorf(source->boundingBox.x);
+    float y = floorf(source->boundingBox.y);
+    float width = floorf(source->boundingBox.x + source->boundingBox.width) - x;
+    float height = floorf(source->boundingBox.y + source->boundingBox.height) - y;
+    out[0] = ClayWidgets__DecorationRect(source, x + width, y + offset, offset, height, theme->shadowColor);
+    out[1] = ClayWidgets__DecorationRect(source, x + offset, y + height, width, offset, theme->shadowColor);
+}
+
+// Splices this frame's edges and shadows into Clay's render command array.
+//
+// Clay emits an element's own background rectangle (preceded by its scissor,
+// when it clips) before descending into its children, so an edge painted right
+// after that rectangle sits under the element's content - where a border
+// belongs - and a shadow painted before the scissor sits under the element
+// itself. The array is rewritten back-to-front in place, which is safe because
+// the write cursor always leads the read cursor by the number of commands still
+// to be inserted.
+static void ClayWidgets__PaintDecorations(ClayWidgets_Context *ctx, Clay_RenderCommandArray *commands) {
+    if (!ctx || ctx->decorationCount == 0 || ctx->theme.edgeStyle != CLAY_WIDGETS_EDGE_STYLE_BEVEL) {
+        return;
+    }
+
+    int32_t extra = 0;
+    for (int32_t i = 0; i < commands->length; ++i) {
+        Clay_RenderCommand *command = Clay_RenderCommandArray_Get(commands, i);
+        if (command->commandType != CLAY_RENDER_COMMAND_TYPE_RECTANGLE) {
+            continue;
+        }
+        ClayWidgets_Decoration *decoration = ClayWidgets__FindDecoration(ctx, command->id, false);
+        if (!decoration) {
+            continue;
+        }
+        extra += ClayWidgets__DecorationRectsAfter(&ctx->theme, decoration);
+        if (decoration->flags & CLAY_WIDGETS__DECOR_SHADOW) {
+            extra += 2;
+        }
+    }
+    if (extra == 0) {
+        return;
+    }
+    if (commands->length + extra > commands->capacity) {
+        // Every edge or none: a half-decorated frame looks broken, and the fix
+        // is the same either way - give Clay a bigger arena.
+        ClayWidgets__ReportError(ctx, CLAY_WIDGETS__ERROR_FLAG_DECORATIONS,
+            "not enough render commands for beveled edges - raise Clay's maxElementCount");
+        return;
+    }
+
+    Clay_RenderCommand *array = commands->internalArray;
+    int32_t write = commands->length + extra;
+    for (int32_t read = commands->length - 1; read >= 0; --read) {
+        Clay_RenderCommand command = array[read];
+        ClayWidgets_Decoration *decoration = command.commandType == CLAY_RENDER_COMMAND_TYPE_RECTANGLE
+            ? ClayWidgets__FindDecoration(ctx, command.id, false)
+            : NULL;
+        if (!decoration) {
+            array[--write] = command;
+            continue;
+        }
+
+        int32_t after = ClayWidgets__DecorationRectsAfter(&ctx->theme, decoration);
+        write -= after;
+        if (after > 0) {
+            ClayWidgets__PaintEdge(&ctx->theme, decoration, &command, &array[write]);
+        }
+        array[--write] = command;
+        if (decoration->flags & CLAY_WIDGETS__DECOR_SHADOW) {
+            // Keep the shadow outside the element's own scissor, or it would be
+            // clipped away by the very box it falls outside of.
+            if (read > 0
+                && array[read - 1].commandType == CLAY_RENDER_COMMAND_TYPE_SCISSOR_START
+                && array[read - 1].id == command.id) {
+                array[--write] = array[read - 1];
+                read--;
+            }
+            write -= 2;
+            ClayWidgets__PaintShadow(&ctx->theme, &command, &array[write]);
+        }
+    }
+    commands->length += extra;
+}
+
 void ClayWidgets_BeginFrame(
     ClayWidgets_Context *ctx,
     ClayWidgets_Input input,
@@ -1122,6 +1438,10 @@ void ClayWidgets_BeginFrame(
     ctx->modalCount = 0;
     ctx->menuTriggerCountPrev = ctx->menuTriggerCount;
     ctx->menuTriggerCount = 0;
+    if (ctx->decorationCount) {
+        memset(ctx->decorations, 0, sizeof(ctx->decorations));
+        ctx->decorationCount = 0;
+    }
     ctx->currentModalId = 0;
     ctx->focusFirst = false;
     // Roll the focus trap forward: registration during this frame's layout
@@ -1199,6 +1519,7 @@ Clay_RenderCommandArray ClayWidgets_EndFrame(ClayWidgets_Context *ctx) {
     // Forward the frame's own deltaTime so Clay transitions and the widget
     // animations (ClayWidgets__AnimTo) can never run on different clocks.
     Clay_RenderCommandArray result = Clay_EndLayout(ctx ? ctx->input.deltaTime : 0.0f);
+    ClayWidgets__PaintDecorations(ctx, &result);
     if (ctx && ctx->modalCount != ctx->modalCountPrev) memset(ctx->scrollMomentumRemaining,0,sizeof(ctx->scrollMomentumRemaining));
     if (ctx && ctx->modalCount < ctx->modalCountPrev) {
         ctx->focusedId = ctx->modalReturnFocus[ctx->modalCount];

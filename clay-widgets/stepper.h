@@ -80,6 +80,16 @@ bool ClayWidgets_Stepper(
         : ctx->theme.surfaceAltColor;
     Clay_Color glyphColor = options.disabled ? ctx->theme.textMutedColor : ctx->theme.textColor;
 
+    // Two raised spin buttons around a sunken value well - the classic spinner.
+    Clay_ElementId valueId = ClayWidgets__ChildId(id, CLAY_STRING("ClayWidgetsStepperValue"), 0);
+    bool beveled = ClayWidgets__IsBeveled(ctx);
+    ClayWidgets_SetEdge(ctx, minusId, minusOver && ctx->input.pointerDown ? CLAY_WIDGETS_EDGE_SUNKEN : CLAY_WIDGETS_EDGE_RAISED);
+    ClayWidgets_SetEdge(ctx, plusId, plusOver && ctx->input.pointerDown ? CLAY_WIDGETS_EDGE_SUNKEN : CLAY_WIDGETS_EDGE_RAISED);
+    ClayWidgets_SetEdge(ctx, valueId, CLAY_WIDGETS_EDGE_SUNKEN);
+    if (focused) {
+        ClayWidgets__FocusRect(ctx, valueId);
+    }
+
     CLAY(id, {
         .layout = {
             .sizing = { .width = CLAY_SIZING_FIT(0, 0), .height = CLAY_SIZING_FIT(0, 0) },
@@ -87,10 +97,7 @@ bool ClayWidgets_Stepper(
             .layoutDirection = CLAY_LEFT_TO_RIGHT,
         },
         .cornerRadius = CLAY_CORNER_RADIUS(r),
-        .border = {
-            .color = focused ? ctx->theme.focusRingColor : ctx->theme.borderColor,
-            .width = { .left = 1, .right = 1, .top = 1, .bottom = 1 },
-        },
+        .border = ClayWidgets__Border(ctx, focused ? ctx->theme.focusRingColor : ctx->theme.borderColor),
     }) {
         // Minus button.
         CLAY(minusId, {
@@ -110,17 +117,14 @@ bool ClayWidgets_Stepper(
         }
 
         // Value display.
-        CLAY_AUTO_ID({
+        CLAY(valueId, {
             .layout = {
                 .sizing = { .width = CLAY_SIZING_FIT(50, 0), .height = CLAY_SIZING_GROW(0) },
                 .padding = { .left = ctx->theme.spacing.sm, .right = ctx->theme.spacing.sm, .top = ctx->theme.spacing.sm, .bottom = ctx->theme.spacing.sm },
                 .childAlignment = { .x = CLAY_ALIGN_X_CENTER, .y = CLAY_ALIGN_Y_CENTER },
             },
-            .backgroundColor = buttonFace,
-            .border = {
-                .color = ctx->theme.borderColor,
-                .width = { .left = 1, .right = 1, .top = 0, .bottom = 0 },
-            },
+            .backgroundColor = beveled ? ctx->theme.fieldColor : buttonFace,
+            .border = ClayWidgets__EdgeBorder(ctx, ctx->theme.borderColor, CLAY__INIT(Clay_BorderWidth){ 1, 1, 0, 0, 0 }),
         }) {
             CLAY_TEXT(ClayWidgets__ScratchInt(ctx, *value), {
                 .textColor = glyphColor,

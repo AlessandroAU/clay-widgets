@@ -55,6 +55,25 @@ static ClayWidgets_Theme ClayWidgets__BuildTheme(
     theme.scrimColor = (Clay_Color){0, 0, 0, 150};
     theme.disabledMix = 0.5f;
 
+    // Highlight bar and typed-into surfaces both follow the preset's own colors
+    // by default, so a theme only has to name them when it wants them to differ
+    // (as the classic preset does: a navy selection bar and paper-white fields).
+    theme.selectionColor = hoverColor;
+    theme.onSelectionColor = textColor;
+    theme.fieldColor = surfaceAltColor;
+
+    // Flat 1px borders, no 3D edges and no drop shadow. The edge palette is
+    // still filled in - derived from the preset's own surface and border - so a
+    // caller that flips edgeStyle to BEVEL gets a coherent look rather than
+    // four transparent bands.
+    theme.edgeStyle = CLAY_WIDGETS_EDGE_STYLE_FLAT;
+    theme.edgeHighlightColor = ClayWidgets__MixColor(surfaceAltColor, (Clay_Color){255, 255, 255, 255}, 0.55f);
+    theme.edgeLightColor = ClayWidgets__MixColor(surfaceAltColor, (Clay_Color){255, 255, 255, 255}, 0.25f);
+    theme.edgeShadowColor = borderColor;
+    theme.edgeDarkColor = ClayWidgets__MixColor(borderColor, (Clay_Color){0, 0, 0, 255}, 0.6f);
+    theme.shadowColor = (Clay_Color){0, 0, 0, 110};
+    theme.shadowOffset = 0;
+
     theme.radiusSm = 6;
     theme.radiusMd = 10;
 
@@ -123,27 +142,53 @@ ClayWidgets_Theme ClayWidgets_ThemeForest(void) {
     );
 }
 
-// A classic Microsoft Windows (95/98/2000-era) look: the "3D face" gray control
-// surface, black text, a navy selection accent, and square corners. The beveled
-// grey aesthetic depends on sharp rectangles, so this preset zeroes the corner
-// radii that ClayWidgets__BuildTheme sets by default.
+// A classic Microsoft Windows (95/98-era) look: the "3D face" grey control
+// surface, paper-white entry fields, black text, a navy selection bar and
+// square, beveled corners.
+//
+// This is the one preset that switches edgeStyle to BEVEL, so its controls are
+// drawn with two-tone 3D edges instead of flat 1px borders (see
+// ClayWidgets_Edge) and its floating chrome casts a hard drop shadow. It also
+// drops the corner radii to zero and tightens the type scale and spacing: the
+// beveled look depends on sharp rectangles and a dense, small-text layout, and
+// keeping the modern radii or the airy spacing reads as a grey modern UI rather
+// than a classic one.
 ClayWidgets_Theme ClayWidgets_ThemeWin95(void) {
     ClayWidgets_Theme theme = ClayWidgets__BuildTheme(
         (Clay_Color){0, 0, 0, 255},          // textColor        - black
-        (Clay_Color){64, 64, 64, 255},       // textMutedColor   - dim label grey
+        (Clay_Color){90, 90, 90, 255},       // textMutedColor   - dim label grey
         (Clay_Color){192, 192, 192, 255},    // surfaceColor     - 3D face grey
         (Clay_Color){192, 192, 192, 255},    // surfaceAltColor  - button/tab face
         (Clay_Color){0, 0, 128, 255},        // accentColor      - navy selection
         (Clay_Color){0, 0, 128, 90},         // accentMutedColor - navy wash
         (Clay_Color){128, 128, 128, 255},    // borderColor      - shadow grey
-        (Clay_Color){212, 208, 200, 255},    // hoverColor       - lit face grey
-        (Clay_Color){160, 160, 160, 255},    // pressedColor     - sunken grey
-        (Clay_Color){0, 0, 128, 255}         // focusRingColor   - navy focus
+        (Clay_Color){198, 198, 198, 255},    // hoverColor       - barely-lit face
+        (Clay_Color){176, 176, 176, 255},    // pressedColor     - sunken grey
+        (Clay_Color){0, 0, 0, 255}           // focusRingColor   - black focus rect
     );
 
     // Square, beveled-era corners - the defining trait of the classic look.
     theme.radiusSm = 0;
     theme.radiusMd = 0;
+
+    // Two-tone 3D edges, in the four system colors a classic control is built
+    // from: 3DLIGHT and 3DHILIGHT catch the light from the top left, 3DSHADOW
+    // and 3DDKSHADOW fall away to the bottom right.
+    theme.edgeStyle = CLAY_WIDGETS_EDGE_STYLE_BEVEL;
+    theme.edgeLightColor = (Clay_Color){223, 223, 223, 255};
+    theme.edgeHighlightColor = (Clay_Color){255, 255, 255, 255};
+    theme.edgeShadowColor = (Clay_Color){128, 128, 128, 255};
+    theme.edgeDarkColor = (Clay_Color){10, 10, 10, 255};
+
+    // The hard shadow menus and dialogs cast onto the surface behind them.
+    theme.shadowColor = (Clay_Color){0, 0, 0, 96};
+    theme.shadowOffset = 4;
+
+    // Anything you type or pick into is a white well; the highlight bar behind
+    // a menu item or list row is solid navy with white text.
+    theme.fieldColor = (Clay_Color){255, 255, 255, 255};
+    theme.selectionColor = (Clay_Color){0, 0, 128, 255};
+    theme.onSelectionColor = (Clay_Color){255, 255, 255, 255};
 
     // Era-appropriate status colors: the saturated primaries of the classic
     // 16-color palette, with pure white for text on filled surfaces.
@@ -151,6 +196,15 @@ ClayWidgets_Theme ClayWidgets_ThemeWin95(void) {
     theme.warningColor = (Clay_Color){128, 96, 0, 255};
     theme.dangerColor = (Clay_Color){192, 0, 0, 255};
     theme.onAccentColor = (Clay_Color){255, 255, 255, 255};
+
+    // Small type and tight spacing, the way a 96-DPI dialog was laid out.
+    theme.fontSizeBody = 14;
+    theme.fontSizeHeading = 20;
+    theme.fontSizeSmall = 12;
+    theme.spacing.xs = 3;
+    theme.spacing.sm = 6;
+    theme.spacing.md = 9;
+    theme.spacing.lg = 12;
 
     return theme;
 }

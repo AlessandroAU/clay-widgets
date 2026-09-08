@@ -100,18 +100,21 @@ bool ClayWidgets_Slider(
         fillColor = ClayWidgets__MixColor(fillColor, ctx->theme.surfaceColor, ctx->theme.disabledMix);
     }
 
+    // Sunken track, like the channel a classic trackbar slides in.
+    ClayWidgets_SetEdge(ctx, id, CLAY_WIDGETS_EDGE_SUNKEN);
+    if (focused) {
+        ClayWidgets__FocusRect(ctx, id);
+    }
+
     CLAY(id, {
         .layout = {
             .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_FIXED(18) },
-            .padding = CLAY_PADDING_ALL(1),
+            .padding = CLAY_PADDING_ALL((uint16_t)(ClayWidgets__IsBeveled(ctx) ? 2 : 1)),
             .childAlignment = { .x = CLAY_ALIGN_X_LEFT, .y = CLAY_ALIGN_Y_CENTER },
         },
         .backgroundColor = ctx->theme.surfaceAltColor,
-        .cornerRadius = CLAY_CORNER_RADIUS(9),
-        .border = {
-            .color = (focused || over) ? ctx->theme.focusRingColor : ctx->theme.borderColor,
-            .width = { .left = 1, .right = 1, .top = 1, .bottom = 1 },
-        },
+        .cornerRadius = CLAY_CORNER_RADIUS(ctx->theme.radiusSm > 0 ? 9.0f : 0.0f),
+        .border = ClayWidgets__Border(ctx, (focused || over) ? ctx->theme.focusRingColor : ctx->theme.borderColor),
     }) {
         CLAY_AUTO_ID({
             .layout = {
@@ -121,7 +124,7 @@ bool ClayWidgets_Slider(
                 },
             },
             .backgroundColor = fillColor,
-            .cornerRadius = CLAY_CORNER_RADIUS(8),
+            .cornerRadius = CLAY_CORNER_RADIUS(ctx->theme.radiusSm > 0 ? 8.0f : 0.0f),
         }) {}
 
         // Live value, centered over the whole track. Floating so it overlays the

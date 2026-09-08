@@ -50,6 +50,9 @@ static void DrawMenuBar(ClayWidgets_Context &ui, DemoState &s) {
         .backgroundColor = ui.theme.surfaceAltColor,
         .cornerRadius = CLAY_CORNER_RADIUS((float)ui.theme.radiusSm),
     }) {
+        // A classic menu bar is a raised strip; on the flat themes this does
+        // nothing at all.
+        ClayWidgets_SetEdge(&ui, CLAY_ID("MenuBar"), CLAY_WIDGETS_EDGE_RAISED_THIN);
         if (ClayWidgets_BeginMenu(&ui, CLAY_ID("FileMenu"), CLAY_STRING("File"))) {
             if (ClayWidgets_MenuItem(&ui, CLAY_ID("MenuNewTask"), CLAY_STRING("New Sample Task"))) {
                 AddSampleTask(ui, s);
@@ -130,6 +133,8 @@ static void DrawStatusBar(ClayWidgets_Context &ui, DemoState &s) {
         .backgroundColor = ui.theme.surfaceAltColor,
         .cornerRadius = CLAY_CORNER_RADIUS((float)ui.theme.radiusSm),
     }) {
+        // ...and a classic status bar is sunk into the window.
+        ClayWidgets_SetEdge(&ui, CLAY_ID("StatusBar"), CLAY_WIDGETS_EDGE_SUNKEN_THIN);
         ClayWidgets_Label(&ui, ClayStringFromCString(s.statusLine));
 
         CLAY(CLAY_ID("StatusSpacer"), {

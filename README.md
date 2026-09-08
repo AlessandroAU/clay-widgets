@@ -152,6 +152,35 @@ Notes and knobs:
   visual is their own fill - not on panels that host crisp child text. Dropdown
   and toast enter/exit animations would need per-widget opacity handling instead.
 
+## Theming
+
+Every color, radius, font size and spacing step lives in `ClayWidgets_Theme`, a
+plain struct on the context that can be reassigned at any time - the demo swaps
+presets live. Four ship with the library: **Slate**, **Sand**, **Forest** and
+**Windows**, a classic Windows 3.x/9x look.
+
+The classic preset is more than a palette. It sets `edgeStyle` to
+`CLAY_WIDGETS_EDGE_STYLE_BEVEL`, which replaces every widget's flat 1px border
+with the era's two-tone 3D edges - raised for buttons, cards, tabs and scroll
+thumbs, sunken for text fields, lists, tables and troughs - and gives menus,
+dropdowns and dialogs a hard drop shadow.
+
+A Clay element carries a single border color and a classic edge needs four (an
+outer and an inner band, split across the diagonal), so the edges are not drawn
+as borders. A widget tags its element with `ClayWidgets_SetEdge`, and
+`ClayWidgets_EndFrame` splices plain rectangles into the render command array
+around that element's background. Nothing nests extra layout elements, hit
+testing is unaffected, renderers need no changes, and on the flat presets the
+tags cost a single comparison and do nothing. The same two calls are public, so
+application widgets can join in:
+
+```c
+ClayWidgets_SetEdge(&ui, CLAY_ID("MenuBar"), CLAY_WIDGETS_EDGE_RAISED_THIN);
+ClayWidgets_SetShadow(&ui, CLAY_ID("Palette"));
+```
+
+See [docs/api.md](docs/api.md#theming) for the full theme struct.
+
 ## Demo coverage
 
 The demo is organized like a small application, with four views:

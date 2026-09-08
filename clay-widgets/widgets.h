@@ -45,6 +45,18 @@ extern "C" {
 #define CLAY_WIDGETS_MAX_TOASTS 4
 #endif
 
+// Slots for per-frame element decorations - the 3D edges and drop shadows a
+// beveled theme paints in EndFrame (see ClayWidgets_SetEdge). One slot per
+// decorated element per frame, in an open-addressed table, so this must be a
+// power of two and comfortably larger than the number of controls on screen.
+// Overflow is reported via the error handler / CLAY_WIDGETS_ASSERT.
+#ifndef CLAY_WIDGETS_MAX_DECORATIONS
+#define CLAY_WIDGETS_MAX_DECORATIONS 512
+#endif
+// The table is indexed by masking, so the size has to be a power of two.
+typedef char ClayWidgets__DecorationsArePowerOfTwo[
+    (CLAY_WIDGETS_MAX_DECORATIONS & (CLAY_WIDGETS_MAX_DECORATIONS - 1)) == 0 ? 1 : -1];
+
 // The per-widget retained state pool (see ClayWidgets_GetState): how many
 // widgets can hold internal state at once, and how many bytes each may keep.
 // Slots are recycled least-recently-used once a widget stops requesting its
@@ -184,6 +196,35 @@ typedef enum ClayWidgets_Cursor {
     CLAY_WIDGETS_CURSOR_RESIZE_XY,
 } ClayWidgets_Cursor;
 
+// How widgets draw their edges.
+//
+// FLAT is the modern look: one 1px line per element in the theme's borderColor.
+// BEVEL is the classic Windows 3.x/9x look, where an edge is two mirrored
+// two-tone bands that make a control read as raised out of, or sunk into, the
+// surface it sits on.
+//
+// A Clay element carries a single border color and a classic edge needs four,
+// so beveled edges are not drawn as Clay borders. Widgets tag their element
+// with ClayWidgets_SetEdge and ClayWidgets_EndFrame paints the bands directly
+// into the render command array, which costs no layout elements and needs no
+// renderer support. Under a FLAT theme the tags are ignored and the 1px border
+// is drawn as before.
+typedef enum ClayWidgets_EdgeStyle {
+    CLAY_WIDGETS_EDGE_STYLE_FLAT = 0,
+    CLAY_WIDGETS_EDGE_STYLE_BEVEL = 1,
+} ClayWidgets_EdgeStyle;
+
+// Which 3D edge a widget wants. Widgets ask for the role, never for colors, so
+// one theme switch restyles every control. Ignored while the theme is FLAT.
+typedef enum ClayWidgets_Edge {
+    CLAY_WIDGETS_EDGE_NONE = 0,
+    CLAY_WIDGETS_EDGE_RAISED,      // 2px, pops out: buttons, panels, tabs, thumbs
+    CLAY_WIDGETS_EDGE_SUNKEN,      // 2px, recessed well: fields, lists, tables, a held button
+    CLAY_WIDGETS_EDGE_RAISED_THIN, // 1px raised: chips, badges, small dividers
+    CLAY_WIDGETS_EDGE_SUNKEN_THIN, // 1px etched: group boxes, separators, troughs
+    CLAY_WIDGETS_EDGE_FRAME,       // 1px hard outline in edgeDarkColor: tooltips, popup frames
+} ClayWidgets_Edge;
+
 typedef struct ClayWidgets_Spacing {
     uint16_t xs;
     uint16_t sm;
@@ -216,6 +257,33 @@ typedef struct ClayWidgets_Theme {
     // How far disabled fills/text mix toward surfaceColor (0 = unchanged,
     // 1 = fully flattened into the surface).
     float disabledMix;
+
+    // The highlight bar behind a hovered menu item, dropdown item or list row,
+    // and the text drawn on it. Defaults to hoverColor over the normal text
+    // color - a subtle wash; the classic preset turns it into the solid navy
+    // bar with white text that a Windows menu paints.
+    Clay_Color selectionColor;
+    Clay_Color onSelectionColor;
+
+    // Background of anything the user types or picks into - text fields, list
+    // boxes, table bodies, combo dropdowns. Usually the same as surfaceAltColor;
+    // the classic preset makes it paper white so those wells read as sunken.
+    Clay_Color fieldColor;
+
+    // Edge treatment and the classic 3D palette. The four edge colors are only
+    // consulted while edgeStyle is BEVEL, where an edge is two bands: the outer
+    // one in light/dark, the inner one in highlight/shadow (mirrored for a
+    // sunken edge). See ClayWidgets_Edge.
+    ClayWidgets_EdgeStyle edgeStyle;
+    Clay_Color edgeLightColor;     // outer top/left of a raised edge
+    Clay_Color edgeHighlightColor; // inner top/left of a raised edge
+    Clay_Color edgeShadowColor;    // inner bottom/right of a raised edge
+    Clay_Color edgeDarkColor;      // outer bottom/right of a raised edge
+
+    // Hard drop shadow cast by floating chrome (menus, dropdowns, dialogs,
+    // toasts). Offset is in pixels; 0 disables the shadow entirely.
+    Clay_Color shadowColor;
+    uint16_t shadowOffset;
 
     uint16_t radiusSm;
     uint16_t radiusMd;
@@ -259,6 +327,15 @@ typedef struct ClayWidgets_ToastSlot {
     float remaining;
     int32_t variant;
 } ClayWidgets_ToastSlot;
+
+// One element's queued decoration for this frame: which 3D edge to paint and
+// whether to add a drop shadow or a focus rectangle. Stored in an open-addressed
+// table keyed by element id and consumed by ClayWidgets_EndFrame.
+typedef struct ClayWidgets_Decoration {
+    uint32_t id; // 0 = empty slot
+    uint8_t edge;  // ClayWidgets_Edge
+    uint8_t flags; // CLAY_WIDGETS__DECOR_*
+} ClayWidgets_Decoration;
 
 typedef struct ClayWidgets_Context {
     ClayWidgets_Input input;
@@ -412,6 +489,11 @@ typedef struct ClayWidgets_Context {
     uint32_t tableIds[16];
     Clay_SizingAxis tableSavedWidths[16][12];
     int32_t tableSavedCounts[16];
+    // Per-frame 3D edge / drop shadow requests, keyed by element id and painted
+    // into the render command array by EndFrame. Cleared at BeginFrame.
+    ClayWidgets_Decoration decorations[CLAY_WIDGETS_MAX_DECORATIONS];
+    int32_t decorationCount;
+
     uint32_t menuTriggers[32];
     int32_t menuTriggerCount, menuTriggerCountPrev;
     uint32_t contextMenuReturnFocus;

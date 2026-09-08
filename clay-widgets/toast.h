@@ -112,6 +112,8 @@ void ClayWidgets_ToastLayer(ClayWidgets_Context *ctx) {
 
             Clay_Color accent = ClayWidgets__SemanticColor(ctx, (ClayWidgets_BadgeVariant)slot->variant);
             Clay_ElementId toastId = Clay_GetElementIdWithIndex(CLAY_STRING("ClayWidgetsToast"), (uint32_t)(i + 1));
+            ClayWidgets_SetEdge(ctx, toastId, CLAY_WIDGETS_EDGE_RAISED);
+            ClayWidgets_SetShadow(ctx, toastId);
 
             CLAY(toastId, {
                 .layout = {
@@ -120,10 +122,7 @@ void ClayWidgets_ToastLayer(ClayWidgets_Context *ctx) {
                 },
                 .backgroundColor = accent,
                 .cornerRadius = CLAY_CORNER_RADIUS((float)ctx->theme.radiusMd),
-                .border = {
-                    .color = ctx->theme.borderColor,
-                    .width = { .left = 1, .right = 1, .top = 1, .bottom = 1 },
-                },
+                .border = ClayWidgets__Border(ctx, ctx->theme.borderColor),
             }) {
                 CLAY_AUTO_ID({
                     .layout = {

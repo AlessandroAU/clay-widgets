@@ -126,8 +126,11 @@ static void ClayWidgets__ScrollBarAt(
             .childGap = 0,
             .layoutDirection = CLAY_TOP_TO_BOTTOM,
         },
-        .backgroundColor = ctx->theme.surfaceAltColor,
-        .cornerRadius = CLAY_CORNER_RADIUS(tableColumn ? 0.0f : 4.0f),
+        // Halfway between the control face and the field white: on a flat theme
+        // the two are the same color and this is a no-op, on the classic theme
+        // it lands on the pale trough a Windows scroll bar runs in.
+        .backgroundColor = ClayWidgets__MixColor(ctx->theme.surfaceAltColor, ctx->theme.fieldColor, 0.5f),
+        .cornerRadius = CLAY_CORNER_RADIUS(tableColumn || ctx->theme.radiusSm == 0 ? 0.0f : 4.0f),
         .floating = {
             .offset = { .x = offsetX, .y = 0.0f },
             .parentId = scrollContainerId.id,
@@ -144,12 +147,10 @@ static void ClayWidgets__ScrollBarAt(
             // container has no enclosing clip and this is a no-op.
             .clipTo = CLAY_CLIP_TO_ATTACHED_PARENT,
         },
-        .border = {
-            .color = ctx->theme.borderColor,
+        .border = ClayWidgets__EdgeBorder(ctx, ctx->theme.borderColor, CLAY__INIT(Clay_BorderWidth){
             // The table gutter owns the shared left edge.
-            .width = { .left = (uint16_t)(tableColumn ? 0 : 1), .right = (uint16_t)(tableColumn ? 0 : 1),
-                .top = 1, .bottom = (uint16_t)(tableColumn ? 0 : 1) },
-        },
+            (uint16_t)(tableColumn ? 0 : 1), (uint16_t)(tableColumn ? 0 : 1),
+            1, (uint16_t)(tableColumn ? 0 : 1), 0 }),
     }) {
         if (scrollBarY > 0.0f) {
             CLAY_AUTO_ID({
@@ -162,6 +163,7 @@ static void ClayWidgets__ScrollBarAt(
             }) {}
         }
 
+        ClayWidgets_SetEdge(ctx, scrollBarId, CLAY_WIDGETS_EDGE_RAISED);
         CLAY(scrollBarId, {
             .layout = {
                 .sizing = {
@@ -169,8 +171,12 @@ static void ClayWidgets__ScrollBarAt(
                     .height = CLAY_SIZING_FIXED(scrollBarHeight),
                 },
             },
-            .backgroundColor = draggingThumb ? ctx->theme.accentColor : (overThumb ? ctx->theme.accentMutedColor : ctx->theme.borderColor),
-            .cornerRadius = CLAY_CORNER_RADIUS(3),
+            // A classic thumb is a raised control-face block that doesn't change
+            // color; a flat theme tints it instead, since it has no edge to show.
+            .backgroundColor = ClayWidgets__IsBeveled(ctx)
+                ? ctx->theme.surfaceAltColor
+                : (draggingThumb ? ctx->theme.accentColor : (overThumb ? ctx->theme.accentMutedColor : ctx->theme.borderColor)),
+            .cornerRadius = CLAY_CORNER_RADIUS(ctx->theme.radiusSm > 0 ? 3.0f : 0.0f),
         }) {}
     }
 }

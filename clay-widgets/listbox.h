@@ -78,30 +78,34 @@ bool ClayWidgets_ListBox(
         }
     }
 
+    // The list is a white well like an entry field; its rows are the highlight
+    // bar, so they lose the gap and rounding that separate them on flat themes.
+    bool beveled = ClayWidgets__IsBeveled(ctx);
+    ClayWidgets_SetEdge(ctx, id, CLAY_WIDGETS_EDGE_SUNKEN);
+
     CLAY(id, {
         .layout = {
             .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_FIT(0, 0) },
-            .padding = CLAY_PADDING_ALL(ctx->theme.spacing.xs),
-            .childGap = 2,
+            .padding = CLAY_PADDING_ALL((uint16_t)(beveled ? 2 : ctx->theme.spacing.xs)),
+            .childGap = (uint16_t)(beveled ? 0 : 2),
             .layoutDirection = CLAY_TOP_TO_BOTTOM,
         },
-        .backgroundColor = ctx->theme.surfaceAltColor,
+        .backgroundColor = ctx->theme.fieldColor,
         .cornerRadius = CLAY_CORNER_RADIUS((float)ctx->theme.radiusMd),
-        .border = {
-            .color = focused ? ctx->theme.focusRingColor : ctx->theme.borderColor,
-            .width = { .left = 1, .right = 1, .top = 1, .bottom = 1 },
-        },
+        .border = ClayWidgets__Border(ctx, focused ? ctx->theme.focusRingColor : ctx->theme.borderColor),
     }) {
         for (int32_t i = 0; i < itemCount; i++) {
             Clay_ElementId rowId = ClayWidgets__ChildId(id, CLAY_STRING("ClayWidgetsListBoxItem"), i);
             bool rowOver = Clay_PointerOver(rowId);
             bool selected = (i == *selectedIndex);
 
-            Clay_Color rowBg = ClayWidgets__FadeToClear(ctx->theme.hoverColor);
+            Clay_Color rowBg = ClayWidgets__FadeToClear(ctx->theme.selectionColor);
+            Clay_Color rowText = ctx->theme.textColor;
             if (selected) {
                 rowBg = ctx->theme.accentMutedColor;
             } else if (rowOver) {
-                rowBg = ctx->theme.hoverColor;
+                rowBg = ctx->theme.selectionColor;
+                rowText = ctx->theme.onSelectionColor;
             }
 
             CLAY(rowId, {
@@ -120,7 +124,7 @@ bool ClayWidgets_ListBox(
                 .transition = ClayWidgets__ColorTransition(ctx),
             }) {
                 CLAY_TEXT(items[i], {
-                    .textColor = ctx->theme.textColor,
+                    .textColor = rowText,
                     .fontId = ctx->theme.fontBody,
                     .fontSize = ctx->theme.fontSizeBody,
                     .wrapMode = CLAY_TEXT_WRAP_NONE,

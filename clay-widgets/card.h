@@ -27,6 +27,9 @@ void ClayWidgets_BeginCardEx(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_S
         return;
     }
 
+    // A card is the panel a classic dialog groups its controls on: raised out
+    // of the window surface rather than outlined on it.
+    ClayWidgets_SetEdge(ctx, id, CLAY_WIDGETS_EDGE_RAISED);
     ClayWidgets__BeginElement(id, CLAY__INIT(Clay_ElementDeclaration){
         .layout = {
             .sizing = { .width = width, .height = height },
@@ -36,10 +39,7 @@ void ClayWidgets_BeginCardEx(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_S
         },
         .backgroundColor = ctx->theme.surfaceAltColor,
         .cornerRadius = CLAY_CORNER_RADIUS((float)ctx->theme.radiusMd),
-        .border = {
-            .color = ctx->theme.borderColor,
-            .width = { .left = 1, .right = 1, .top = 1, .bottom = 1 },
-        },
+        .border = ClayWidgets__Border(ctx, ctx->theme.borderColor),
     });
 
     if (title.length > 0 && title.chars) {

@@ -57,32 +57,31 @@ bool ClayWidgets_BeginTable(ClayWidgets_Context *ctx, Clay_ElementId id, const C
         ctx->tableColWidths[i] = columns[i].width;
     }
 
+    // A list view: white well, raised header buttons across the top.
+    ClayWidgets_SetEdge(ctx, id, CLAY_WIDGETS_EDGE_SUNKEN);
     ClayWidgets__BeginElement(id, CLAY__INIT(Clay_ElementDeclaration){
         .layout = {
             .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_FIT(0, 0) },
+            .padding = CLAY_PADDING_ALL((uint16_t)(ClayWidgets__IsBeveled(ctx) ? 2 : 0)),
             .layoutDirection = CLAY_TOP_TO_BOTTOM,
         },
-        .backgroundColor = ctx->theme.surfaceAltColor,
+        .backgroundColor = ctx->theme.fieldColor,
         .cornerRadius = CLAY_CORNER_RADIUS((float)ctx->theme.radiusMd),
         .clip = { .horizontal = true, .vertical = false, .childOffset = { 0, 0 } },
-        .border = {
-            .color = ctx->theme.borderColor,
-            .width = { .left = 1, .right = 1, .top = 1, .bottom = 1 },
-        },
+        .border = ClayWidgets__Border(ctx, ctx->theme.borderColor),
     });
 
     // Header row: a darker strip with muted column titles, divided from the body.
-    CLAY_AUTO_ID({
+    Clay_ElementId headerRowId = ClayWidgets__ChildId(id, CLAY_STRING("ClayWidgetsTableHeader"), 0);
+    ClayWidgets_SetEdge(ctx, headerRowId, CLAY_WIDGETS_EDGE_RAISED_THIN);
+    CLAY(headerRowId, {
         .layout = {
             .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_FIT(0, 0) },
             .childGap = 0,
             .layoutDirection = CLAY_LEFT_TO_RIGHT,
         },
         .backgroundColor = ctx->theme.surfaceColor,
-        .border = {
-            .color = ctx->theme.borderColor,
-            .width = { .left = 0, .right = 0, .top = 0, .bottom = 1 },
-        },
+        .border = ClayWidgets__EdgeBorder(ctx, ctx->theme.borderColor, CLAY__INIT(Clay_BorderWidth){ 0, 0, 0, 1, 0 }),
     }) {
         for (int32_t i = 0; i < ctx->tableColCount; ++i) {
             CLAY_AUTO_ID({
@@ -115,13 +114,13 @@ bool ClayWidgets_TableRow(ClayWidgets_Context *ctx, Clay_ElementId rowId, const 
     }
     bool clicked = ClayWidgets__ConsumeClick(ctx, over);
 
-    Clay_Color rowBg = ClayWidgets__FadeToClear(ctx->theme.hoverColor);
+    Clay_Color rowBg = ClayWidgets__FadeToClear(ctx->theme.selectionColor);
     if (selected) {
         rowBg = ctx->theme.accentMutedColor;
     } else if (over) {
-        rowBg = ctx->theme.hoverColor;
-    } else if ((rowIndex & 1) != 0) {
-        rowBg = ctx->theme.surfaceColor; // zebra stripe
+        rowBg = ctx->theme.selectionColor;
+    } else if ((rowIndex & 1) != 0 && !ClayWidgets__IsBeveled(ctx)) {
+        rowBg = ctx->theme.surfaceColor; // zebra stripe; a classic list view is plain white
     }
 
     int32_t count = cellCount < ctx->tableColCount ? cellCount : ctx->tableColCount;

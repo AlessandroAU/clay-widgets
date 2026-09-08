@@ -117,7 +117,8 @@ bool ClayWidgets_BeginMenu(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_Str
         }
     }
 
-    Clay_Color triggerBg = (isOpen || overTrigger) ? ctx->theme.hoverColor : ClayWidgets__FadeToClear(ctx->theme.hoverColor);
+    bool highlighted = isOpen || overTrigger;
+    Clay_Color triggerBg = highlighted ? ctx->theme.selectionColor : ClayWidgets__FadeToClear(ctx->theme.selectionColor);
 
     CLAY(id, {
         .layout = {
@@ -135,7 +136,7 @@ bool ClayWidgets_BeginMenu(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_Str
         .transition = ClayWidgets__ColorTransition(ctx),
     }) {
         CLAY_TEXT(title, {
-            .textColor = ctx->theme.textColor,
+            .textColor = highlighted ? ctx->theme.onSelectionColor : ctx->theme.textColor,
             .fontId = ctx->theme.fontBody,
             .fontSize = ctx->theme.fontSizeBody,
             .wrapMode = CLAY_TEXT_WRAP_NONE,
@@ -158,6 +159,9 @@ bool ClayWidgets_BeginMenu(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_Str
         && triggerBox.boundingBox.y > ctx->layoutDimensions.height / 2;
     float xOffset = fminf(0, ctx->layoutDimensions.width - triggerBox.boundingBox.x - width);
     float maxHeight = fmaxf(1, up ? triggerBox.boundingBox.y - 4 : ctx->layoutDimensions.height - triggerBox.boundingBox.y - triggerBox.boundingBox.height - 4);
+    // The panel is a raised plate floating over the window, shadow and all.
+    ClayWidgets_SetEdge(ctx, dropdownId, CLAY_WIDGETS_EDGE_RAISED);
+    ClayWidgets_SetShadow(ctx, dropdownId);
     ClayWidgets__BeginScrollElement(dropdownId, CLAY__INIT(Clay_ElementDeclaration){
         .layout = {
             .sizing = { .width = CLAY_SIZING_FIT(180, ctx->layoutDimensions.width), .height = CLAY_SIZING_FIT(0, maxHeight) },
@@ -178,10 +182,7 @@ bool ClayWidgets_BeginMenu(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_Str
             .attachTo = CLAY_ATTACH_TO_ELEMENT_WITH_ID,
         },
         .clip = { .vertical = true },
-        .border = {
-            .color = ctx->theme.borderColor,
-            .width = { .left = 1, .right = 1, .top = 1, .bottom = 1 },
-        },
+        .border = ClayWidgets__Border(ctx, ctx->theme.borderColor),
     });
 
     return true;
@@ -238,12 +239,12 @@ bool ClayWidgets_MenuItem(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_Stri
             },
             .childAlignment = { .x = CLAY_ALIGN_X_LEFT, .y = CLAY_ALIGN_Y_CENTER },
         },
-        .backgroundColor = over ? ctx->theme.hoverColor : ClayWidgets__FadeToClear(ctx->theme.hoverColor),
+        .backgroundColor = over ? ctx->theme.selectionColor : ClayWidgets__FadeToClear(ctx->theme.selectionColor),
         .cornerRadius = CLAY_CORNER_RADIUS((float)ctx->theme.radiusSm),
         .transition = ClayWidgets__ColorTransition(ctx),
     }) {
         CLAY_TEXT(label, {
-            .textColor = ctx->theme.textColor,
+            .textColor = over ? ctx->theme.onSelectionColor : ctx->theme.textColor,
             .fontId = ctx->theme.fontBody,
             .fontSize = ctx->theme.fontSizeBody,
             .wrapMode = CLAY_TEXT_WRAP_NONE,
@@ -343,10 +344,7 @@ bool ClayWidgets_BeginContextMenu(ClayWidgets_Context *ctx, Clay_ElementId menuI
             .attachTo = CLAY_ATTACH_TO_ROOT,
         },
         .clip = { .vertical = true },
-        .border = {
-            .color = ctx->theme.borderColor,
-            .width = { .left = 1, .right = 1, .top = 1, .bottom = 1 },
-        },
+        .border = ClayWidgets__Border(ctx, ctx->theme.borderColor),
     });
 
     return true;

@@ -146,12 +146,18 @@ bool ClayWidgets_BeginModalEx(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_
         .transition = ClayWidgets__ScrimFadeIn(ctx),
     });
 
-    // Dialog panel.
+    // Dialog panel. A classic dialog is a raised window whose title bar runs
+    // edge to edge, so on a beveled theme the panel's own padding shrinks to the
+    // frame and the body below the title bar carries the content inset instead.
+    bool beveled = ClayWidgets__IsBeveled(ctx);
+    uint16_t frameInset = beveled ? 3 : ctx->theme.spacing.lg;
+    ClayWidgets_SetEdge(ctx, dialogId, CLAY_WIDGETS_EDGE_RAISED);
+    ClayWidgets_SetShadow(ctx, dialogId);
     ClayWidgets__BeginElement(dialogId, CLAY__INIT(Clay_ElementDeclaration){
         .layout = {
             .sizing = { .width = CLAY_SIZING_FIXED(dialogWidth), .height = CLAY_SIZING_FIT(0, 0) },
-            .padding = CLAY_PADDING_ALL(ctx->theme.spacing.lg),
-            .childGap = ctx->theme.spacing.md,
+            .padding = CLAY_PADDING_ALL(frameInset),
+            .childGap = beveled ? ctx->theme.spacing.xs : ctx->theme.spacing.md,
             .layoutDirection = CLAY_TOP_TO_BOTTOM,
         },
         .backgroundColor = ctx->theme.surfaceColor,
@@ -161,31 +167,33 @@ bool ClayWidgets_BeginModalEx(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_
             .attachPoints = { .element = CLAY_ATTACH_POINT_CENTER_CENTER, .parent = CLAY_ATTACH_POINT_CENTER_CENTER },
             .attachTo = options.draggable ? CLAY_ATTACH_TO_ELEMENT_WITH_ID : CLAY_ATTACH_TO_NONE,
         },
-        .border = {
-            .color = ctx->theme.borderColor,
-            .width = { .left = 1, .right = 1, .top = 1, .bottom = 1 },
-        },
+        .border = ClayWidgets__Border(ctx, ctx->theme.borderColor),
     });
 
-    // Title row: heading on the left, close button on the right.
+    // Title row: heading on the left, close button on the right. On a beveled
+    // theme it becomes the window's title bar: full-bleed accent fill, light
+    // text, small type.
     CLAY(titleId, {
         .layout = {
             .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_FIT(0, 0) },
+            .padding = beveled
+                ? (Clay_Padding){ ctx->theme.spacing.xs, ctx->theme.spacing.xs, 2, 2 }
+                : (Clay_Padding){ 0, 0, 0, 0 },
             .childGap = ctx->theme.spacing.sm,
             .childAlignment = { .x = CLAY_ALIGN_X_LEFT, .y = CLAY_ALIGN_Y_CENTER },
             .layoutDirection = CLAY_LEFT_TO_RIGHT,
         },
         // A render command with this ID keeps pointer capture alive during drag.
-        .backgroundColor = ctx->theme.surfaceColor,
+        .backgroundColor = beveled ? ctx->theme.accentColor : ctx->theme.surfaceColor,
     }) {
         CLAY_AUTO_ID({
             .layout = { .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_FIT(0, 0) } },
         }) {
             if (title.length > 0 && title.chars) {
                 CLAY_TEXT(title, {
-                    .textColor = ctx->theme.textColor,
+                    .textColor = beveled ? ctx->theme.onAccentColor : ctx->theme.textColor,
                     .fontId = ctx->theme.fontHeading,
-                    .fontSize = ctx->theme.fontSizeHeading,
+                    .fontSize = beveled ? ctx->theme.fontSizeBody : ctx->theme.fontSizeHeading,
                 });
             }
         }
@@ -193,7 +201,9 @@ bool ClayWidgets_BeginModalEx(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_
         // Fix the close button to a square (side = the label's line height
         // plus the button's own padding); left to fit, the lone narrow X
         // glyph would produce a tall rectangle.
-        float closeSize = (float)ctx->theme.fontSizeBody + 2.0f * (float)ctx->theme.spacing.md;
+        float closeSize = beveled
+            ? (float)ctx->theme.fontSizeBody + 8.0f
+            : (float)ctx->theme.fontSizeBody + 2.0f * (float)ctx->theme.spacing.md;
         ClayWidgets_ButtonOptions closeOptions = {
             CLAY_WIDGETS_BUTTON_DEFAULT,
             false,
@@ -204,7 +214,23 @@ bool ClayWidgets_BeginModalEx(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_
         }
     }
 
-    ClayWidgets_Separator(ctx);
+    // The title bar already separates itself from the body under a beveled
+    // theme; a rule under it would just read as a second frame.
+    if (!beveled) {
+        ClayWidgets_Separator(ctx);
+    }
+
+    // Body: carries the content inset, so the title bar above it can run the
+    // full width of the dialog. Closed by EndModal.
+    ClayWidgets__BeginElement(ClayWidgets__ChildId(dialogId, CLAY_STRING("ClayWidgetsModalBody"), 0),
+        CLAY__INIT(Clay_ElementDeclaration){
+            .layout = {
+                .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_FIT(0, 0) },
+                .padding = beveled ? CLAY_PADDING_ALL(ctx->theme.spacing.md) : (Clay_Padding){ 0, 0, 0, 0 },
+                .childGap = ctx->theme.spacing.md,
+                .layoutDirection = CLAY_TOP_TO_BOTTOM,
+            },
+        });
 
     ClayWidgets__Describe(ctx,dialogId,CLAY_WIDGETS_ROLE_DIALOG,title,false,false);
     return true;
@@ -218,6 +244,7 @@ void ClayWidgets_EndModal(ClayWidgets_Context *ctx, Clay_ElementId id) {
     ctx->currentModalId = ctx->modalParents[ctx->overlayDepth - 1];
     ctx->insideFocusTrap = ctx->currentModalId != 0;
     ClayWidgets__PopOverlay(ctx);
+    ClayWidgets__EndElement(); // dialog body
     ClayWidgets__EndElement(); // dialog panel
     ClayWidgets__EndElement(); // scrim
 }

@@ -73,8 +73,17 @@ bool ClayWidgets_TabEx(
 
     Clay_Color transparent = { 0, 0, 0, 0 };
 
+    // Classic tabs are raised plates whether or not they're the current one -
+    // the selected tab reads as selected because it carries the page's own
+    // surface color, not because of an underline.
+    bool beveled = ClayWidgets__IsBeveled(ctx);
+    ClayWidgets_SetEdge(ctx, id, CLAY_WIDGETS_EDGE_RAISED);
+    if (focused) {
+        ClayWidgets__FocusRect(ctx, id);
+    }
+
     if (style == CLAY_WIDGETS_TAB_STYLE_ATTACHED) {
-        Clay_Color background = ClayWidgets__FadeToClear(ctx->theme.hoverColor);
+        Clay_Color background = beveled ? ctx->theme.surfaceAltColor : ClayWidgets__FadeToClear(ctx->theme.hoverColor);
         if (selected) {
             background = ctx->theme.surfaceColor;
         } else if (over) {
@@ -93,7 +102,7 @@ bool ClayWidgets_TabEx(
 
         Clay_Color labelColor = ctx->theme.textMutedColor;
         if (selected) {
-            labelColor = ctx->theme.accentColor;
+            labelColor = beveled ? ctx->theme.textColor : ctx->theme.accentColor;
         } else if (over) {
             labelColor = ctx->theme.textColor;
         }
@@ -106,10 +115,7 @@ bool ClayWidgets_TabEx(
             },
             .backgroundColor = background,
             .cornerRadius = { .topLeft = (float)ctx->theme.radiusSm, .topRight = (float)ctx->theme.radiusSm, .bottomLeft = 0, .bottomRight = 0 },
-            .border = {
-                .color = underlineColor,
-                .width = { .left = 0, .right = 0, .top = 0, .bottom = underlineWidth },
-            },
+            .border = ClayWidgets__EdgeBorder(ctx, underlineColor, CLAY__INIT(Clay_BorderWidth){ 0, 0, 0, underlineWidth, 0 }),
             .transition = ClayWidgets__ColorTransition(ctx),
         }) {
             CLAY_TEXT(text, {
@@ -125,9 +131,12 @@ bool ClayWidgets_TabEx(
 
     Clay_Color background = ctx->theme.surfaceAltColor;
     if (selected) {
-        background = ctx->theme.accentColor;
+        background = beveled ? ctx->theme.pressedColor : ctx->theme.accentColor;
     } else if (over) {
         background = ctx->theme.hoverColor;
+    }
+    if (beveled && selected) {
+        ClayWidgets_SetEdge(ctx, id, CLAY_WIDGETS_EDGE_SUNKEN);
     }
 
     Clay_Color borderColor = ctx->theme.borderColor;
@@ -145,14 +154,11 @@ bool ClayWidgets_TabEx(
         },
         .backgroundColor = background,
         .cornerRadius = CLAY_CORNER_RADIUS((float)ctx->theme.radiusMd),
-        .border = {
-            .color = borderColor,
-            .width = { .left = 1, .right = 1, .top = 1, .bottom = 1 },
-        },
+        .border = ClayWidgets__Border(ctx, borderColor),
         .transition = ClayWidgets__ColorTransition(ctx),
     }) {
         CLAY_TEXT(text, {
-            .textColor = selected ? ctx->theme.surfaceColor : ctx->theme.textColor,
+            .textColor = (selected && !beveled) ? ctx->theme.surfaceColor : ctx->theme.textColor,
             .fontId = ctx->theme.fontBody,
             .fontSize = ctx->theme.fontSizeBody,
             .textAlignment = CLAY_TEXT_ALIGN_CENTER,

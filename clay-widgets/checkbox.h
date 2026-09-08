@@ -53,6 +53,22 @@ bool ClayWidgets_CheckboxEx(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_St
     Clay_Color boxBorder = (!disabled && (focused || over))
         ? ctx->theme.focusRingColor
         : (*value ? checkFill : ctx->theme.borderColor);
+    Clay_Color markColor = ctx->theme.onAccentColor;
+
+    // A classic check box is a sunken white well with a mark in it, never a
+    // filled chip: the 3D edge is what says "checkable", so the well stays
+    // paper white and the tick is drawn in the text color.
+    Clay_ElementId boxId = ClayWidgets__ChildId(id, CLAY_STRING("ClayWidgetsCheckboxBox"), 0);
+    if (ClayWidgets__IsBeveled(ctx)) {
+        boxBg = disabled
+            ? ClayWidgets__MixColor(ctx->theme.fieldColor, ctx->theme.surfaceColor, ctx->theme.disabledMix)
+            : ctx->theme.fieldColor;
+        markColor = labelColor;
+        ClayWidgets_SetEdge(ctx, boxId, CLAY_WIDGETS_EDGE_SUNKEN);
+        if (focused) {
+            ClayWidgets__FocusRect(ctx, boxId);
+        }
+    }
 
     CLAY(id, {
         .layout = {
@@ -62,7 +78,7 @@ bool ClayWidgets_CheckboxEx(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_St
             .layoutDirection = CLAY_LEFT_TO_RIGHT,
         },
     }) {
-        CLAY_AUTO_ID({
+        CLAY(boxId, {
             .layout = {
                 .sizing = {
                     .width = CLAY_SIZING_FIXED(20),
@@ -72,14 +88,11 @@ bool ClayWidgets_CheckboxEx(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_St
             },
             .backgroundColor = boxBg,
             .cornerRadius = CLAY_CORNER_RADIUS((float)ctx->theme.radiusSm),
-            .border = {
-                .color = boxBorder,
-                .width = { .left = 1, .right = 1, .top = 1, .bottom = 1 },
-            },
+            .border = ClayWidgets__Border(ctx, boxBorder),
         }) {
             if (*value) {
                 CLAY_TEXT(CLAY_STRING("X"), {
-                    .textColor = ctx->theme.onAccentColor,
+                    .textColor = markColor,
                     .fontId = ctx->theme.fontBody,
                     .fontSize = 14,
                 });
