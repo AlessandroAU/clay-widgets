@@ -156,8 +156,11 @@ Notes and knobs:
 
 Every color, radius, font size and spacing step lives in `ClayWidgets_Theme`, a
 plain struct on the context that can be reassigned at any time - the demo swaps
-presets live. Four ship with the library: **Slate**, **Sand**, **Forest** and
-**Windows**, a classic Windows 3.x/9x look.
+presets live. Six ship with the library: **Slate**, **Sand**, **Forest**,
+**Windows** (a classic Windows 3.x/9x look) and **macOS** in light and dark - a
+modern Mac look: a near-white (or near-black) window with control surfaces
+floating on it, hairline separators, generous corner radii and the system blue
+accent.
 
 The classic preset is more than a palette. It sets `edgeStyle` to
 `CLAY_WIDGETS_EDGE_STYLE_BEVEL`, which replaces every widget's flat 1px border
@@ -198,7 +201,8 @@ The demo is organized like a small application, with four views:
   "Editors & data" card adds the heavier controls: an undo/redo text editor with
   a read-only switch, a searchable combo, a sortable/resizable 10,000-row data
   table, a split pane and a resizable panel.
-- **Settings** (3): theme preset switching (Slate, Sand, Forest, Windows), an
+- **Settings** (3): theme preset switching (Slate, Sand, Forest, Windows, macOS
+  light and dark), an
   animations toggle, a notifications toggle that gates the demo's toasts, and
   a live diagnostics card (focused widget id, pointer, fps).
 
@@ -416,7 +420,8 @@ clay-widgets-demo --shot out.png [--view N] [--frames N] [--theme N] [--size W H
   state. Because animations are time-based, without this a low `--frames` count
   captures a mid-transition frame; either pass `--no-anim`, or raise `--frames`
   (e.g. 20+) to let the animation settle.
-- `--theme` picks a preset (1 Slate, 2 Sand, 3 Forest, 4 Windows).
+- `--theme` picks a preset (1 Slate, 2 Sand, 3 Forest, 4 Windows, 5 macOS,
+  6 macOS Dark).
 - `--mouse`/`--mousedown` inject a pointer and a scripted click (`--rightclick`
   makes that a right-click, e.g. to open a context menu); `--mouse2`/
   `--mousedown2` add a second interaction phase (e.g. open a menu, then choose

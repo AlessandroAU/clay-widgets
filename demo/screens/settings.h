@@ -17,6 +17,8 @@ static void DrawSettingsView(ClayWidgets_Context &ui, DemoState &s) {
             ClayWidgets_Radio(&ui, CLAY_ID("ThemeSand"), CLAY_STRING("Sand"), CLAY_WIDGETS_THEME_PRESET_SAND, &s.themePreset);
             ClayWidgets_Radio(&ui, CLAY_ID("ThemeForest"), CLAY_STRING("Forest"), CLAY_WIDGETS_THEME_PRESET_FOREST, &s.themePreset);
             ClayWidgets_Radio(&ui, CLAY_ID("ThemeWin95"), CLAY_STRING("Windows"), CLAY_WIDGETS_THEME_PRESET_WIN95, &s.themePreset);
+            ClayWidgets_Radio(&ui, CLAY_ID("ThemeMacLight"), CLAY_STRING("macOS"), CLAY_WIDGETS_THEME_PRESET_MAC_LIGHT, &s.themePreset);
+            ClayWidgets_Radio(&ui, CLAY_ID("ThemeMacDark"), CLAY_STRING("macOS Dark"), CLAY_WIDGETS_THEME_PRESET_MAC_DARK, &s.themePreset);
 
             ClayWidgets_Separator(&ui);
             ClayWidgets_Toggle(&ui, CLAY_ID("AnimToggle"), CLAY_STRING("Animate hover and state changes"), &s.animationsOn);
