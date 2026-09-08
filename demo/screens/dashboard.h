@@ -64,7 +64,7 @@ static void DrawDashboardView(ClayWidgets_Context &ui, DemoState &s, bool compac
             }) {
                 ClayWidgets_Badge(&ui, CLAY_STRING("immediate mode"), CLAY_WIDGETS_BADGE_ACCENT);
                 ClayWidgets_Badge(&ui, CLAY_STRING("keyboard navigable"), CLAY_WIDGETS_BADGE_SUCCESS);
-                ClayWidgets_Badge(&ui, CLAY_STRING("4 theme presets"), CLAY_WIDGETS_BADGE_NEUTRAL);
+                ClayWidgets_Badge(&ui, CLAY_STRING("6 theme presets"), CLAY_WIDGETS_BADGE_NEUTRAL);
                 ClayWidgets_Badge(&ui, CLAY_STRING("runs on web"), CLAY_WIDGETS_BADGE_WARNING);
             }
         }

@@ -10,6 +10,8 @@ typedef enum ClayWidgets_ThemePreset {
     CLAY_WIDGETS_THEME_PRESET_SAND = 2,
     CLAY_WIDGETS_THEME_PRESET_FOREST = 3,
     CLAY_WIDGETS_THEME_PRESET_WIN95 = 4,
+    CLAY_WIDGETS_THEME_PRESET_MAC_LIGHT = 5,
+    CLAY_WIDGETS_THEME_PRESET_MAC_DARK = 6,
 } ClayWidgets_ThemePreset;
 
 ClayWidgets_Theme ClayWidgets_DefaultTheme(void);
@@ -17,6 +19,8 @@ ClayWidgets_Theme ClayWidgets_ThemeSlate(void);
 ClayWidgets_Theme ClayWidgets_ThemeSand(void);
 ClayWidgets_Theme ClayWidgets_ThemeForest(void);
 ClayWidgets_Theme ClayWidgets_ThemeWin95(void);
+ClayWidgets_Theme ClayWidgets_ThemeMacLight(void);
+ClayWidgets_Theme ClayWidgets_ThemeMacDark(void);
 ClayWidgets_Theme ClayWidgets_ThemeFromPreset(ClayWidgets_ThemePreset preset);
 
 #ifdef CLAY_WIDGETS_IMPLEMENTATION
@@ -209,6 +213,91 @@ ClayWidgets_Theme ClayWidgets_ThemeWin95(void) {
     return theme;
 }
 
+// A modern macOS look (Big Sur and later): a near-white window with white
+// control surfaces floating on it, hairline separators, generous corner radii
+// and the system blue accent. Unlike the classic preset this needs no new
+// drawing - the flat edge style already draws exactly what the look is made of -
+// so it is a palette, a type scale and a geometry, and nothing else.
+//
+// The two variants differ only in their colors; everything about their
+// proportions is shared through ClayWidgets__MacGeometry.
+static void ClayWidgets__MacGeometry(ClayWidgets_Theme *theme) {
+    // Softer than the library default: a macOS control is a rounded rectangle
+    // first and a bordered box second.
+    theme->radiusSm = 6;
+    theme->radiusMd = 12;
+
+    // Smaller body text with more room around it, the way a Mac window breathes.
+    theme->fontSizeBody = 15;
+    theme->fontSizeHeading = 22;
+    theme->fontSizeSmall = 12;
+    theme->spacing.xs = 4;
+    theme->spacing.sm = 8;
+    theme->spacing.md = 12;
+    theme->spacing.lg = 20;
+
+    // Menu items, dropdown items and hovered rows take the accent as a solid
+    // bar with light text, the way a Mac menu highlights.
+    theme->selectionColor = theme->accentColor;
+    theme->onSelectionColor = (Clay_Color){255, 255, 255, 255};
+    theme->onAccentColor = (Clay_Color){255, 255, 255, 255};
+
+    // No drop shadow: a Mac popover casts a soft shadow on every side, and the
+    // one this library can draw is a hard offset pair of strips, which would
+    // read as a sticker rather than as depth. Better none than a wrong one.
+    theme->shadowOffset = 0;
+}
+
+ClayWidgets_Theme ClayWidgets_ThemeMacLight(void) {
+    ClayWidgets_Theme theme = ClayWidgets__BuildTheme(
+        (Clay_Color){29, 29, 31, 255},       // textColor        - near black
+        (Clay_Color){134, 134, 139, 255},    // textMutedColor   - secondary label
+        (Clay_Color){245, 245, 247, 255},    // surfaceColor     - window background
+        (Clay_Color){255, 255, 255, 255},    // surfaceAltColor  - cards and controls
+        (Clay_Color){0, 122, 255, 255},      // accentColor      - system blue
+        (Clay_Color){0, 122, 255, 72},       // accentMutedColor - selected row wash
+        (Clay_Color){209, 209, 214, 255},    // borderColor      - hairline
+        (Clay_Color){242, 242, 247, 255},    // hoverColor       - control, hovered
+        (Clay_Color){229, 229, 234, 255},    // pressedColor     - control, held
+        (Clay_Color){0, 113, 227, 255}       // focusRingColor   - keyboard focus
+    );
+
+    theme.successColor = (Clay_Color){52, 199, 89, 255};
+    theme.warningColor = (Clay_Color){255, 149, 0, 255};
+    theme.dangerColor = (Clay_Color){255, 59, 48, 255};
+    theme.scrimColor = (Clay_Color){0, 0, 0, 90};
+    theme.disabledMix = 0.55f;
+
+    ClayWidgets__MacGeometry(&theme);
+    return theme;
+}
+
+ClayWidgets_Theme ClayWidgets_ThemeMacDark(void) {
+    ClayWidgets_Theme theme = ClayWidgets__BuildTheme(
+        (Clay_Color){245, 245, 247, 255},    // textColor        - near white
+        (Clay_Color){152, 152, 157, 255},    // textMutedColor   - secondary label
+        (Clay_Color){28, 28, 30, 255},       // surfaceColor     - window background
+        (Clay_Color){44, 44, 46, 255},       // surfaceAltColor  - cards and controls
+        (Clay_Color){10, 132, 255, 255},     // accentColor      - system blue, dark
+        (Clay_Color){10, 132, 255, 96},      // accentMutedColor - selected row wash
+        (Clay_Color){58, 58, 60, 255},       // borderColor      - hairline
+        (Clay_Color){58, 58, 60, 255},       // hoverColor       - control, hovered
+        (Clay_Color){72, 72, 74, 255},       // pressedColor     - control, held
+        (Clay_Color){64, 156, 255, 255}      // focusRingColor   - keyboard focus
+    );
+
+    theme.successColor = (Clay_Color){48, 209, 88, 255};
+    theme.warningColor = (Clay_Color){255, 159, 10, 255};
+    theme.dangerColor = (Clay_Color){255, 69, 58, 255};
+    theme.scrimColor = (Clay_Color){0, 0, 0, 140};
+
+    ClayWidgets__MacGeometry(&theme);
+    // Entry fields recede in dark mode rather than lifting: a text field is
+    // darker than the card it sits on, not lighter.
+    theme.fieldColor = (Clay_Color){28, 28, 30, 255};
+    return theme;
+}
+
 ClayWidgets_Theme ClayWidgets_ThemeFromPreset(ClayWidgets_ThemePreset preset) {
     switch (preset) {
         case CLAY_WIDGETS_THEME_PRESET_SAND:
@@ -217,6 +306,10 @@ ClayWidgets_Theme ClayWidgets_ThemeFromPreset(ClayWidgets_ThemePreset preset) {
             return ClayWidgets_ThemeForest();
         case CLAY_WIDGETS_THEME_PRESET_WIN95:
             return ClayWidgets_ThemeWin95();
+        case CLAY_WIDGETS_THEME_PRESET_MAC_LIGHT:
+            return ClayWidgets_ThemeMacLight();
+        case CLAY_WIDGETS_THEME_PRESET_MAC_DARK:
+            return ClayWidgets_ThemeMacDark();
         case CLAY_WIDGETS_THEME_PRESET_SLATE:
         default:
             return ClayWidgets_ThemeSlate();

@@ -190,7 +190,10 @@ ClayWidgets_Theme ClayWidgets_ThemeSlate(void);
 ClayWidgets_Theme ClayWidgets_ThemeSand(void);
 ClayWidgets_Theme ClayWidgets_ThemeForest(void);
 ClayWidgets_Theme ClayWidgets_ThemeWin95(void);
-ClayWidgets_Theme ClayWidgets_ThemeFromPreset(ClayWidgets_ThemePreset preset); // SLATE=1, SAND=2, FOREST=3, WIN95=4
+ClayWidgets_Theme ClayWidgets_ThemeMacLight(void);
+ClayWidgets_Theme ClayWidgets_ThemeMacDark(void);
+// SLATE=1, SAND=2, FOREST=3, WIN95=4, MAC_LIGHT=5, MAC_DARK=6
+ClayWidgets_Theme ClayWidgets_ThemeFromPreset(ClayWidgets_ThemePreset preset);
 ```
 
 `ctx->animationsEnabled` (default true) globally turns transitions off so they

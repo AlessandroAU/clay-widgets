@@ -28,8 +28,8 @@ static void DrawHeader(ClayWidgets_Context &ui, DemoState &s, bool compactLayout
         if (!compactLayout) {
             int32_t themeIndex = s.themePreset - 1;
             if (themeIndex < 0) themeIndex = 0;
-            if (themeIndex > 3) themeIndex = 3;
-            if (ClayWidgets_Segmented(&ui, CLAY_ID("HeaderThemeSeg"), kThemeNames, 4, &themeIndex)) {
+            if (themeIndex > kThemeCount - 1) themeIndex = kThemeCount - 1;
+            if (ClayWidgets_Segmented(&ui, CLAY_ID("HeaderThemeSeg"), kThemeNames, kThemeCount, &themeIndex)) {
                 SetStatus(s, "Theme: %s", kThemeNames[themeIndex].chars);
             }
             s.themePreset = themeIndex + 1;

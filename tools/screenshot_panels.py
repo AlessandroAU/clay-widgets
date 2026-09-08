@@ -57,6 +57,8 @@ THEMES: dict[int, str] = {
     2: "Sand",
     3: "Forest",
     4: "Windows",
+    5: "macOS",
+    6: "macOS Dark",
 }
 
 

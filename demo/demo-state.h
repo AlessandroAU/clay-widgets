@@ -64,12 +64,17 @@ static const Clay_String kTaskFilterNames[] = {
     CLAY_STRING("Done"),
 };
 
+// Short enough to fit the header's segmented switcher; the Settings radios
+// spell them out. Index + 1 is the ClayWidgets_ThemePreset value.
 static const Clay_String kThemeNames[] = {
     CLAY_STRING("Slate"),
     CLAY_STRING("Sand"),
     CLAY_STRING("Forest"),
     CLAY_STRING("Win95"),
+    CLAY_STRING("Mac"),
+    CLAY_STRING("Mac Dark"),
 };
+static const int32_t kThemeCount = (int32_t)(sizeof(kThemeNames) / sizeof(kThemeNames[0]));
 
 static const Clay_String kDensityNames[] = {
     CLAY_STRING("Compact"),
