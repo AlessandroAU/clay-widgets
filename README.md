@@ -202,9 +202,9 @@ The demo is organized like a small application, with four views:
   a read-only switch, a searchable combo, a sortable/resizable 10,000-row data
   table, a split pane and a resizable panel.
 - **Settings** (3): theme preset switching (Slate, Sand, Forest, Windows, macOS
-  light and dark), an
-  animations toggle, a notifications toggle that gates the demo's toasts, and
-  a live diagnostics card (focused widget id, pointer, fps).
+  light and dark), a text-size slider that scales the active preset's type ramp
+  live, an animations toggle, a notifications toggle that gates the demo's
+  toasts, and a live diagnostics card (focused widget id, pointer, fps).
 
 | Dashboard | Tasks |
 | --- | --- |

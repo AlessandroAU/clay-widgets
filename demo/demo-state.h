@@ -224,6 +224,7 @@ struct DemoState {
 
     // Settings
     int32_t themePreset = CLAY_WIDGETS_THEME_PRESET_SLATE;
+    float fontScale = 1.0f; // multiplies the active preset's type ramp
     bool animationsOn = true;
     bool notifications = true;
     bool verboseLogging = false;
@@ -281,6 +282,28 @@ static Clay_String FormatString(DemoState &s, const char *fmt, ...) {
 
 // Small dim caption. The kit only ships Label, so this drops down to a raw
 // CLAY_TEXT - which is also how apps are expected to extend the kit.
+// Scales one entry of a theme's type ramp, keeping it a whole number of pixels
+// (the backend bakes a font atlas per pixel size) and never letting it collapse
+// to something unreadable.
+static uint16_t ScaledFontSize(uint16_t size, float scale) {
+    long scaled = std::lround(static_cast<float>(size) * scale);
+    if (scaled < 8) scaled = 8;
+    if (scaled > 96) scaled = 96;
+    return static_cast<uint16_t>(scaled);
+}
+
+// Applies the user's text-size setting to a freshly built theme. The demo
+// rebuilds ui.theme from its preset every frame, so this always multiplies the
+// preset's own sizes and never compounds frame over frame.
+static void ApplyFontScale(ClayWidgets_Theme &theme, float scale) {
+    if (scale == 1.0f) {
+        return;
+    }
+    theme.fontSizeBody = ScaledFontSize(theme.fontSizeBody, scale);
+    theme.fontSizeHeading = ScaledFontSize(theme.fontSizeHeading, scale);
+    theme.fontSizeSmall = ScaledFontSize(theme.fontSizeSmall, scale);
+}
+
 static void MutedLabel(ClayWidgets_Context &ui, Clay_String text) {
     CLAY_TEXT(text, {
         .textColor = ui.theme.textMutedColor,
