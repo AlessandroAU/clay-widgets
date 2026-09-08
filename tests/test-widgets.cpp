@@ -1544,6 +1544,37 @@ static void TestRoundedCornersClipChildren(void) {
     CHECK(ui.theme.edgeStyle == CLAY_WIDGETS_EDGE_STYLE_FLAT);
 }
 
+// The controls that sit inline with a label - check box, radio, toggle - are
+// sized from the body text through one shared derivation, so they keep their
+// proportion to the label beside them at any type scale instead of staying at a
+// fixed pixel size.
+static void TestControlsScaleWithType(void) {
+    Clay_ElementId checkId = CLAY_ID("ScaleCheck");
+    Clay_ElementId boxId = ClayWidgets__ChildId(checkId, CLAY_STRING("ClayWidgetsCheckboxBox"), 0);
+    bool value = false;
+    auto body = [&]() { ClayWidgets_Checkbox(&ui, checkId, CLAY_STRING("Label"), &value); };
+
+    ClayWidgets_Theme saved = ui.theme;
+
+    Frame(MakeInput(), body);
+    Clay_RenderCommandArray before = Frame(MakeInput(), body);
+    Clay_RenderCommand box = {};
+    CHECK(FindCommandById(before, boxId.id, &box));
+    CHECK(box.commandType == CLAY_RENDER_COMMAND_TYPE_RECTANGLE);
+    CHECK(box.boundingBox.height == ClayWidgets__ControlSize(&ui));
+    CHECK(box.boundingBox.width == box.boundingBox.height);
+    float small = box.boundingBox.height;
+
+    ui.theme.fontSizeBody = (uint16_t)(ui.theme.fontSizeBody + 6);
+    Frame(MakeInput(), body);
+    Clay_RenderCommandArray after = Frame(MakeInput(), body);
+    CHECK(FindCommandById(after, boxId.id, &box));
+    CHECK(box.boundingBox.height == small + 6.0f);
+    CHECK(box.boundingBox.width == box.boundingBox.height);
+
+    ui.theme = saved;
+}
+
 // UTF-8 boundary and word-bound helpers used by the text input.
 static void TestUtf8Helpers(void) {
     const char *text = "a\xC3\xA9!b"; // a, é (2 bytes), '!', b
@@ -1620,6 +1651,7 @@ int main(void) {
         { "danger color unified", TestDangerColorUnified },
         { "beveled edges and drop shadows", TestBeveledEdgesAndShadows },
         { "rounded corners clip children", TestRoundedCornersClipChildren },
+        { "inline controls scale with type", TestControlsScaleWithType },
         { "utf-8 helpers", TestUtf8Helpers },
     };
 

@@ -177,6 +177,15 @@ static float ClayWidgets__FieldHeight(const ClayWidgets_Context *ctx) {
     return (float)(ctx->theme.fontSizeBody + (int32_t)ctx->theme.spacing.md + 8);
 }
 
+// The side of a small control that sits inline with a label - a check box, a
+// radio, the height a toggle is built from. Derived from the body text so the
+// control keeps its proportion to the label beside it at any type scale, and
+// whole-pixel so its border and mark stay crisp. The +4 reproduces the 20px
+// controls this library shipped with when body text was 16.
+static float ClayWidgets__ControlSize(const ClayWidgets_Context *ctx) {
+    return (float)ctx->theme.fontSizeBody + 4.0f;
+}
+
 static float ClayWidgets__Clamp(float value, float minValue, float maxValue) {
     if (value < minValue) {
         return minValue;

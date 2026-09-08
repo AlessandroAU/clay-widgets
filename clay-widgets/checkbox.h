@@ -59,6 +59,7 @@ bool ClayWidgets_CheckboxEx(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_St
     // filled chip: the 3D edge is what says "checkable", so the well stays
     // paper white and the tick is drawn in the text color.
     Clay_ElementId boxId = ClayWidgets__ChildId(id, CLAY_STRING("ClayWidgetsCheckboxBox"), 0);
+    float boxSize = ClayWidgets__ControlSize(ctx);
     if (ClayWidgets__IsBeveled(ctx)) {
         boxBg = disabled
             ? ClayWidgets__MixColor(ctx->theme.fieldColor, ctx->theme.surfaceColor, ctx->theme.disabledMix)
@@ -81,8 +82,8 @@ bool ClayWidgets_CheckboxEx(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_St
         CLAY(boxId, {
             .layout = {
                 .sizing = {
-                    .width = CLAY_SIZING_FIXED(20),
-                    .height = CLAY_SIZING_FIXED(20),
+                    .width = CLAY_SIZING_FIXED(boxSize),
+                    .height = CLAY_SIZING_FIXED(boxSize),
                 },
                 .childAlignment = { .x = CLAY_ALIGN_X_CENTER, .y = CLAY_ALIGN_Y_CENTER },
             },
@@ -94,7 +95,8 @@ bool ClayWidgets_CheckboxEx(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_St
                 CLAY_TEXT(CLAY_STRING("X"), {
                     .textColor = markColor,
                     .fontId = ctx->theme.fontBody,
-                    .fontSize = 14,
+                    // Fills the box the way a tick does, at any box size.
+                    .fontSize = (uint16_t)(boxSize * 0.7f),
                 });
             }
         }
