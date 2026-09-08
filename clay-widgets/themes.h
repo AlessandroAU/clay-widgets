@@ -85,9 +85,9 @@ static ClayWidgets_Theme ClayWidgets__BuildTheme(
     theme.fontHeading = 0;
     theme.fontMono = 0;
 
-    theme.fontSizeBody = 16;
-    theme.fontSizeHeading = 24;
-    theme.fontSizeSmall = 13;
+    theme.fontSizeBody = 18;
+    theme.fontSizeHeading = 26;
+    theme.fontSizeSmall = 14;
 
     theme.spacing.xs = 4;
     theme.spacing.sm = 8;
@@ -202,9 +202,9 @@ ClayWidgets_Theme ClayWidgets_ThemeWin95(void) {
     theme.onAccentColor = (Clay_Color){255, 255, 255, 255};
 
     // Small type and tight spacing, the way a 96-DPI dialog was laid out.
-    theme.fontSizeBody = 14;
-    theme.fontSizeHeading = 20;
-    theme.fontSizeSmall = 12;
+    theme.fontSizeBody = 16;
+    theme.fontSizeHeading = 22;
+    theme.fontSizeSmall = 13;
     theme.spacing.xs = 3;
     theme.spacing.sm = 6;
     theme.spacing.md = 9;
@@ -228,9 +228,9 @@ static void ClayWidgets__MacGeometry(ClayWidgets_Theme *theme) {
     theme->radiusMd = 12;
 
     // Smaller body text with more room around it, the way a Mac window breathes.
-    theme->fontSizeBody = 15;
-    theme->fontSizeHeading = 22;
-    theme->fontSizeSmall = 12;
+    theme->fontSizeBody = 17;
+    theme->fontSizeHeading = 24;
+    theme->fontSizeSmall = 13;
     theme->spacing.xs = 4;
     theme->spacing.sm = 8;
     theme->spacing.md = 12;
