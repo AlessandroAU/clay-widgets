@@ -38,10 +38,13 @@ bool ClayWidgets_ToggleEx(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_Stri
         }
     }
 
-    const float trackWidth = 40.0f;
-    const float trackHeight = 22.0f;
-    const float knobSize = 18.0f;
+    // Built from the same inline-control size as the check box and radio, so a
+    // row mixing all three lines up at any type scale. The ratios reproduce the
+    // original 40x22 track with its 18px knob at 16px body text.
     const float trackPad = 2.0f;
+    const float trackHeight = ClayWidgets__ControlSize(ctx) + 2.0f;
+    const float trackWidth = roundf(trackHeight * 1.8f);
+    const float knobSize = trackHeight - 2.0f * trackPad;
 
     // Track fills with the accent when on; the knob slides from left (off) to
     // right (on). The Clay color transition eases the track fill; the knob's

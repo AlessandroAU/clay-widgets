@@ -43,6 +43,8 @@ bool ClayWidgets_Radio(
         selected = true;
     }
 
+    float dialSize = ClayWidgets__ControlSize(ctx);
+
     CLAY(id, {
         .layout = {
             .sizing = { .width = CLAY_SIZING_FIT(0, 0), .height = CLAY_SIZING_FIT(0, 0) },
@@ -52,11 +54,11 @@ bool ClayWidgets_Radio(
         },
     }) {
         CLAY_AUTO_ID({
-            .layout = { .sizing = { .width = CLAY_SIZING_FIXED(20), .height = CLAY_SIZING_FIXED(20) } },
+            .layout = { .sizing = { .width = CLAY_SIZING_FIXED(dialSize), .height = CLAY_SIZING_FIXED(dialSize) } },
             // Round, so it keeps its flat outline under every theme - the edge
             // painter draws rectangles and would square off the circle.
             .backgroundColor = ctx->theme.fieldColor,
-            .cornerRadius = CLAY_CORNER_RADIUS(10),
+            .cornerRadius = CLAY_CORNER_RADIUS(dialSize * 0.5f),
             .border = {
                 .color = (focused || over) ? ctx->theme.focusRingColor : ctx->theme.borderColor,
                 .width = { .left = 1, .right = 1, .top = 1, .bottom = 1 },
@@ -65,11 +67,11 @@ bool ClayWidgets_Radio(
             if (selected) {
                 CLAY_AUTO_ID({
                     .layout = {
-                        .sizing = { .width = CLAY_SIZING_FIXED(10), .height = CLAY_SIZING_FIXED(10) },
+                        .sizing = { .width = CLAY_SIZING_FIXED(dialSize * 0.5f), .height = CLAY_SIZING_FIXED(dialSize * 0.5f) },
                         .childAlignment = { .x = CLAY_ALIGN_X_CENTER, .y = CLAY_ALIGN_Y_CENTER },
                     },
                     .backgroundColor = ctx->theme.accentColor,
-                    .cornerRadius = CLAY_CORNER_RADIUS(5),
+                    .cornerRadius = CLAY_CORNER_RADIUS(dialSize * 0.25f),
                     .floating = {
                         .attachPoints = {
                             .element = CLAY_ATTACH_POINT_CENTER_CENTER,
