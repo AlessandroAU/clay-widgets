@@ -56,12 +56,16 @@ bool ClayWidgets_TabEx(
 
     bool selected = (*selectedValue == optionValue);
     bool over = Clay_PointerOver(id);
+    if (over) {
+        ClayWidgets__SetCursor(ctx, CLAY_WIDGETS_CURSOR_POINTER);
+    }
     bool focused = ClayWidgets__RegisterFocusable(ctx, id, over);
     bool clicked = ClayWidgets__ConsumeClick(ctx, over);
     if (!clicked && ClayWidgets__ActivateFocused(ctx, id)) {
         clicked = true;
     }
 
+    bool changed = clicked && !selected;
     if (clicked) {
         *selectedValue = optionValue;
         selected = true;
@@ -116,7 +120,7 @@ bool ClayWidgets_TabEx(
             });
         }
 
-        return clicked;
+        return changed;
     }
 
     Clay_Color background = ctx->theme.surfaceAltColor;
@@ -140,7 +144,7 @@ bool ClayWidgets_TabEx(
             .childAlignment = { .x = CLAY_ALIGN_X_CENTER, .y = CLAY_ALIGN_Y_CENTER },
         },
         .backgroundColor = background,
-        .cornerRadius = CLAY_CORNER_RADIUS(ctx->theme.radiusMd),
+        .cornerRadius = CLAY_CORNER_RADIUS((float)ctx->theme.radiusMd),
         .border = {
             .color = borderColor,
             .width = { .left = 1, .right = 1, .top = 1, .bottom = 1 },
@@ -155,7 +159,7 @@ bool ClayWidgets_TabEx(
         });
     }
 
-    return clicked;
+    return changed;
 }
 
 bool ClayWidgets_Tab(

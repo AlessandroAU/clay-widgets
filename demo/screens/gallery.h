@@ -3,6 +3,7 @@
 #define CLAY_WIDGETS_DEMO_GALLERY_H
 
 #include "demo/demo-state.h"
+#include "demo/screens/advanced-gallery.h"
 
 namespace {
 
@@ -59,6 +60,9 @@ static void DrawGalleryView(ClayWidgets_Context &ui, DemoState &s, DemoIcons &ic
                 ClayWidgets_TextInput(&ui, CLAY_ID("GalleryInput"), CLAY_STRING("Text input"),
                     s.galleryText, static_cast<int32_t>(sizeof(s.galleryText)),
                     ClayWidgets_TextInputOptions{"Selection, word jumps, Ctrl+A", false});
+                ClayWidgets_TextArea(&ui, CLAY_ID("GalleryNotes"), CLAY_STRING("Text area"),
+                    s.galleryNotes, static_cast<int32_t>(sizeof(s.galleryNotes)),
+                    ClayWidgets_TextAreaOptions{"Multi-line notes...", 0.0f, false});
                 ClayWidgets_Combo(&ui, CLAY_ID("GalleryCombo"), CLAY_STRING("Combo box"),
                     kBuildConfigNames, 4, &s.buildConfig);
                 ClayWidgets_Label(&ui, CLAY_STRING("List box (click or focus + arrows)"));
@@ -69,7 +73,7 @@ static void DrawGalleryView(ClayWidgets_Context &ui, DemoState &s, DemoIcons &ic
             ClayWidgets_BeginCard(&ui, CLAY_ID("RangesCard"), CLAY_STRING("Ranges & numbers"));
             {
                 ClayWidgets_Label(&ui, CLAY_STRING("Slider + progress bar"));
-                s.volume = ClayWidgets_Slider(&ui, CLAY_ID("GalleryVolume"), s.volume,
+                ClayWidgets_Slider(&ui, CLAY_ID("GalleryVolume"), &s.volume,
                     ClayWidgets_SliderOptions{0.0f, 1.0f, 0.01f, true, 0});
                 ClayWidgets_ProgressBar(&ui, CLAY_ID("GalleryVolumeBar"), s.volume,
                     FormatString(s, "Volume %d%%", static_cast<int>(std::lround(s.volume * 100.0f))));
@@ -91,7 +95,7 @@ static void DrawGalleryView(ClayWidgets_Context &ui, DemoState &s, DemoIcons &ic
                         .layoutDirection = CLAY_TOP_TO_BOTTOM,
                     },
                     .backgroundColor = ui.theme.surfaceColor,
-                    .cornerRadius = CLAY_CORNER_RADIUS(ui.theme.radiusMd),
+                    .cornerRadius = CLAY_CORNER_RADIUS((float)ui.theme.radiusMd),
                     .border = {
                         .color = ui.theme.borderColor,
                         .width = { .left = 1, .right = 1, .top = 1, .bottom = 1 },
@@ -134,6 +138,8 @@ static void DrawGalleryView(ClayWidgets_Context &ui, DemoState &s, DemoIcons &ic
         ClayWidgets_BeginScrollPanel(&ui, CLAY_ID("GalleryRight"),
             ClayWidgets_ScrollPanelOptions{ rightWidth, CLAY_SIZING_GROW(0), 0, 0, ui.theme.spacing.md });
         {
+
+            DrawAdvancedGallery(ui);
             ClayWidgets_BeginCard(&ui, CLAY_ID("TogglesCard"), CLAY_STRING("Toggles & checks"));
             {
                 ClayWidgets_Checkbox(&ui, CLAY_ID("GalleryAutosave"), CLAY_STRING("Autosave"), &s.autosave);
@@ -228,6 +234,16 @@ static void DrawGalleryView(ClayWidgets_Context &ui, DemoState &s, DemoIcons &ic
                 if (ClayWidgets_Button(&ui, CLAY_ID("GalleryOpenModal"), CLAY_STRING("Confirm dialog..."))) {
                     RequestDeleteTask(s, s.selectedTask);
                 }
+                CLAY_AUTO_ID({ .layout = { .childGap = ui.theme.spacing.sm } }) {
+                    if (ClayWidgets_Button(&ui, CLAY_ID("GalleryFixedPopup"), CLAY_STRING("Fixed popup..."))) {
+                        s.showGalleryModal = true;
+                        s.galleryModalDraggable = false;
+                    }
+                    if (ClayWidgets_Button(&ui, CLAY_ID("GalleryDraggablePopup"), CLAY_STRING("Draggable popup..."))) {
+                        s.showGalleryModal = true;
+                        s.galleryModalDraggable = true;
+                    }
+                }
 
                 CLAY(CLAY_ID("GalleryCtxTarget"), {
                     .layout = {
@@ -236,7 +252,7 @@ static void DrawGalleryView(ClayWidgets_Context &ui, DemoState &s, DemoIcons &ic
                         .childAlignment = { .x = CLAY_ALIGN_X_CENTER, .y = CLAY_ALIGN_Y_CENTER },
                     },
                     .backgroundColor = ui.theme.surfaceColor,
-                    .cornerRadius = CLAY_CORNER_RADIUS(ui.theme.radiusSm),
+                    .cornerRadius = CLAY_CORNER_RADIUS((float)ui.theme.radiusSm),
                     .border = {
                         .color = ui.theme.borderColor,
                         .width = { .left = 1, .right = 1, .top = 1, .bottom = 1 },

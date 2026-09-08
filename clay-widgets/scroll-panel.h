@@ -60,7 +60,7 @@ Clay_ElementId ClayWidgets_BeginScrollPanel(
             .layoutDirection = CLAY_TOP_TO_BOTTOM,
         },
         .backgroundColor = ctx->theme.surfaceAltColor,
-        .cornerRadius = CLAY_CORNER_RADIUS(ctx->theme.radiusMd),
+        .cornerRadius = CLAY_CORNER_RADIUS((float)ctx->theme.radiusMd),
     });
 
     // Inner clip element: this is the actual scroll container. Clay scissors to

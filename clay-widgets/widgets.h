@@ -37,12 +37,24 @@ extern "C" {
 // via the error handler / CLAY_WIDGETS_ASSERT because reused slots render as
 // corrupted text. Raise this if a screen shows more dynamic values at once.
 #ifndef CLAY_WIDGETS_TEXT_SCRATCH_COUNT
-#define CLAY_WIDGETS_TEXT_SCRATCH_COUNT 8
+#define CLAY_WIDGETS_TEXT_SCRATCH_COUNT 16
 #endif
 
 // Maximum simultaneously visible toasts; ShowToast drops the oldest when full.
 #ifndef CLAY_WIDGETS_MAX_TOASTS
 #define CLAY_WIDGETS_MAX_TOASTS 4
+#endif
+
+// The per-widget retained state pool (see ClayWidgets_GetState): how many
+// widgets can hold internal state at once, and how many bytes each may keep.
+// Slots are recycled least-recently-used once a widget stops requesting its
+// state; exhaustion while every slot is still live is reported via the error
+// handler / CLAY_WIDGETS_ASSERT.
+#ifndef CLAY_WIDGETS_MAX_STATE_SLOTS
+#define CLAY_WIDGETS_MAX_STATE_SLOTS 64
+#endif
+#ifndef CLAY_WIDGETS_STATE_SLOT_SIZE
+#define CLAY_WIDGETS_STATE_SLOT_SIZE 64
 #endif
 
 // Debug backstop for cap overflows (scratch strings, focus order, table
@@ -59,6 +71,13 @@ extern "C" {
 #define CLAY_WIDGETS_ASSERT(message) (fprintf(stderr, "clay-widgets: %s\n", (message)), abort())
 #endif
 #endif
+
+// API convention: widgets that edit a value take it as a pointer and return
+// true when they modified it this frame - checkbox, toggle, radio, tab,
+// segmented, slider, stepper, combo, listbox, and (with the caller's buffer)
+// text input and text area. Stateless activation widgets (button, menu item)
+// return true when activated. Begin/End pairs return whether their body
+// should be emitted. Display-only widgets return void.
 
 typedef struct ClayWidgets_Input {
     float mouseX;
@@ -90,7 +109,52 @@ typedef struct ClayWidgets_Input {
     bool keyCut;       // e.g. Ctrl+X
     bool keyPaste;     // e.g. Ctrl+V
     bool shiftDown;
+    bool keySpace;
+    bool controlDown; // word navigation / additive selection (Command on macOS)
+    bool keyUndo;
+    bool keyRedo;
+    // Preedit is transient; committed composition arrives through textUtf8.
+    const char *compositionUtf8;
+    int32_t compositionLength;
+    int32_t compositionCursor;
 } ClayWidgets_Input;
+
+#ifndef CLAY_WIDGETS_HISTORY_DEPTH
+#define CLAY_WIDGETS_HISTORY_DEPTH 16
+#endif
+#ifndef CLAY_WIDGETS_HISTORY_BYTES
+#define CLAY_WIDGETS_HISTORY_BYTES 8192
+#endif
+typedef struct ClayWidgets_TextSnapshot {
+    char text[CLAY_WIDGETS_HISTORY_BYTES];
+    int32_t cursor, anchor;
+} ClayWidgets_TextSnapshot;
+// Optional caller-owned history. Zero-initialize; one instance per editor.
+typedef struct ClayWidgets_TextHistory {
+    uint32_t id;
+    int32_t count, position;
+    ClayWidgets_TextSnapshot entries[CLAY_WIDGETS_HISTORY_DEPTH];
+} ClayWidgets_TextHistory;
+typedef struct ClayWidgets_EditResult {
+    bool changed, submitted, cancelled, rejected, historyUnavailable, clipboardFailed;
+} ClayWidgets_EditResult;
+typedef bool (*ClayWidgets_ValidateTextFunction)(const char *text, int32_t length, void *userData);
+
+typedef enum ClayWidgets_SemanticRole {
+    CLAY_WIDGETS_ROLE_BUTTON, CLAY_WIDGETS_ROLE_CHECKBOX, CLAY_WIDGETS_ROLE_TEXT_FIELD,
+    CLAY_WIDGETS_ROLE_LIST, CLAY_WIDGETS_ROLE_SLIDER, CLAY_WIDGETS_ROLE_DIALOG,
+    CLAY_WIDGETS_ROLE_MENU_ITEM, CLAY_WIDGETS_ROLE_ROW, CLAY_WIDGETS_ROLE_GENERIC
+} ClayWidgets_SemanticRole;
+typedef struct ClayWidgets_SemanticNode {
+    Clay_ElementId id;
+    uint32_t parentId;
+    ClayWidgets_SemanticRole role;
+    Clay_String label, value;
+    Clay_BoundingBox bounds;
+    bool focused, disabled, selected, readOnly;
+} ClayWidgets_SemanticNode;
+typedef void (*ClayWidgets_SemanticFunction)(const ClayWidgets_SemanticNode *node, void *userData);
+typedef void (*ClayWidgets_ImeFunction)(Clay_BoundingBox caret, const char *preedit, int32_t length, int32_t cursor, void *userData);
 
 typedef Clay_Dimensions (*ClayWidgets_MeasureTextFunction)(Clay_StringSlice text, Clay_TextElementConfig *config, void *userData);
 
@@ -99,11 +163,26 @@ typedef Clay_Dimensions (*ClayWidgets_MeasureTextFunction)(Clay_StringSlice text
 // NULL); `set` receives one. See ClayWidgets_SetClipboardFunctions.
 typedef const char *(*ClayWidgets_GetClipboardTextFunction)(void *userData);
 typedef void (*ClayWidgets_SetClipboardTextFunction)(const char *textUtf8, void *userData);
+typedef bool (*ClayWidgets_TrySetClipboardTextFunction)(const char *textUtf8, void *userData);
 
 // Called when a compile-time cap is exceeded at runtime (scratch strings,
 // focus order, table columns) - once per category per frame. When no handler
 // is installed the CLAY_WIDGETS_ASSERT backstop fires instead.
 typedef void (*ClayWidgets_ErrorHandlerFunction)(const char *message, void *userData);
+
+// Which mouse cursor the hovered widget wants this frame. Widgets set it
+// while hovered during layout; read it after ClayWidgets_EndFrame with
+// ClayWidgets_GetCursor and apply it via the platform's cursor API (e.g.
+// raylib's SetMouseCursor). Resets to DEFAULT at each BeginFrame, so a frame
+// with no hovered widget yields the arrow.
+typedef enum ClayWidgets_Cursor {
+    CLAY_WIDGETS_CURSOR_DEFAULT = 0, // arrow
+    CLAY_WIDGETS_CURSOR_POINTER,     // hand: clickable things (buttons, toggles, rows, thumbs)
+    CLAY_WIDGETS_CURSOR_TEXT,        // I-beam: editable text
+    CLAY_WIDGETS_CURSOR_RESIZE_X,
+    CLAY_WIDGETS_CURSOR_RESIZE_Y,
+    CLAY_WIDGETS_CURSOR_RESIZE_XY,
+} ClayWidgets_Cursor;
 
 typedef struct ClayWidgets_Spacing {
     uint16_t xs;
@@ -161,6 +240,18 @@ typedef struct ClayWidgets_AnimSlot {
     float value;    // current eased value
 } ClayWidgets_AnimSlot;
 
+// One entry of the generic per-widget state pool: a POD block keyed by element
+// id, zeroed when first claimed, retained across frames and recycled
+// least-recently-used under pool pressure. See ClayWidgets_GetState.
+typedef struct ClayWidgets_StateSlot {
+    uint32_t id;    // 0 = empty
+    uint32_t frame; // last frame this slot was requested (drives LRU recycling)
+    union {
+        max_align_t align; // fundamental alignment; over-aligned states require caller storage
+        unsigned char bytes[CLAY_WIDGETS_STATE_SLOT_SIZE];
+    } data;
+} ClayWidgets_StateSlot;
+
 // One queued transient notification; see toast.h.
 typedef struct ClayWidgets_ToastSlot {
     char message[160];
@@ -176,11 +267,16 @@ typedef struct ClayWidgets_Context {
     void *measureTextUserData;
     ClayWidgets_GetClipboardTextFunction getClipboardText;
     ClayWidgets_SetClipboardTextFunction setClipboardText;
+    ClayWidgets_TrySetClipboardTextFunction trySetClipboardText;
+    bool clipboardFailed;
     void *clipboardUserData;
     ClayWidgets_ErrorHandlerFunction errorHandler;
     void *errorHandlerUserData;
     uint32_t frameErrorFlags; // one bit per overflow category, reset each frame (dedupes reports)
     Clay_Dimensions layoutDimensions;
+
+    // The hovered widget's cursor hint, reset each frame; see ClayWidgets_Cursor.
+    ClayWidgets_Cursor cursor;
 
     // When false, widgets emit no Clay transitions (colors/enter states snap
     // instantly) and ClayWidgets__AnimTo returns its target directly. Defaults to
@@ -188,10 +284,22 @@ typedef struct ClayWidgets_Context {
     // preference. See ClayWidgets__ColorTransition and ClayWidgets__AnimTo.
     bool animationsEnabled;
 
+    // Wheel momentum decay time in seconds (default 0.10). Zero or disabling
+    // animations gives immediate wheel scrolling, useful for native trackpad inertia.
+    float scrollMomentumTime;
+    uint32_t scrollMomentumIds[2];
+    float scrollMomentumRemaining[2], scrollMomentumPosition[2];
+
     // Per-widget eased scalars (Route B animations) plus the frame counter used
-    // to age out slots whose widget has disappeared.
+    // to age out slots whose widget has disappeared. The counter is shared with
+    // the generic state pool below.
     ClayWidgets_AnimSlot anims[CLAY_WIDGETS_MAX_ANIMS];
     uint32_t animFrame;
+
+    // Generic per-widget retained state, keyed by element id and recycled
+    // least-recently-used. Used internally (scrollbar drag origin, tooltip
+    // dwell timer) and available to custom widgets via ClayWidgets_GetState.
+    ClayWidgets_StateSlot states[CLAY_WIDGETS_MAX_STATE_SLOTS];
 
     // A hovered widget clip that Clay treats as a scroll container but that can't
     // consume a vertical wheel (a horizontally-clipped table, a single-line text
@@ -210,6 +318,7 @@ typedef struct ClayWidgets_Context {
     int32_t scrollPanelDepth;
 
     uint32_t activeId;
+    uint32_t releasedActiveId;
     uint32_t focusedId;
     uint32_t focusOrder[CLAY_WIDGETS_MAX_FOCUSABLES];
     int32_t focusCount;
@@ -225,6 +334,11 @@ typedef struct ClayWidgets_Context {
     int32_t textCursor;
     int32_t textSelectionAnchor;
     float textScrollX;
+    // The caret's remembered horizontal position for the text area's Up/Down
+    // navigation, so stepping through a short line and back into a long one
+    // returns to the original column. < 0 = unset; any horizontal caret
+    // motion clears it (see ClayWidgets__MoveCaret).
+    float textPreferredX;
     bool textPointerSelecting;
     float caretBlinkTime;
     float elapsedTime;
@@ -234,10 +348,6 @@ typedef struct ClayWidgets_Context {
     float lastClickY;
     bool clickConsumed;
 
-    uint32_t scrollBarDragContainerId;
-    float scrollBarDragStartMouseY;
-    float scrollBarDragStartScrollY;
-
     uint32_t openComboId;
     int32_t comboHighlightIndex;
     // Set when the keyboard moved the highlight (or the dropdown just opened)
@@ -245,9 +355,6 @@ typedef struct ClayWidgets_Context {
     // pointer hover - scrolling under the pointer would re-highlight and fight
     // the wheel.
     bool comboScrollToHighlight;
-
-    uint32_t hoverTooltipId;
-    float hoverTooltipTime;
 
     uint32_t openMenuId;
 
@@ -276,6 +383,38 @@ typedef struct ClayWidgets_Context {
     // match the header without the caller passing them again.
     Clay_SizingAxis tableColWidths[12];
     int32_t tableColCount;
+    int16_t overlayBases[16];
+    int32_t overlayDepth;
+    uint32_t modalIds[16];
+    uint32_t modalReturnFocus[16];
+    uint32_t modalParents[16];
+    uint32_t currentModalId;
+    int32_t modalCount;
+    int32_t modalCountPrev;
+    bool focusFirst;
+    ClayWidgets_Input disabledInputs[16];
+    ClayWidgets_Theme disabledThemes[16];
+    int32_t disabledDepth;
+    ClayWidgets_SemanticFunction semantic;
+    void *semanticUserData;
+    ClayWidgets_ImeFunction ime;
+    void *imeUserData;
+    uint32_t requestedFocusId;
+    uint32_t menuNavigationId;
+    uint32_t menuItems[CLAY_WIDGETS_MAX_FOCUSABLES];
+    int32_t menuItemCount;
+    bool menuOpening;
+    uint32_t typeAheadId;
+    char typeAhead[64];
+    int32_t typeAheadLength;
+    float typeAheadTime;
+    int32_t tableDepth;
+    uint32_t tableIds[16];
+    Clay_SizingAxis tableSavedWidths[16][12];
+    int32_t tableSavedCounts[16];
+    uint32_t menuTriggers[32];
+    int32_t menuTriggerCount, menuTriggerCountPrev;
+    uint32_t contextMenuReturnFocus;
 } ClayWidgets_Context;
 
 typedef struct ClayWidgets_SliderOptions {
@@ -298,7 +437,24 @@ typedef struct ClayWidgets_TextInputOptions {
     const char *placeholder;
     bool clearOnEnter;
     bool disabled; // inert: not focusable or editable; text still shown
+    bool readOnly;
+    ClayWidgets_TextHistory *history;
+    ClayWidgets_ValidateTextFunction validate;
+    void *validationUserData;
+    ClayWidgets_EditResult *result;
 } ClayWidgets_TextInputOptions;
+
+typedef struct ClayWidgets_TextAreaOptions {
+    const char *placeholder;
+    float height;  // fixed pixel height of the field; 0 = default (~5 lines)
+    bool noWrap;   // long lines scroll horizontally instead of soft-wrapping at word boundaries
+    bool disabled; // inert: not focusable or editable; text still shown
+    bool readOnly;
+    ClayWidgets_TextHistory *history;
+    ClayWidgets_ValidateTextFunction validate;
+    void *validationUserData;
+    ClayWidgets_EditResult *result;
+} ClayWidgets_TextAreaOptions;
 
 typedef struct ClayWidgets_ScrollPanelOptions {
     Clay_SizingAxis width;
@@ -310,6 +466,7 @@ typedef struct ClayWidgets_ScrollPanelOptions {
 
 #include "core.h"
 #include "themes.h"
+#include "text-edit.h"
 #include "text.h"
 #include "image.h"
 #include "badge.h"
@@ -324,6 +481,7 @@ typedef struct ClayWidgets_ScrollPanelOptions {
 #include "slider.h"
 #include "progress-bar.h"
 #include "text-input.h"
+#include "text-area.h"
 #include "combo.h"
 #include "listbox.h"
 #include "list-row.h"
@@ -336,6 +494,8 @@ typedef struct ClayWidgets_ScrollPanelOptions {
 #include "menu.h"
 #include "scroll-bar.h"
 #include "scroll-panel.h"
+#include "collection.h"
+#include "split-pane.h"
 
 #ifdef __cplusplus
 }

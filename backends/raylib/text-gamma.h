@@ -10,7 +10,7 @@
 //
 // Usage: define CLAY_WIDGETS_TEXT_GAMMA_CORRECTION before including this header
 // to enable it; leave it undefined for raylib's stock bake. Optionally override
-// the curve with CLAY_WIDGETS_TEXT_GAMMA (default 1.8f; 2.2f is full
+// the curve with CLAY_WIDGETS_TEXT_GAMMA (default 1.6f; 2.2f is full
 // linearization and can look heavy, 1.0f is a no-op). Either way, call
 // ClayWidgets_BakeFont() wherever you would call LoadFontFromMemory().
 
@@ -23,7 +23,7 @@
 // enabled the atlas coverage is gamma-corrected before upload; otherwise this
 // is a thin wrapper over LoadFontFromMemory. Returns a Font whose texture.id is
 // 0 on failure. Free the result with UnloadFont().
-static Font ClayWidgets_BakeFont(const unsigned char *fontData, int fontDataSize, int pixelSize);
+static Font ClayWidgets_BakeFont(const unsigned char *fontData, int fontDataSize, int pixelSize, const int *codepoints = nullptr, int codepointCount = 0);
 
 #if defined(CLAY_WIDGETS_TEXT_GAMMA_CORRECTION)
 
@@ -33,11 +33,17 @@ static Font ClayWidgets_BakeFont(const unsigned char *fontData, int fontDataSize
 
 #include <math.h>
 
-static Font ClayWidgets_BakeFont(const unsigned char *fontData, int fontDataSize, int pixelSize) {
+static Font ClayWidgets_BakeFont(const unsigned char *fontData, int fontDataSize, int pixelSize, const int *codepoints, int codepointCount) {
     // Mirror LoadFontFromMemory's pipeline (LoadFontData -> GenImageFontAtlas)
     // so we can reach the atlas image and correct it before it goes to the GPU.
     int glyphCount = 0;
-    GlyphInfo *glyphs = LoadFontData(fontData, fontDataSize, pixelSize, NULL, 95, FONT_DEFAULT, &glyphCount);
+    int latin1[191];
+    if (!codepoints || codepointCount <= 0) {
+        for (int i = 0; i < 95; ++i) latin1[i] = i + 32;
+        for (int i = 95; i < 191; ++i) latin1[i] = i - 95 + 160;
+        codepoints = latin1; codepointCount = 191;
+    }
+    GlyphInfo *glyphs = LoadFontData(fontData, fontDataSize, pixelSize, codepoints, codepointCount, FONT_DEFAULT, &glyphCount);
     if (glyphs == NULL || glyphCount <= 0) {
         Font empty = {};
         return empty;
@@ -78,8 +84,8 @@ static Font ClayWidgets_BakeFont(const unsigned char *fontData, int fontDataSize
 
 #else // correction disabled - stock raylib bake
 
-static Font ClayWidgets_BakeFont(const unsigned char *fontData, int fontDataSize, int pixelSize) {
-    return LoadFontFromMemory(".ttf", fontData, fontDataSize, pixelSize, NULL, 0);
+static Font ClayWidgets_BakeFont(const unsigned char *fontData, int fontDataSize, int pixelSize, const int *codepoints, int codepointCount) {
+    return LoadFontFromMemory(".ttf", fontData, fontDataSize, pixelSize, codepoints, codepointCount);
 }
 
 #endif // CLAY_WIDGETS_TEXT_GAMMA_CORRECTION

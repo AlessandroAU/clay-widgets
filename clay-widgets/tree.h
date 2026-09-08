@@ -25,6 +25,9 @@ bool ClayWidgets_TreeLeaf(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_Stri
 // line up). Returns true when the row is clicked.
 static bool ClayWidgets__TreeRow(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_String label, int32_t depth, Clay_String twisty) {
     bool over = Clay_PointerOver(id);
+    if (over) {
+        ClayWidgets__SetCursor(ctx, CLAY_WIDGETS_CURSOR_POINTER);
+    }
     bool clicked = ClayWidgets__ConsumeClick(ctx, over);
 
     if (depth < 0) {
@@ -41,7 +44,7 @@ static bool ClayWidgets__TreeRow(ClayWidgets_Context *ctx, Clay_ElementId id, Cl
             .layoutDirection = CLAY_LEFT_TO_RIGHT,
         },
         .backgroundColor = over ? ctx->theme.hoverColor : ClayWidgets__FadeToClear(ctx->theme.hoverColor),
-        .cornerRadius = CLAY_CORNER_RADIUS(ctx->theme.radiusSm),
+        .cornerRadius = CLAY_CORNER_RADIUS((float)ctx->theme.radiusSm),
         .transition = ClayWidgets__ColorTransition(ctx),
     }) {
         CLAY_AUTO_ID({

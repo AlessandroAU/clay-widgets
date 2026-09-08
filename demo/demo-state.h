@@ -187,6 +187,8 @@ struct DemoState {
 
     // Delete confirmation modal
     bool showDeleteModal = false;
+    bool showGalleryModal = false;
+    bool galleryModalDraggable = false;
     int32_t deleteTarget = -1; // -1 falls back to the selected task
 
     // Dashboard
@@ -201,6 +203,7 @@ struct DemoState {
     int32_t density = 1;
     int32_t retryCount = 3;
     char galleryText[128] = "";
+    char galleryNotes[512] = "1. Multi-line editing: Enter breaks lines, Up/Down keep their column.\n2. Long lines soft-wrap at word boundaries.\n3. The wheel scrolls this text once it overflows the field.\n4. Selection spans lines; copy/paste keep the newlines.\n5. This line exists so the field overflows.\n6. And this one makes sure of it.";
     int32_t buildConfig = 1;
     int32_t channel = 0;
     bool treeSrcOpen = true;

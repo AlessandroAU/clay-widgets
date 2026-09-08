@@ -22,6 +22,8 @@ void ClayWidgets_SetClipboardFunctions(
 // (scratch strings, focus order, table columns), once per category per frame.
 // With no handler installed, the CLAY_WIDGETS_ASSERT backstop fires instead.
 void ClayWidgets_SetErrorHandler(ClayWidgets_Context *ctx, ClayWidgets_ErrorHandlerFunction handler, void *userData);
+// Optional failure-aware setter. Takes precedence over the legacy void setter.
+void ClayWidgets_SetClipboardWriteFunction(ClayWidgets_Context *ctx, ClayWidgets_TrySetClipboardTextFunction fn);
 
 void ClayWidgets_BeginFrame(
     ClayWidgets_Context *ctx,
@@ -30,18 +32,70 @@ void ClayWidgets_BeginFrame(
     bool enableDragScroll
 );
 
+// Retained per-widget state for immediate-mode widgets: returns `size` bytes
+// of POD storage keyed by element id, zero-initialized the first time an id
+// is seen and persistent across frames for as long as the id keeps requesting
+// it (and pool pressure allows - slots whose id has stopped asking are
+// recycled least-recently-used). This is the building block for stateful
+// widgets that need more than the caller passes in: drag origins, hover
+// timers, scroll offsets, caret state.
+//
+// Rules:
+//  - `size` must fit CLAY_WIDGETS_STATE_SLOT_SIZE; the id must be nonzero.
+//  - Call it with the same size for a given id every time; the block is raw
+//    bytes, not versioned.
+//  - Returns NULL when the request is invalid or every slot belongs to a
+//    widget touched within the last frame (reported via the error handler);
+//    callers must degrade gracefully - skip the stateful behavior, don't crash.
+//  - Storage may be recycled once the id stops requesting it, so treat the
+//    zeroed state as the "widget just (re)appeared" state, not an error.
+void *ClayWidgets_GetState(ClayWidgets_Context *ctx, uint32_t id, int32_t size);
+
 Clay_RenderCommandArray ClayWidgets_EndFrame(ClayWidgets_Context *ctx);
+
+// The cursor the hovered widget wants this frame (pointer over buttons and
+// other click targets, I-beam over editable text, default otherwise). Call
+// after ClayWidgets_EndFrame and apply via the platform cursor API, e.g.:
+//
+//   switch (ClayWidgets_GetCursor(&ui)) {
+//       case CLAY_WIDGETS_CURSOR_POINTER: SetMouseCursor(MOUSE_CURSOR_POINTING_HAND); break;
+//       case CLAY_WIDGETS_CURSOR_TEXT:    SetMouseCursor(MOUSE_CURSOR_IBEAM); break;
+//       default:                          SetMouseCursor(MOUSE_CURSOR_DEFAULT); break;
+//   }
+ClayWidgets_Cursor ClayWidgets_GetCursor(const ClayWidgets_Context *ctx);
+
+// Nestable inert/muted scope. Pair every successful Begin with End.
+bool ClayWidgets_BeginDisabled(ClayWidgets_Context *ctx);
+void ClayWidgets_EndDisabled(ClayWidgets_Context *ctx);
 
 #ifdef CLAY_WIDGETS_IMPLEMENTATION
 
 #include <math.h>
 #include <string.h>
+#include <stdlib.h>
 
 // Overflow categories for ClayWidgets__ReportError; one report per category
 // per frame so a persistent overflow doesn't spam the handler.
 #define CLAY_WIDGETS__ERROR_FLAG_SCRATCH    (1u << 0)
 #define CLAY_WIDGETS__ERROR_FLAG_FOCUSABLES (1u << 1)
 #define CLAY_WIDGETS__ERROR_FLAG_TABLE_COLS (1u << 2)
+#define CLAY_WIDGETS__ERROR_FLAG_STATE      (1u << 3)
+
+static int16_t ClayWidgets__OverlayZ(ClayWidgets_Context *ctx, int16_t offset) {
+    int32_t base = ctx->overlayDepth ? ctx->overlayBases[ctx->overlayDepth - 1] : 0;
+    return (int16_t)(base + offset);
+}
+
+static bool ClayWidgets__PushOverlay(ClayWidgets_Context *ctx, int16_t offset) {
+    if (ctx->overlayDepth >= 16) return false;
+    int16_t z = ClayWidgets__OverlayZ(ctx, offset);
+    ctx->overlayBases[ctx->overlayDepth++] = z;
+    return true;
+}
+
+static void ClayWidgets__PopOverlay(ClayWidgets_Context *ctx) {
+    if (ctx->overlayDepth) ctx->overlayDepth--;
+}
 
 static void ClayWidgets__ReportError(ClayWidgets_Context *ctx, uint32_t flag, const char *message) {
     if (!ctx || (ctx->frameErrorFlags & flag)) {
@@ -177,6 +231,7 @@ static Clay_String ClayWidgets__ScratchInt(ClayWidgets_Context *ctx, int32_t val
     uint32_t magnitude;
     bool negative = value < 0;
     if (negative) {
+        // Negate in int64 first: -INT32_MIN overflows int32_t, but fits in int64_t.
         magnitude = (uint32_t)(-(int64_t)value);
     } else {
         magnitude = (uint32_t)value;
@@ -226,6 +281,14 @@ static Clay_String ClayWidgets__ScratchFloat(ClayWidgets_Context *ctx, float val
 
     uint64_t scale = 1;
     for (int32_t i = 0; i < decimals; ++i) scale *= 10u;
+
+    // The double -> uint64_t conversion below is undefined for NaN, infinity,
+    // and any magnitude that overflows uint64_t once scaled. Render NaN as 0
+    // and clamp the rest (also catches +Inf); 9e18 leaves headroom below
+    // UINT64_MAX for the scale multiply and the +0.5 rounding.
+    if (mag != mag) mag = 0.0;
+    double maxSafe = 9.0e18 / (double)scale;
+    if (mag > maxSafe) mag = maxSafe;
 
     // Round to `decimals` places, then split into whole and fractional parts.
     uint64_t scaled = (uint64_t)(mag * (double)scale + 0.5);
@@ -417,6 +480,70 @@ static float ClayWidgets__AnimTo(ClayWidgets_Context *ctx, uint32_t id, float ta
     return slot->value;
 }
 
+void *ClayWidgets_GetState(ClayWidgets_Context *ctx, uint32_t id, int32_t size) {
+    if (!ctx || id == 0) {
+        return NULL;
+    }
+    if (size <= 0 || size > CLAY_WIDGETS_STATE_SLOT_SIZE) {
+        ClayWidgets__ReportError(ctx, CLAY_WIDGETS__ERROR_FLAG_STATE,
+            "widget state request exceeds CLAY_WIDGETS_STATE_SLOT_SIZE bytes; the widget's "
+            "stateful behavior is skipped. Define CLAY_WIDGETS_STATE_SLOT_SIZE larger.");
+        return NULL;
+    }
+
+    // One scan finds the id's existing slot, the first empty slot, and the
+    // least-recently-requested reclaimable slot. A slot requested this frame or
+    // last frame belongs to a widget still on screen and is never recycled;
+    // ages use wrap-safe unsigned subtraction.
+    ClayWidgets_StateSlot *empty = NULL;
+    ClayWidgets_StateSlot *stalest = NULL;
+    uint32_t stalestAge = 0;
+    for (int32_t i = 0; i < CLAY_WIDGETS_MAX_STATE_SLOTS; ++i) {
+        ClayWidgets_StateSlot *slot = &ctx->states[i];
+        if (slot->id == id) {
+            slot->frame = ctx->animFrame;
+            return slot->data.bytes;
+        }
+        if (slot->id == 0) {
+            if (!empty) {
+                empty = slot;
+            }
+            continue;
+        }
+        uint32_t age = ctx->animFrame - slot->frame;
+        if (age >= 2 && age > stalestAge) {
+            stalest = slot;
+            stalestAge = age;
+        }
+    }
+
+    ClayWidgets_StateSlot *claimed = empty ? empty : stalest;
+    if (!claimed) {
+        ClayWidgets__ReportError(ctx, CLAY_WIDGETS__ERROR_FLAG_STATE,
+            "widget state pool exhausted: more than CLAY_WIDGETS_MAX_STATE_SLOTS widgets kept "
+            "state this frame; further widgets lose their stateful behavior (drags, hover "
+            "timers). Define CLAY_WIDGETS_MAX_STATE_SLOTS larger.");
+        return NULL;
+    }
+    claimed->id = id;
+    claimed->frame = ctx->animFrame;
+    memset(claimed->data.bytes, 0, sizeof(claimed->data.bytes));
+    return claimed->data.bytes;
+}
+
+ClayWidgets_Cursor ClayWidgets_GetCursor(const ClayWidgets_Context *ctx) {
+    return ctx ? ctx->cursor : CLAY_WIDGETS_CURSOR_DEFAULT;
+}
+
+// Called by widgets while hovered (or mid-drag) to request a cursor for this
+// frame. Later declarations overwrite earlier ones, so an overlay drawn on
+// top of a widget (a text area's scrollbar over its text) wins naturally.
+static void ClayWidgets__SetCursor(ClayWidgets_Context *ctx, ClayWidgets_Cursor cursor) {
+    if (ctx && !ctx->disabledDepth) {
+        ctx->cursor = cursor;
+    }
+}
+
 static bool ClayWidgets__ConsumeClick(ClayWidgets_Context *ctx, bool over) {
     if (!ctx) {
         return false;
@@ -531,6 +658,9 @@ static void ClayWidgets__MoveCaret(ClayWidgets_Context *ctx, int32_t offset, boo
     if (!extend) {
         ctx->textSelectionAnchor = offset;
     }
+    // Any caret motion invalidates the text area's remembered Up/Down column;
+    // its vertical navigation re-stamps it after calling this.
+    ctx->textPreferredX = -1.0f;
     ctx->caretBlinkTime = 0.0f;
 }
 
@@ -678,15 +808,32 @@ static bool ClayWidgets__InsertTextAtCaret(
     }
 
     ClayWidgets__ClampSelectionToLength(ctx, *length);
-    ClayWidgets__DeleteSelection(buffer, length, ctx);
-
-    int32_t insertAt = ctx->textCursor;
-    int32_t available = capacity - 1 - *length;
+    int32_t selectionLength = ClayWidgets__HasSelection(ctx)
+        ? ClayWidgets__MaxI32(ctx->textCursor, ctx->textSelectionAnchor) - ClayWidgets__MinI32(ctx->textCursor, ctx->textSelectionAnchor) : 0;
+    int32_t available = capacity - 1 - *length + selectionLength;
     int32_t toCopy = textLength < available ? textLength : available;
+    // Walk complete, valid UTF-8 scalars. Reject malformed or incomplete tails.
+    int32_t valid = 0;
+    while (valid < toCopy) {
+        unsigned char c = (unsigned char)text[valid];
+        int32_t n = c < 0x80 ? 1 : c >= 0xC2 && c <= 0xDF ? 2 : c >= 0xE0 && c <= 0xEF ? 3 : c >= 0xF0 && c <= 0xF4 ? 4 : 0;
+        if (!n || valid + n > toCopy || c == 0) break;
+        bool good = true;
+        for (int32_t j = 1; j < n; ++j) good = good && ClayWidgets__IsUtf8ContinuationByte((unsigned char)text[valid + j]);
+        if (n >= 3) {
+            unsigned char b = (unsigned char)text[valid + 1];
+            good = good && !(c == 0xE0 && b < 0xA0) && !(c == 0xED && b >= 0xA0)
+                && !(c == 0xF0 && b < 0x90) && !(c == 0xF4 && b >= 0x90);
+        }
+        if (!good) break;
+        valid += n;
+    }
+    toCopy = valid;
     if (toCopy <= 0) {
         return false;
     }
-
+    ClayWidgets__DeleteSelection(buffer, length, ctx);
+    int32_t insertAt = ctx->textCursor;
     memmove(buffer + insertAt + toCopy, buffer + insertAt, (size_t)(*length - insertAt + 1));
     memcpy(buffer + insertAt, text, (size_t)toCopy);
     *length += toCopy;
@@ -697,17 +844,22 @@ static bool ClayWidgets__InsertTextAtCaret(
 // Hands a slice of a text-input buffer to the platform clipboard. Staged
 // through clipboardScratch because the platform setter wants a NUL-terminated
 // string and the selection is a slice of the caller's buffer.
-static void ClayWidgets__CopyToClipboard(ClayWidgets_Context *ctx, const char *text, int32_t length) {
-    if (!ctx || !ctx->setClipboardText || !text || length <= 0) {
-        return;
+static bool ClayWidgets__CopyToClipboard(ClayWidgets_Context *ctx, const char *text, int32_t length) {
+    if (!ctx) return false;
+    ctx->clipboardFailed = true;
+    if ((!ctx->setClipboardText && !ctx->trySetClipboardText) || !text || length <= 0) {
+        return false;
     }
     int32_t cap = (int32_t)sizeof(ctx->clipboardScratch) - 1;
-    if (length > cap) {
-        length = cap;
-    }
-    memcpy(ctx->clipboardScratch, text, (size_t)length);
-    ctx->clipboardScratch[length] = '\0';
-    ctx->setClipboardText(ctx->clipboardScratch, ctx->clipboardUserData);
+    char *copy = length > cap ? (char *)malloc((size_t)length + 1) : ctx->clipboardScratch;
+    if (!copy) return false;
+    memcpy(copy, text, (size_t)length); copy[length] = '\0';
+    bool copied = true;
+    if (ctx->trySetClipboardText) copied = ctx->trySetClipboardText(copy, ctx->clipboardUserData);
+    else ctx->setClipboardText(copy, ctx->clipboardUserData);
+    if (copy != ctx->clipboardScratch) free(copy);
+    ctx->clipboardFailed = !copied;
+    return copied;
 }
 
 static bool ClayWidgets__WasDoubleClick(ClayWidgets_Context *ctx, uint32_t id) {
@@ -761,6 +913,18 @@ static void ClayWidgets__AdvanceFocus(ClayWidgets_Context *ctx) {
     ctx->focusedId = ctx->focusOrder[nextIndex];
 }
 
+static void ClayWidgets__Describe(ClayWidgets_Context *ctx, Clay_ElementId id, ClayWidgets_SemanticRole role,
+    Clay_String label, bool selected, bool disabled) {
+    if (!ctx || !ctx->semantic) return;
+    ClayWidgets_SemanticNode node = {0}; node.id=id; node.role=role; node.label=label;
+    node.parentId=ctx->currentModalId;
+    if (node.parentId==id.id && ctx->overlayDepth>0) node.parentId=ctx->modalParents[ctx->overlayDepth-1];
+    node.bounds=Clay_GetElementData(id).boundingBox;
+    node.focused=ctx->focusedId==id.id; node.selected=selected; node.disabled=disabled || ctx->disabledDepth>0;
+    ctx->semantic(&node,ctx->semanticUserData);
+}
+
+static void ClayWidgets__ScrollIntoView(ClayWidgets_Context *ctx, Clay_ElementId item, Clay_ElementId panel);
 static bool ClayWidgets__RegisterFocusable(ClayWidgets_Context *ctx, Clay_ElementId id, bool over) {
     if (!ctx) {
         return false;
@@ -769,7 +933,7 @@ static bool ClayWidgets__RegisterFocusable(ClayWidgets_Context *ctx, Clay_Elemen
     // While a focus trap (modal) was active last frame, widgets outside it are
     // unreachable: they don't join the Tab order and give up keyboard focus,
     // so Enter can't activate a control behind the scrim.
-    if (ctx->focusTrapPrevId != 0 && !ctx->insideFocusTrap) {
+    if (ctx->disabledDepth || (ctx->focusTrapPrevId != 0 && ctx->currentModalId != ctx->focusTrapPrevId && !ctx->focusFirst)) {
         if (ctx->focusedId == id.id) {
             ctx->focusedId = 0;
         }
@@ -787,12 +951,18 @@ static bool ClayWidgets__RegisterFocusable(ClayWidgets_Context *ctx, Clay_Elemen
     if (ctx->input.pointerPressed && over) {
         ctx->focusedId = id.id;
     }
+    if (ctx->focusFirst) { ctx->focusedId = id.id; ctx->focusFirst = false; }
+    if (ctx->requestedFocusId == id.id) { ctx->focusedId = id.id; ctx->requestedFocusId = 0; }
+    if (ctx->focusedId == id.id && ctx->input.keyTab && ctx->scrollPanelDepth > 0 && ctx->scrollPanelDepth <= CLAY_WIDGETS_MAX_SCROLL_NESTING) {
+        Clay_ElementId panel = {0}; panel.id = ctx->scrollPanelStack[ctx->scrollPanelDepth-1];
+        ClayWidgets__ScrollIntoView(ctx,id,panel);
+    }
 
     return ctx->focusedId == id.id;
 }
 
 static bool ClayWidgets__ActivateFocused(ClayWidgets_Context *ctx, Clay_ElementId id) {
-    return ctx && ctx->focusedId == id.id && ctx->input.keyEnter;
+    return ctx && !ctx->disabledDepth && ctx->focusedId == id.id && (ctx->input.keyEnter || ctx->input.keySpace);
 }
 
 // Registers a hovered clip element whose Clay clip becomes a scroll container but
@@ -845,6 +1015,7 @@ void ClayWidgets_Init(ClayWidgets_Context *ctx, ClayWidgets_Theme theme) {
     memset(ctx, 0, sizeof(*ctx));
     ctx->theme = theme;
     ctx->animationsEnabled = true;
+    ctx->scrollMomentumTime = 0.10f;
 }
 
 void ClayWidgets_SetMeasureTextFunction(ClayWidgets_Context *ctx, ClayWidgets_MeasureTextFunction measureText, void *userData) {
@@ -877,6 +1048,56 @@ void ClayWidgets_SetErrorHandler(ClayWidgets_Context *ctx, ClayWidgets_ErrorHand
     ctx->errorHandlerUserData = userData;
 }
 
+static void ClayWidgets__UpdateWheelMomentum(ClayWidgets_Context *ctx, Clay_Vector2 wheel) {
+    Clay_ElementId target = {0};
+    Clay_ElementIdArray hovered = Clay_GetPointerOverIds();
+    for (int32_t i=0;i<hovered.length;++i) {
+        if (Clay_GetScrollContainerData(hovered.internalArray[i]).found) target=hovered.internalArray[i];
+    }
+    bool interrupted = ctx->input.pointerDown || ctx->input.pointerPressed || ctx->input.pointerRightPressed
+        || ctx->input.keyHome || ctx->input.keyEnd || ctx->input.keyUp || ctx->input.keyDown
+        || ctx->input.keyLeft || ctx->input.keyRight || ctx->input.keyTab || ctx->input.keyEscape;
+    float dt = ctx->input.deltaTime > 0 ? ctx->input.deltaTime : 0;
+    float fraction = -expm1f(-dt / ctx->scrollMomentumTime);
+    for (int axis=0;axis<2;++axis) {
+        float delta = axis ? wheel.y : wheel.x;
+        Clay_ElementId destination = target;
+        if (axis && ctx->wheelFallthroughId && ctx->wheelFallthroughPanelId) {
+            Clay_ElementId clip = {0};clip.id=ctx->wheelFallthroughId;
+            if (Clay_PointerOver(clip)) destination.id=ctx->wheelFallthroughPanelId;
+        }
+        if (interrupted) ctx->scrollMomentumRemaining[axis]=0;
+        if (delta != 0) {
+            // A new target or direction takes over immediately; residual motion
+            // never transfers from one panel to another.
+            if (ctx->scrollMomentumIds[axis]!=destination.id || delta*ctx->scrollMomentumRemaining[axis]<0)
+                ctx->scrollMomentumRemaining[axis]=0;
+            ctx->scrollMomentumIds[axis]=destination.id;
+            Clay_ScrollContainerData dest=Clay_GetScrollContainerData(destination);
+            if (dest.found && dest.scrollPosition) {
+                ctx->scrollMomentumPosition[axis]=axis ? dest.scrollPosition->y : dest.scrollPosition->x;
+                ctx->scrollMomentumRemaining[axis]+=delta*10.0f;
+            }
+        }
+        Clay_ElementId id={0};id.id=ctx->scrollMomentumIds[axis];
+        Clay_ScrollContainerData scroll=Clay_GetScrollContainerData(id);
+        if (!scroll.found || !scroll.scrollPosition || !(axis ? scroll.config.vertical : scroll.config.horizontal)) {
+            ctx->scrollMomentumRemaining[axis]=0;continue;
+        }
+        float *position=axis ? &scroll.scrollPosition->y : &scroll.scrollPosition->x;
+        // Reveal-selection and application-controlled scrolling take precedence.
+        if (delta==0 && fabsf(*position-ctx->scrollMomentumPosition[axis])>0.01f) ctx->scrollMomentumRemaining[axis]=0;
+        float maximum=fmaxf(0,axis ? scroll.contentDimensions.height-scroll.scrollContainerDimensions.height
+            : scroll.contentDimensions.width-scroll.scrollContainerDimensions.width);
+        float pending=ctx->scrollMomentumRemaining[axis];
+        float step=fabsf(pending)<0.05f ? pending : pending*fraction;
+        float next=ClayWidgets__Clamp(*position+step,-maximum,0);
+        ctx->scrollMomentumRemaining[axis]=((next<=-maximum && pending<0) || (next>=0 && pending>0)) ? 0 : pending-step;
+        *position=next;
+        ctx->scrollMomentumPosition[axis]=next;
+    }
+}
+
 void ClayWidgets_BeginFrame(
     ClayWidgets_Context *ctx,
     ClayWidgets_Input input,
@@ -888,10 +1109,21 @@ void ClayWidgets_BeginFrame(
     }
 
     ctx->input = input;
+    ctx->releasedActiveId = !input.pointerDown ? ctx->activeId : 0;
+    if (!input.pointerDown) ctx->activeId = 0;
     ctx->layoutDimensions = layoutSize;
     ctx->textScratchNext = 0;
     ctx->scrollPanelDepth = 0;
+    ctx->tableDepth = 0;
     ctx->frameErrorFlags = 0;
+    ctx->cursor = CLAY_WIDGETS_CURSOR_DEFAULT;
+    ctx->overlayDepth = 0;
+    ctx->modalCountPrev = ctx->modalCount;
+    ctx->modalCount = 0;
+    ctx->menuTriggerCountPrev = ctx->menuTriggerCount;
+    ctx->menuTriggerCount = 0;
+    ctx->currentModalId = 0;
+    ctx->focusFirst = false;
     // Roll the focus trap forward: registration during this frame's layout
     // checks last frame's trap (widgets before the modal in declaration order
     // have already registered by the time BeginModal runs).
@@ -913,6 +1145,7 @@ void ClayWidgets_BeginFrame(
         ctx->textCursor = 0;
         ctx->textSelectionAnchor = 0;
         ctx->textScrollX = 0.0f;
+        ctx->textPreferredX = -1.0f;
         ctx->caretBlinkTime = 0.0f;
     }
     ctx->clickConsumed = false;
@@ -929,7 +1162,10 @@ void ClayWidgets_BeginFrame(
     // wheel (scrollDelta) still passes through. activeId persists across the drag,
     // so this holds for every frame after the initial press.
     bool dragScroll = enableDragScroll && ctx->activeId == 0;
-    Clay_UpdateScrollContainers(dragScroll, scrollDelta, input.deltaTime);
+    bool smoothWheel = ctx->animationsEnabled && ctx->scrollMomentumTime > 0;
+    Clay_UpdateScrollContainers(dragScroll, smoothWheel ? (Clay_Vector2){0} : scrollDelta, input.deltaTime);
+    if (smoothWheel) ClayWidgets__UpdateWheelMomentum(ctx,scrollDelta);
+    else memset(ctx->scrollMomentumRemaining,0,sizeof(ctx->scrollMomentumRemaining));
 
     // A widget whose clip can't consume a vertical wheel (a horizontally-clipped
     // table, a single-line text field) registered itself last frame while
@@ -937,7 +1173,7 @@ void ClayWidgets_BeginFrame(
     // wheel straight to the scroll panel the widget lives in. Done directly
     // (rather than by moving the pointer) so it works even when the clip covers
     // the whole panel, leaving no bare panel pixel to reroute onto.
-    if (scrollDelta.y != 0.0f && ctx->wheelFallthroughId != 0 && ctx->wheelFallthroughPanelId != 0
+    if (!smoothWheel && scrollDelta.y != 0.0f && ctx->wheelFallthroughId != 0 && ctx->wheelFallthroughPanelId != 0
         && ClayWidgets__PointInBoundingBox(pointerPosition.x, pointerPosition.y, ctx->wheelFallthroughBox)) {
         Clay_ElementId panelId = CLAY__INIT(Clay_ElementId) CLAY__DEFAULT_STRUCT;
         panelId.id = ctx->wheelFallthroughPanelId;
@@ -962,7 +1198,73 @@ void ClayWidgets_BeginFrame(
 Clay_RenderCommandArray ClayWidgets_EndFrame(ClayWidgets_Context *ctx) {
     // Forward the frame's own deltaTime so Clay transitions and the widget
     // animations (ClayWidgets__AnimTo) can never run on different clocks.
-    return Clay_EndLayout(ctx ? ctx->input.deltaTime : 0.0f);
+    Clay_RenderCommandArray result = Clay_EndLayout(ctx ? ctx->input.deltaTime : 0.0f);
+    if (ctx && ctx->modalCount != ctx->modalCountPrev) memset(ctx->scrollMomentumRemaining,0,sizeof(ctx->scrollMomentumRemaining));
+    if (ctx && ctx->modalCount < ctx->modalCountPrev) {
+        ctx->focusedId = ctx->modalReturnFocus[ctx->modalCount];
+    }
+    if (ctx && ctx->activeId) {
+        bool present = false;
+        for (int32_t i=0;i<result.length;++i) if (Clay_RenderCommandArray_Get(&result,i)->id == ctx->activeId) { present=true; break; }
+        if (!present) ctx->activeId = 0;
+    }
+    return result;
+}
+void ClayWidgets_SetClipboardWriteFunction(ClayWidgets_Context *ctx, ClayWidgets_TrySetClipboardTextFunction fn) {
+    if (ctx) ctx->trySetClipboardText = fn;
+}
+
+static void ClayWidgets__ScrollIntoView(ClayWidgets_Context *ctx, Clay_ElementId item, Clay_ElementId panel) {
+    Clay_ElementData box = Clay_GetElementData(item);
+    Clay_ElementData viewport = Clay_GetElementData(panel);
+    Clay_ScrollContainerData scroll = Clay_GetScrollContainerData(panel);
+    if (!box.found || !viewport.found || !scroll.found || !scroll.scrollPosition) return;
+    float top = box.boundingBox.y - viewport.boundingBox.y;
+    float bottom = top + box.boundingBox.height;
+    if (top < 0) scroll.scrollPosition->y -= top;
+    else if (bottom > viewport.boundingBox.height) scroll.scrollPosition->y -= bottom - viewport.boundingBox.height;
+    float max = scroll.contentDimensions.height - scroll.scrollContainerDimensions.height;
+    scroll.scrollPosition->y = ClayWidgets__Clamp(scroll.scrollPosition->y, max > 0 ? -max : 0, 0);
+    (void)ctx;
+}
+
+static bool ClayWidgets__TypeAhead(ClayWidgets_Context *ctx, uint32_t id) {
+    if (!ctx->input.textUtf8 || ctx->input.textUtf8Length <= 0 || ctx->input.controlDown) return false;
+    if (ctx->typeAheadId != id || ctx->elapsedTime - ctx->typeAheadTime > 0.8f) ctx->typeAheadLength = 0;
+    ctx->typeAheadId = id; ctx->typeAheadTime = ctx->elapsedTime;
+    for (int32_t i = 0; i < ctx->input.textUtf8Length && ctx->typeAheadLength < 63; ++i)
+        ctx->typeAhead[ctx->typeAheadLength++] = ctx->input.textUtf8[i];
+    ctx->typeAhead[ctx->typeAheadLength] = 0;
+    return true;
+}
+static bool ClayWidgets__PrefixMatches(Clay_String text, const char *prefix, int32_t length) {
+    if (text.length < length || !text.chars) return false;
+    for (int32_t i = 0; i < length; ++i) {
+        unsigned char a = (unsigned char)text.chars[i], b = (unsigned char)prefix[i];
+        if (a >= 'A' && a <= 'Z') a += 'a' - 'A';
+        if (b >= 'A' && b <= 'Z') b += 'a' - 'A';
+        if (a != b) return false;
+    }
+    return true;
+}
+
+bool ClayWidgets_BeginDisabled(ClayWidgets_Context *ctx) {
+    if (!ctx || ctx->disabledDepth >= 16) return false;
+    int32_t depth = ctx->disabledDepth++;
+    ctx->disabledInputs[depth] = ctx->input;
+    ctx->disabledThemes[depth] = ctx->theme;
+    memset(&ctx->input, 0, sizeof(ctx->input));
+    ctx->input.deltaTime = ctx->disabledInputs[depth].deltaTime;
+    ctx->theme.textColor = ctx->theme.textMutedColor;
+    ctx->theme.accentColor = ClayWidgets__MixColor(ctx->theme.accentColor, ctx->theme.surfaceColor, ctx->theme.disabledMix);
+    return true;
+}
+
+void ClayWidgets_EndDisabled(ClayWidgets_Context *ctx) {
+    if (!ctx || !ctx->disabledDepth) return;
+    int32_t depth = --ctx->disabledDepth;
+    ctx->input = ctx->disabledInputs[depth];
+    ctx->theme = ctx->disabledThemes[depth];
 }
 
 #endif

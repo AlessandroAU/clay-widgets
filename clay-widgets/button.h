@@ -28,6 +28,9 @@ bool ClayWidgets_ButtonEx(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_Stri
     if (!ctx) {
         return false;
     }
+    options.disabled = options.disabled || ctx->disabledDepth > 0;
+    if (options.disabled && ctx->activeId == id.id) ctx->activeId = 0;
+
 
     // Disabled: inert. No focus registration, no press/click tracking, always
     // returns false. Muted fill (surfaceAlt mixed halfway to surface), muted
@@ -42,7 +45,7 @@ bool ClayWidgets_ButtonEx(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_Stri
                 .childAlignment = { .x = CLAY_ALIGN_X_CENTER, .y = CLAY_ALIGN_Y_CENTER },
             },
             .backgroundColor = color,
-            .cornerRadius = CLAY_CORNER_RADIUS(ctx->theme.radiusMd),
+            .cornerRadius = CLAY_CORNER_RADIUS((float)ctx->theme.radiusMd),
             .border = {
                 .color = ctx->theme.borderColor,
                 .width = { .left = 1, .right = 1, .top = 1, .bottom = 1 },
@@ -56,10 +59,14 @@ bool ClayWidgets_ButtonEx(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_Stri
             });
         }
 
+        ClayWidgets__Describe(ctx,id,CLAY_WIDGETS_ROLE_BUTTON,text,false,true);
         return false;
     }
 
     bool over = Clay_PointerOver(id);
+    if (over) {
+        ClayWidgets__SetCursor(ctx, CLAY_WIDGETS_CURSOR_POINTER);
+    }
     bool focused = ClayWidgets__RegisterFocusable(ctx, id, over);
     bool pressedThisFrame = ctx->input.pointerPressed && over;
 
@@ -72,7 +79,7 @@ bool ClayWidgets_ButtonEx(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_Stri
     }
 
     bool active = ctx->input.pointerDown && ctx->activeId == id.id;
-    bool clicked = ClayWidgets__ConsumeClick(ctx, over && (ctx->activeId == id.id || !ctx->input.pointerDown));
+    bool clicked = ClayWidgets__ConsumeClick(ctx, over && ctx->releasedActiveId == id.id);
     if (!clicked && ClayWidgets__ActivateFocused(ctx, id)) {
         clicked = true;
     }
@@ -121,7 +128,7 @@ bool ClayWidgets_ButtonEx(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_Stri
             .childAlignment = { .x = CLAY_ALIGN_X_CENTER, .y = CLAY_ALIGN_Y_CENTER },
         },
         .backgroundColor = color,
-        .cornerRadius = CLAY_CORNER_RADIUS(ctx->theme.radiusMd),
+        .cornerRadius = CLAY_CORNER_RADIUS((float)ctx->theme.radiusMd),
         .border = {
             .color = focused ? ctx->theme.focusRingColor : ctx->theme.borderColor,
             .width = { .left = 1, .right = 1, .top = 1, .bottom = 1 },
@@ -136,6 +143,7 @@ bool ClayWidgets_ButtonEx(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_Stri
         });
     }
 
+    ClayWidgets__Describe(ctx,id,CLAY_WIDGETS_ROLE_BUTTON,text,false,options.disabled);
     return clicked;
 }
 

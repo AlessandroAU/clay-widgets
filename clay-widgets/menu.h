@@ -55,14 +55,45 @@ static Clay_ElementId ClayWidgets__MenuDropdownId(Clay_ElementId id) {
     return Clay_GetElementIdWithIndex(CLAY_STRING("ClayWidgetsMenuDropdown"), id.id);
 }
 
+static void ClayWidgets__MenuNavigation(ClayWidgets_Context *ctx, uint32_t id) {
+    ctx->menuOpening = ctx->menuNavigationId != id;
+    if (ctx->menuOpening) {
+        ctx->menuNavigationId = id;
+        ctx->menuItemCount = 0;
+    } else if (ctx->menuItemCount > 0 && (ctx->input.keyDown || ctx->input.keyUp || ctx->input.keyHome || ctx->input.keyEnd)) {
+        int32_t index = -1;
+        for (int32_t i = 0; i < ctx->menuItemCount; ++i) if (ctx->menuItems[i] == ctx->focusedId) index = i;
+        if (ctx->input.keyHome) index = 0;
+        else if (ctx->input.keyEnd) index = ctx->menuItemCount - 1;
+        else index = (index + (ctx->input.keyUp ? ctx->menuItemCount - 1 : 1)) % ctx->menuItemCount;
+        ctx->focusedId = ctx->menuItems[index < 0 ? ctx->menuItemCount - 1 : index];
+    }
+    ctx->menuItemCount = 0;
+}
+
 bool ClayWidgets_BeginMenu(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_String title) {
     if (!ctx) {
         return false;
     }
 
     Clay_ElementId dropdownId = ClayWidgets__MenuDropdownId(id);
-    bool overTrigger = Clay_PointerOver(id);
+    if (ctx->menuTriggerCount < 32) ctx->menuTriggers[ctx->menuTriggerCount++] = id.id;
+    if (ctx->openMenuId == id.id && ctx->menuTriggerCountPrev > 1 && (ctx->input.keyLeft || ctx->input.keyRight)) {
+        for (int32_t i=0;i<ctx->menuTriggerCountPrev;++i) if (ctx->menuTriggers[i]==id.id) {
+            int32_t next = (i + (ctx->input.keyLeft ? ctx->menuTriggerCountPrev - 1 : 1)) % ctx->menuTriggerCountPrev;
+            ctx->openMenuId = ctx->menuTriggers[next]; ctx->focusedId = ctx->openMenuId;
+            ctx->input.keyLeft = ctx->input.keyRight = false; break;
+        }
+    }
+    bool overTrigger = !ctx->disabledDepth && Clay_PointerOver(id);
+    if (overTrigger) {
+        ClayWidgets__SetCursor(ctx, CLAY_WIDGETS_CURSOR_POINTER);
+    }
     bool isOpen = (ctx->openMenuId == id.id);
+    bool focused = ClayWidgets__RegisterFocusable(ctx, id, overTrigger);
+    if (focused && (ClayWidgets__ActivateFocused(ctx, id) || ctx->input.keyDown)) {
+        ctx->openMenuId = id.id;
+    }
 
     // Click toggles this menu; while a *different* menu is open, hovering this
     // title switches to it (classic menu-bar behavior).
@@ -81,6 +112,8 @@ bool ClayWidgets_BeginMenu(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_Str
         } else if (ctx->input.keyEscape) {
             ctx->openMenuId = 0;
             isOpen = false;
+            ctx->focusedId = id.id;
+            ctx->input.keyEscape = false;
         }
     }
 
@@ -98,7 +131,7 @@ bool ClayWidgets_BeginMenu(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_Str
             .childAlignment = { .x = CLAY_ALIGN_X_CENTER, .y = CLAY_ALIGN_Y_CENTER },
         },
         .backgroundColor = triggerBg,
-        .cornerRadius = CLAY_CORNER_RADIUS(ctx->theme.radiusSm),
+        .cornerRadius = CLAY_CORNER_RADIUS((float)ctx->theme.radiusSm),
         .transition = ClayWidgets__ColorTransition(ctx),
     }) {
         CLAY_TEXT(title, {
@@ -110,14 +143,24 @@ bool ClayWidgets_BeginMenu(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_Str
     }
 
     if (!isOpen) {
+        if (ctx->menuNavigationId == id.id) ctx->menuNavigationId = 0;
         return false;
     }
+    if (!ClayWidgets__PushOverlay(ctx, 300)) return false;
+    ClayWidgets__MenuNavigation(ctx, id.id);
 
     // Floating item panel, anchored under the title's bottom-left corner.
     float r = (float)ctx->theme.radiusSm;
-    ClayWidgets__BeginElement(dropdownId, CLAY__INIT(Clay_ElementDeclaration){
+    Clay_ElementData triggerBox = Clay_GetElementData(id), dropBox = Clay_GetElementData(dropdownId);
+    float width = dropBox.found ? dropBox.boundingBox.width : 180;
+    float height = dropBox.found ? dropBox.boundingBox.height : 180;
+    bool up = triggerBox.boundingBox.y + triggerBox.boundingBox.height + height > ctx->layoutDimensions.height
+        && triggerBox.boundingBox.y > ctx->layoutDimensions.height / 2;
+    float xOffset = fminf(0, ctx->layoutDimensions.width - triggerBox.boundingBox.x - width);
+    float maxHeight = fmaxf(1, up ? triggerBox.boundingBox.y - 4 : ctx->layoutDimensions.height - triggerBox.boundingBox.y - triggerBox.boundingBox.height - 4);
+    ClayWidgets__BeginScrollElement(dropdownId, CLAY__INIT(Clay_ElementDeclaration){
         .layout = {
-            .sizing = { .width = CLAY_SIZING_FIT(180, 0), .height = CLAY_SIZING_FIT(0, 0) },
+            .sizing = { .width = CLAY_SIZING_FIT(180, ctx->layoutDimensions.width), .height = CLAY_SIZING_FIT(0, maxHeight) },
             .padding = CLAY_PADDING_ALL(ctx->theme.spacing.xs),
             .childGap = 0,
             .layoutDirection = CLAY_TOP_TO_BOTTOM,
@@ -125,15 +168,16 @@ bool ClayWidgets_BeginMenu(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_Str
         .backgroundColor = ctx->theme.surfaceAltColor,
         .cornerRadius = (Clay_CornerRadius){ r, r, r, r },
         .floating = {
-            .offset = { .x = 0.0f, .y = 4.0f },
+            .offset = { .x = xOffset, .y = up ? -4.0f : 4.0f },
             .parentId = id.id,
-            .zIndex = 300,
+            .zIndex = ClayWidgets__OverlayZ(ctx, 0),
             .attachPoints = {
-                .element = CLAY_ATTACH_POINT_LEFT_TOP,
-                .parent = CLAY_ATTACH_POINT_LEFT_BOTTOM,
+                .element = up ? CLAY_ATTACH_POINT_LEFT_BOTTOM : CLAY_ATTACH_POINT_LEFT_TOP,
+                .parent = up ? CLAY_ATTACH_POINT_LEFT_TOP : CLAY_ATTACH_POINT_LEFT_BOTTOM,
             },
             .attachTo = CLAY_ATTACH_TO_ELEMENT_WITH_ID,
         },
+        .clip = { .vertical = true },
         .border = {
             .color = ctx->theme.borderColor,
             .width = { .left = 1, .right = 1, .top = 1, .bottom = 1 },
@@ -149,6 +193,7 @@ void ClayWidgets_EndMenu(ClayWidgets_Context *ctx, Clay_ElementId id) {
         return;
     }
     ClayWidgets__EndElement(); // dropdown panel
+    ClayWidgets__PopOverlay(ctx);
 }
 
 bool ClayWidgets_MenuItem(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_String label) {
@@ -157,11 +202,29 @@ bool ClayWidgets_MenuItem(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_Stri
     }
 
     bool over = Clay_PointerOver(id);
+    if (over) {
+        ClayWidgets__SetCursor(ctx, CLAY_WIDGETS_CURSOR_POINTER);
+    }
     bool clicked = ClayWidgets__ConsumeClick(ctx, over);
+    if (!ctx->disabledDepth) {
+        if (ctx->menuOpening && ctx->menuItemCount == 0) ctx->focusedId = id.id;
+        ClayWidgets__RegisterFocusable(ctx, id, over);
+        if (ctx->menuItemCount < CLAY_WIDGETS_MAX_FOCUSABLES) ctx->menuItems[ctx->menuItemCount++] = id.id;
+        if (!ctx->menuOpening && ClayWidgets__ActivateFocused(ctx, id)) clicked = true;
+    }
     if (clicked) {
         // Choosing an item dismisses whichever menu it lives in (bar or context).
+        uint32_t restoreFocus = ctx->openContextMenuId ? ctx->contextMenuReturnFocus : ctx->openMenuId;
         ctx->openMenuId = 0;
         ctx->openContextMenuId = 0;
+        ctx->focusedId = restoreFocus;
+        ctx->menuNavigationId = 0;
+    }
+    if (ctx->focusedId == id.id) {
+        Clay_ElementId owner = {0}; owner.id = ctx->menuNavigationId;
+        Clay_ElementId panel = ctx->openContextMenuId
+            ? Clay_GetElementIdWithIndex(CLAY_STRING("ClayWidgetsContextMenuPanel"),owner.id) : ClayWidgets__MenuDropdownId(owner);
+        ClayWidgets__ScrollIntoView(ctx,id,panel);
     }
 
     CLAY(id, {
@@ -176,7 +239,7 @@ bool ClayWidgets_MenuItem(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_Stri
             .childAlignment = { .x = CLAY_ALIGN_X_LEFT, .y = CLAY_ALIGN_Y_CENTER },
         },
         .backgroundColor = over ? ctx->theme.hoverColor : ClayWidgets__FadeToClear(ctx->theme.hoverColor),
-        .cornerRadius = CLAY_CORNER_RADIUS(ctx->theme.radiusSm),
+        .cornerRadius = CLAY_CORNER_RADIUS((float)ctx->theme.radiusSm),
         .transition = ClayWidgets__ColorTransition(ctx),
     }) {
         CLAY_TEXT(label, {
@@ -187,6 +250,7 @@ bool ClayWidgets_MenuItem(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_Stri
         });
     }
 
+    ClayWidgets__Describe(ctx,id,CLAY_WIDGETS_ROLE_MENU_ITEM,label,false,false);
     return clicked;
 }
 
@@ -227,6 +291,7 @@ void ClayWidgets_OpenContextMenu(ClayWidgets_Context *ctx, Clay_ElementId menuId
     ctx->contextMenuX = ClayWidgets__ClampF32(x, 0.0f, maxX);
     ctx->contextMenuY = ClayWidgets__ClampF32(y, 0.0f, maxY);
     ctx->openContextMenuId = menuId.id;
+    ctx->contextMenuReturnFocus = ctx->focusedId;
 }
 
 bool ClayWidgets_BeginContextMenu(ClayWidgets_Context *ctx, Clay_ElementId menuId) {
@@ -241,6 +306,9 @@ bool ClayWidgets_BeginContextMenu(ClayWidgets_Context *ctx, Clay_ElementId menuI
     // (they reopen the menu elsewhere).
     if (ctx->input.keyEscape) {
         ctx->openContextMenuId = 0;
+        ctx->focusedId = ctx->contextMenuReturnFocus;
+        ctx->menuNavigationId = 0;
+        ctx->input.keyEscape = false;
         return false;
     }
     if (ctx->input.pointerPressed && !Clay_PointerOver(panelId)) {
@@ -249,9 +317,16 @@ bool ClayWidgets_BeginContextMenu(ClayWidgets_Context *ctx, Clay_ElementId menuI
     }
 
     float r = (float)ctx->theme.radiusSm;
-    ClayWidgets__BeginElement(panelId, CLAY__INIT(Clay_ElementDeclaration){
+    if (!ClayWidgets__PushOverlay(ctx, 400)) return false;
+    ClayWidgets__MenuNavigation(ctx, menuId.id);
+    Clay_ElementData previous = Clay_GetElementData(panelId);
+    if (previous.found) {
+        ctx->contextMenuX = ClayWidgets__Clamp(ctx->contextMenuX,0,fmaxf(0,ctx->layoutDimensions.width-previous.boundingBox.width));
+        ctx->contextMenuY = ClayWidgets__Clamp(ctx->contextMenuY,0,fmaxf(0,ctx->layoutDimensions.height-previous.boundingBox.height));
+    }
+    ClayWidgets__BeginScrollElement(panelId, CLAY__INIT(Clay_ElementDeclaration){
         .layout = {
-            .sizing = { .width = CLAY_SIZING_FIT(180, 0), .height = CLAY_SIZING_FIT(0, 0) },
+            .sizing = { .width = CLAY_SIZING_FIT(180, ctx->layoutDimensions.width), .height = CLAY_SIZING_FIT(0, fmaxf(1,ctx->layoutDimensions.height-ctx->contextMenuY)) },
             .padding = CLAY_PADDING_ALL(ctx->theme.spacing.xs),
             .childGap = 0,
             .layoutDirection = CLAY_TOP_TO_BOTTOM,
@@ -260,13 +335,14 @@ bool ClayWidgets_BeginContextMenu(ClayWidgets_Context *ctx, Clay_ElementId menuI
         .cornerRadius = (Clay_CornerRadius){ r, r, r, r },
         .floating = {
             .offset = { .x = ctx->contextMenuX, .y = ctx->contextMenuY },
-            .zIndex = 400,
+            .zIndex = ClayWidgets__OverlayZ(ctx, 0),
             .attachPoints = {
                 .element = CLAY_ATTACH_POINT_LEFT_TOP,
                 .parent = CLAY_ATTACH_POINT_LEFT_TOP,
             },
             .attachTo = CLAY_ATTACH_TO_ROOT,
         },
+        .clip = { .vertical = true },
         .border = {
             .color = ctx->theme.borderColor,
             .width = { .left = 1, .right = 1, .top = 1, .bottom = 1 },
@@ -282,6 +358,7 @@ void ClayWidgets_EndContextMenu(ClayWidgets_Context *ctx, Clay_ElementId menuId)
         return;
     }
     ClayWidgets__EndElement(); // context menu panel
+    ClayWidgets__PopOverlay(ctx);
 }
 
 #endif

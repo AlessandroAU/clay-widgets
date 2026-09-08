@@ -37,11 +37,24 @@ bool ClayWidgets_ListBox(
     }
 
     bool over = Clay_PointerOver(id);
+    if (over) {
+        ClayWidgets__SetCursor(ctx, CLAY_WIDGETS_CURSOR_POINTER);
+    }
     bool focused = ClayWidgets__RegisterFocusable(ctx, id, over);
     bool changed = false;
+    int32_t initial = *selectedIndex;
+    *selectedIndex = ClayWidgets__MaxI32(-1,ClayWidgets__MinI32(*selectedIndex,itemCount-1));
 
     // Keyboard selection when focused.
     if (focused) {
+        if (ctx->input.keyHome) *selectedIndex = 0;
+        if (ctx->input.keyEnd) *selectedIndex = itemCount - 1;
+        if (ClayWidgets__TypeAhead(ctx, id.id)) {
+            for (int32_t i = 0; i < itemCount; ++i) {
+                int32_t n = ((*selectedIndex < 0 ? 0 : *selectedIndex) + i) % itemCount;
+                if (ClayWidgets__PrefixMatches(items[n], ctx->typeAhead, ctx->typeAheadLength)) { *selectedIndex = n; break; }
+            }
+        }
         if (ctx->input.keyDown) {
             int32_t next = (*selectedIndex < 0) ? 0 : ClayWidgets__MinI32(*selectedIndex + 1, itemCount - 1);
             if (next != *selectedIndex) { *selectedIndex = next; changed = true; }
@@ -50,6 +63,11 @@ bool ClayWidgets_ListBox(
             int32_t next = (*selectedIndex < 0) ? 0 : ClayWidgets__MaxI32(*selectedIndex - 1, 0);
             if (next != *selectedIndex) { *selectedIndex = next; changed = true; }
         }
+    }
+    changed = changed || initial != *selectedIndex;
+    if (changed && ctx->scrollPanelDepth > 0 && ctx->scrollPanelDepth <= CLAY_WIDGETS_MAX_SCROLL_NESTING) {
+        Clay_ElementId panel = {0}; panel.id = ctx->scrollPanelStack[ctx->scrollPanelDepth - 1];
+        ClayWidgets__ScrollIntoView(ctx, ClayWidgets__ChildId(id, CLAY_STRING("ClayWidgetsListBoxItem"), *selectedIndex), panel);
     }
 
     // Resolve row clicks before laying out so the new selection paints this frame.
@@ -68,7 +86,7 @@ bool ClayWidgets_ListBox(
             .layoutDirection = CLAY_TOP_TO_BOTTOM,
         },
         .backgroundColor = ctx->theme.surfaceAltColor,
-        .cornerRadius = CLAY_CORNER_RADIUS(ctx->theme.radiusMd),
+        .cornerRadius = CLAY_CORNER_RADIUS((float)ctx->theme.radiusMd),
         .border = {
             .color = focused ? ctx->theme.focusRingColor : ctx->theme.borderColor,
             .width = { .left = 1, .right = 1, .top = 1, .bottom = 1 },
@@ -98,7 +116,7 @@ bool ClayWidgets_ListBox(
                     .childAlignment = { .x = CLAY_ALIGN_X_LEFT, .y = CLAY_ALIGN_Y_CENTER },
                 },
                 .backgroundColor = rowBg,
-                .cornerRadius = CLAY_CORNER_RADIUS(ctx->theme.radiusSm),
+                .cornerRadius = CLAY_CORNER_RADIUS((float)ctx->theme.radiusSm),
                 .transition = ClayWidgets__ColorTransition(ctx),
             }) {
                 CLAY_TEXT(items[i], {

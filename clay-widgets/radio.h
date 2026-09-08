@@ -28,12 +28,16 @@ bool ClayWidgets_Radio(
 
     bool selected = (*selectedValue == optionValue);
     bool over = Clay_PointerOver(id);
+    if (over) {
+        ClayWidgets__SetCursor(ctx, CLAY_WIDGETS_CURSOR_POINTER);
+    }
     bool focused = ClayWidgets__RegisterFocusable(ctx, id, over);
     bool clicked = ClayWidgets__ConsumeClick(ctx, over);
     if (!clicked && ClayWidgets__ActivateFocused(ctx, id)) {
         clicked = true;
     }
 
+    bool changed = clicked && !selected;
     if (clicked) {
         *selectedValue = optionValue;
         selected = true;
@@ -84,7 +88,8 @@ bool ClayWidgets_Radio(
         });
     }
 
-    return clicked;
+    ClayWidgets__Describe(ctx,id,CLAY_WIDGETS_ROLE_CHECKBOX,text,selected,false);
+    return changed;
 }
 
 #endif

@@ -1,11 +1,12 @@
 CXX ?= g++
-CXXFLAGS ?= -std=c++20 -O2 -Wall -Wextra -pedantic
+.DEFAULT_GOAL := all
+CXXFLAGS ?= -std=c++20 -O2 -Wall -Wextra -Wno-missing-field-initializers
 
 RAYLIB_DIR := subprojects/raylib
 RAYLIB_SRC_DIR := $(RAYLIB_DIR)/src
 RAYLIB_LIB := $(RAYLIB_SRC_DIR)/libraylib.a
 
-INCLUDES := -I. -Isubprojects/clay -Isubprojects/raylib/src
+INCLUDES := -I. -isystem subprojects/clay -isystem subprojects/raylib/src
 # Static-link the GCC/C++ runtime and pthreads so the exe has no non-system DLL
 # dependencies (no libgcc_s_seh-1.dll / libstdc++-6.dll / libwinpthread-1.dll).
 # raylib is already a static .a; the font is baked in via
@@ -41,6 +42,15 @@ HEADERS := $(wildcard clay-widgets/*.h backends/raylib/*.h demo/*.h demo/screens
 
 .PHONY: all raylib run test amalgam test-amalgam clean raylib-clean log font
 
+.PHONY: test-backend
+
+# Requires a graphics context; run locally, separately from headless CI.
+build/test-raylib.exe: tests/test-raylib.cpp $(HEADERS) subprojects/clay/clay.h $(RAYLIB_LIB) | $(BUILD_DIR)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) tests/test-raylib.cpp -o $@ $(LDFLAGS) $(LDLIBS)
+
+test-backend: build/test-raylib.exe
+	./build/test-raylib.exe
+
 all: $(APP)
 
 # Regenerate the baked-in font header from the source TTF (committed, so this is
@@ -62,14 +72,14 @@ $(BUILD_DIR):
 $(OBJ): $(SRC) $(HEADERS) | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -MMD -MP -c $(SRC) -o $(OBJ)
 
-$(APP): $(OBJ) | $(RAYLIB_LIB)
+$(APP): $(OBJ) $(RAYLIB_LIB)
 	$(CXX) $(OBJ) -o $(APP) $(LDFLAGS) $(LDLIBS)
 
 run: $(APP)
 	./$(APP)
 
-$(TEST_APP): $(TEST_SRC) $(HEADERS) | $(BUILD_DIR)
-	$(CXX) $(CXXFLAGS) -I. -Isubprojects/clay $(TEST_SRC) -o $(TEST_APP) -static -static-libgcc -static-libstdc++
+$(TEST_APP): $(TEST_SRC) $(wildcard tests/*.h) $(HEADERS) subprojects/clay/clay.h | $(BUILD_DIR)
+	$(CXX) $(CXXFLAGS) -I. -isystem subprojects/clay $(TEST_SRC) -o $(TEST_APP) -static -static-libgcc -static-libstdc++
 
 test: $(TEST_APP)
 	./$(TEST_APP)
@@ -79,10 +89,10 @@ $(AMALGAM): $(wildcard clay-widgets/*.h) tools/amalgamate.py | $(BUILD_DIR)
 
 amalgam: $(AMALGAM)
 
-$(AMALGAM_TEST_APP): $(AMALGAM) $(TEST_SRC)
+$(AMALGAM_TEST_APP): $(AMALGAM) $(TEST_SRC) $(wildcard tests/*.h) subprojects/clay/clay.h
 	mkdir -p $(BUILD_DIR)/amalgam/clay-widgets
 	cp $(AMALGAM) $(AMALGAM_SHADOW)
-	$(CXX) $(CXXFLAGS) -I$(BUILD_DIR)/amalgam -Isubprojects/clay $(TEST_SRC) -o $(AMALGAM_TEST_APP) -static -static-libgcc -static-libstdc++
+	$(CXX) $(CXXFLAGS) -I$(BUILD_DIR)/amalgam -isystem subprojects/clay $(TEST_SRC) -o $(AMALGAM_TEST_APP) -static -static-libgcc -static-libstdc++
 
 test-amalgam: $(AMALGAM_TEST_APP)
 	./$(AMALGAM_TEST_APP)

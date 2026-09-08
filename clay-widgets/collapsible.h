@@ -28,6 +28,9 @@ bool ClayWidgets_BeginCollapsible(ClayWidgets_Context *ctx, Clay_ElementId id, C
     }
 
     bool over = Clay_PointerOver(id);
+    if (over) {
+        ClayWidgets__SetCursor(ctx, CLAY_WIDGETS_CURSOR_POINTER);
+    }
     bool focused = ClayWidgets__RegisterFocusable(ctx, id, over);
     bool clicked = ClayWidgets__ConsumeClick(ctx, over);
     if (!clicked && ClayWidgets__ActivateFocused(ctx, id)) {
@@ -51,7 +54,7 @@ bool ClayWidgets_BeginCollapsible(ClayWidgets_Context *ctx, Clay_ElementId id, C
             .layoutDirection = CLAY_LEFT_TO_RIGHT,
         },
         .backgroundColor = over ? ctx->theme.hoverColor : ctx->theme.surfaceAltColor,
-        .cornerRadius = CLAY_CORNER_RADIUS(ctx->theme.radiusSm),
+        .cornerRadius = CLAY_CORNER_RADIUS((float)ctx->theme.radiusSm),
         .border = {
             .color = focused ? ctx->theme.focusRingColor : transparent,
             .width = { .left = 1, .right = 1, .top = 1, .bottom = 1 },

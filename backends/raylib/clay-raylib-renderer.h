@@ -24,7 +24,9 @@
 // (raylib blends coverage in sRGB space, which makes text read thin - worst on
 // the dark themes). CPU-side, not a shader, so it also works on web. Comment out
 // the define to disable, or tune the curve with e.g. -DCLAY_WIDGETS_TEXT_GAMMA=2.2f.
+#ifndef CLAY_WIDGETS_DISABLE_TEXT_GAMMA
 #define CLAY_WIDGETS_TEXT_GAMMA_CORRECTION
+#endif
 #include "backends/raylib/text-gamma.h"
 
 #ifdef __EMSCRIPTEN__
@@ -91,7 +93,9 @@ static Color MixOverlay(Color base, Color overlay) {
 }
 
 static void AppendUtf8FromCodepoint(char *buffer, int &length, int maxLength, int codepoint) {
-    if (maxLength <= 0 || length >= maxLength) {
+    int bytes = codepoint <= 0x7F ? 1 : codepoint <= 0x7FF ? 2 : codepoint <= 0xFFFF ? 3 : 4;
+    if (!buffer || length < 0 || codepoint < 0 || codepoint > 0x10FFFF
+        || (codepoint >= 0xD800 && codepoint <= 0xDFFF) || maxLength - length < bytes) {
         return;
     }
 
@@ -137,6 +141,13 @@ static void AppendUtf8FromCodepoint(char *buffer, int &length, int maxLength, in
 // The TTF bytes are supplied by the app (ttfData/ttfSize) so this backend has
 // no opinion about which font ships - the demo points them at its embedded
 // font header; another app can point them at any TTF in memory.
+struct FontFace {
+    uint16_t id;
+    const unsigned char *data;
+    int size;
+    std::vector<int> codepoints;
+    std::vector<std::pair<int, Font>> atlases;
+};
 struct FontCache {
     float dpiScale = 1.0f;
     Font fallback = {};                        // used if the app font failed
@@ -144,7 +155,24 @@ struct FontCache {
     int ttfSize = 0;
     bool haveEmbedded = false;                 // true once a bake from ttfData succeeded
     std::vector<std::pair<int, Font>> atlases; // physical pixel size -> baked Font
+    std::vector<FontFace> faces; // registered IDs; registration order is fallback order
 };
+
+// TTF bytes must outlive the cache. Glyph lists are copied. Register before layout;
+// call Clay_ResetMeasureTextCache after replacing a face used by existing text.
+[[maybe_unused]] static bool FontCache_Register(FontCache &cache, uint16_t id, const unsigned char *data, int size,
+    const int *codepoints = nullptr, int count = 0) {
+    if (!data || size <= 0 || count < 0 || (count && !codepoints)) return false;
+    for (auto &face : cache.faces) if (face.id == id) {
+        for (auto &atlas : face.atlases) UnloadFont(atlas.second);
+        face = FontFace{id, data, size, {}, {}};
+        if (count) face.codepoints.assign(codepoints, codepoints + count);
+        return true;
+    }
+    cache.faces.push_back(FontFace{id, data, size, {}, {}});
+    if (count) cache.faces.back().codepoints.assign(codepoints, codepoints + count);
+    return true;
+}
 
 // Maps a logical font size to the physical pixel size we bake at (min 1).
 static int FontCache_PixelSize(const FontCache &cache, float logicalSize) {
@@ -155,7 +183,15 @@ static int FontCache_PixelSize(const FontCache &cache, float logicalSize) {
 // Returns the atlas baked at pixelSize, baking and caching it on first use.
 // Never returns null: falls back to the default font if no app font was
 // supplied or a bake fails.
-static Font *FontCache_Get(FontCache &cache, int pixelSize) {
+static Font *FontCache_Get(FontCache &cache, int pixelSize, uint16_t fontId = 0) {
+    for (auto &face : cache.faces) if (face.id == fontId) {
+        for (auto &atlas : face.atlases) if (atlas.first == pixelSize) return &atlas.second;
+        Font font = ClayWidgets_BakeFont(face.data, face.size, pixelSize, face.codepoints.data(), (int)face.codepoints.size());
+        if (!font.texture.id) return &cache.fallback;
+        SetTextureFilter(font.texture, TEXTURE_FILTER_BILINEAR);
+        face.atlases.emplace_back(pixelSize, font);
+        return &face.atlases.back().second;
+    }
     if (!cache.haveEmbedded || !cache.ttfData || cache.ttfSize <= 0) {
         return &cache.fallback;
     }
@@ -174,6 +210,8 @@ static Font *FontCache_Get(FontCache &cache, int pixelSize) {
 }
 
 static void FontCache_Unload(FontCache &cache) {
+    for (auto &face : cache.faces) for (auto &atlas : face.atlases) UnloadFont(atlas.second);
+    cache.faces.clear();
     for (auto &entry : cache.atlases) {
         UnloadFont(entry.second);
     }
@@ -191,9 +229,41 @@ static const char *TerminateSlice(const char *chars, int32_t length) {
     return buffer.c_str();
 }
 
+static Font FontCache_Glyph(FontCache &cache, uint16_t id, float size, int codepoint) {
+    int px = FontCache_PixelSize(cache, size);
+    Font primary = *FontCache_Get(cache, px, id);
+    if (primary.glyphs[GetGlyphIndex(primary, codepoint)].value == codepoint) return primary;
+    for (auto &face : cache.faces) {
+        if (face.id == id) continue;
+        Font fallback = *FontCache_Get(cache, px, face.id);
+        if (fallback.glyphs[GetGlyphIndex(fallback, codepoint)].value == codepoint) return fallback;
+    }
+    return primary;
+}
+
+// Measurement and rendering deliberately share glyph fallback and advances.
+static Clay_Dimensions FontCache_Text(FontCache &cache, uint16_t id, const char *chars, int length,
+    float size, float spacing, Vector2 origin, Color color, bool draw) {
+    const char *text = TerminateSlice(chars, length);
+    float x = 0, y = 0, width = 0;
+    for (int offset = 0; offset < length;) {
+        int bytes = 1; int cp = GetCodepointNext(text + offset, &bytes);
+        offset += bytes;
+        if (cp == '\n') { width = std::max(width, x > 0 ? x - spacing : 0); x = 0; y += size; continue; }
+        Font font = FontCache_Glyph(cache, id, size, cp);
+        if (draw) DrawTextCodepoint(font, cp, {origin.x + x, origin.y + y}, size, color);
+        int index = GetGlyphIndex(font, cp);
+        float advance = font.glyphs[index].advanceX ? (float)font.glyphs[index].advanceX : font.recs[index].width;
+        x += advance * size / (float)font.baseSize + spacing;
+    }
+    return {std::max(width, x > 0 ? x - spacing : 0), y + size};
+}
+
 static Clay_Dimensions MeasureTextRaylib(Clay_StringSlice text, Clay_TextElementConfig *config, void *userData) {
     FontCache *cache = static_cast<FontCache *>(userData);
     float fontSize = static_cast<float>(config->fontSize);
+    if (cache) return FontCache_Text(*cache, config->fontId, text.chars, text.length, fontSize,
+        (float)config->letterSpacing, {0,0}, WHITE, false);
     Font font = cache ? *FontCache_Get(*cache, FontCache_PixelSize(*cache, fontSize))
                       : GetFontDefault();
 
@@ -315,10 +385,9 @@ static void RenderClayCommands(Clay_RenderCommandArray commands, FontCache &font
             }
             case CLAY_RENDER_COMMAND_TYPE_TEXT: {
                 const Clay_TextRenderData &text = cmd->renderData.text;
-                Font font = *FontCache_Get(fontCache, FontCache_PixelSize(fontCache, static_cast<float>(text.fontSize)));
                 Color color = applyOverlay(ToRaylibColor(text.textColor));
-                DrawTextEx(font, TerminateSlice(text.stringContents.chars, text.stringContents.length),
-                    Vector2{rect.x, rect.y}, static_cast<float>(text.fontSize), static_cast<float>(text.letterSpacing), color);
+                FontCache_Text(fontCache, text.fontId, text.stringContents.chars, text.stringContents.length,
+                    (float)text.fontSize, (float)text.letterSpacing, {rect.x, rect.y}, color, true);
                 break;
             }
             case CLAY_RENDER_COMMAND_TYPE_BORDER: {

@@ -9,6 +9,17 @@ on:
   pull_request:
 
 jobs:
+  headless-sanitizers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Test with address and undefined-behavior sanitizers
+        run: |
+          mkdir -p build
+          g++ -std=c++20 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -I. -isystem subprojects/clay tests/test-widgets.cpp -o build/test-sanitizers
+          ./build/test-sanitizers
   windows:
     runs-on: windows-latest
     defaults:

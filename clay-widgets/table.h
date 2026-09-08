@@ -25,16 +25,21 @@ typedef struct ClayWidgets_TableColumn {
     Clay_SizingAxis width;
 } ClayWidgets_TableColumn;
 
-void ClayWidgets_BeginTable(ClayWidgets_Context *ctx, Clay_ElementId id, const ClayWidgets_TableColumn *columns, int32_t columnCount);
+// Emit rows and call EndTable only when BeginTable returns true.
+bool ClayWidgets_BeginTable(ClayWidgets_Context *ctx, Clay_ElementId id, const ClayWidgets_TableColumn *columns, int32_t columnCount);
 bool ClayWidgets_TableRow(ClayWidgets_Context *ctx, Clay_ElementId rowId, const Clay_String *cells, int32_t cellCount, int32_t rowIndex, bool selected);
 void ClayWidgets_EndTable(ClayWidgets_Context *ctx, Clay_ElementId id);
 
 #ifdef CLAY_WIDGETS_IMPLEMENTATION
 
-void ClayWidgets_BeginTable(ClayWidgets_Context *ctx, Clay_ElementId id, const ClayWidgets_TableColumn *columns, int32_t columnCount) {
-    if (!ctx || !columns || columnCount <= 0) {
-        return;
+bool ClayWidgets_BeginTable(ClayWidgets_Context *ctx, Clay_ElementId id, const ClayWidgets_TableColumn *columns, int32_t columnCount) {
+    if (!ctx || !columns || columnCount <= 0 || ctx->tableDepth >= 16) {
+        return false;
     }
+    int32_t depth = ctx->tableDepth++;
+    ctx->tableIds[depth] = id.id;
+    ctx->tableSavedCounts[depth] = ctx->tableColCount;
+    memcpy(ctx->tableSavedWidths[depth],ctx->tableColWidths,sizeof(ctx->tableColWidths));
 
     // The table clips horizontally (so columns can't spill past its rounded
     // frame), which makes Clay treat it as a scroll container. It can't scroll
@@ -58,7 +63,7 @@ void ClayWidgets_BeginTable(ClayWidgets_Context *ctx, Clay_ElementId id, const C
             .layoutDirection = CLAY_TOP_TO_BOTTOM,
         },
         .backgroundColor = ctx->theme.surfaceAltColor,
-        .cornerRadius = CLAY_CORNER_RADIUS(ctx->theme.radiusMd),
+        .cornerRadius = CLAY_CORNER_RADIUS((float)ctx->theme.radiusMd),
         .clip = { .horizontal = true, .vertical = false, .childOffset = { 0, 0 } },
         .border = {
             .color = ctx->theme.borderColor,
@@ -96,6 +101,7 @@ void ClayWidgets_BeginTable(ClayWidgets_Context *ctx, Clay_ElementId id, const C
             }
         }
     }
+    return true;
 }
 
 bool ClayWidgets_TableRow(ClayWidgets_Context *ctx, Clay_ElementId rowId, const Clay_String *cells, int32_t cellCount, int32_t rowIndex, bool selected) {
@@ -104,6 +110,9 @@ bool ClayWidgets_TableRow(ClayWidgets_Context *ctx, Clay_ElementId rowId, const 
     }
 
     bool over = Clay_PointerOver(rowId);
+    if (over) {
+        ClayWidgets__SetCursor(ctx, CLAY_WIDGETS_CURSOR_POINTER);
+    }
     bool clicked = ClayWidgets__ConsumeClick(ctx, over);
 
     Clay_Color rowBg = ClayWidgets__FadeToClear(ctx->theme.hoverColor);
@@ -149,9 +158,12 @@ bool ClayWidgets_TableRow(ClayWidgets_Context *ctx, Clay_ElementId rowId, const 
 
 void ClayWidgets_EndTable(ClayWidgets_Context *ctx, Clay_ElementId id) {
     (void)id;
-    if (!ctx) {
+    if (!ctx || ctx->tableDepth <= 0 || ctx->tableIds[ctx->tableDepth-1] != id.id) {
         return;
     }
+    int32_t depth = --ctx->tableDepth;
+    ctx->tableColCount = ctx->tableSavedCounts[depth];
+    memcpy(ctx->tableColWidths,ctx->tableSavedWidths[depth],sizeof(ctx->tableColWidths));
     ClayWidgets__EndElement(); // table container
 }
 
