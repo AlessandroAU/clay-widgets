@@ -50,6 +50,17 @@ bool ClayWidgets_ToggleEx(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_Stri
     float knobTravel = trackWidth - 2.0f * trackPad - knobSize;
     uint16_t knobLeftPad = (uint16_t)(trackPad + knobT * knobTravel + 0.5f);
 
+    // On, the accent fill already draws the pill, so an outline would only add a
+    // seam between the fill and the surface behind it. Off, the track is
+    // surfaceAltColor, which a theme is free to set equal to its surface color -
+    // there the outline is the only thing showing the control is present at all.
+    // Hover and focus outline in either state, because that ring is the focus
+    // affordance and dropping it would leave keyboard users without one.
+    uint16_t trackOutline = (uint16_t)((!*value || focused || over) ? 1 : 0);
+    // Same reasoning for the knob: it carries itself against the accent fill, but
+    // not against an unfilled track.
+    uint16_t knobOutline = (uint16_t)(*value ? 0 : 1);
+
     // The track owns a color transition, so it needs an id that is stable
     // across frames by contract - Clay's auto ids are derived from the parent
     // id and child position, which happens to be stable here but is
@@ -80,7 +91,7 @@ bool ClayWidgets_ToggleEx(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_Stri
             .cornerRadius = CLAY_CORNER_RADIUS(trackHeight * 0.5f),
             .border = {
                 .color = (focused || over) ? ctx->theme.focusRingColor : ctx->theme.borderColor,
-                .width = { .left = 1, .right = 1, .top = 1, .bottom = 1 },
+                .width = { .left = trackOutline, .right = trackOutline, .top = trackOutline, .bottom = trackOutline },
             },
             .transition = ClayWidgets__ColorTransition(ctx),
         }) {
@@ -95,7 +106,7 @@ bool ClayWidgets_ToggleEx(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_Stri
                 .cornerRadius = CLAY_CORNER_RADIUS(knobSize * 0.5f),
                 .border = {
                     .color = ctx->theme.borderColor,
-                    .width = { .left = 1, .right = 1, .top = 1, .bottom = 1 },
+                    .width = { .left = knobOutline, .right = knobOutline, .top = knobOutline, .bottom = knobOutline },
                 },
             }) {}
         }
