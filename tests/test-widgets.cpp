@@ -1141,7 +1141,7 @@ static void TestControlsScaleWithType(void) {
 
 // UTF-8 boundary and word-bound helpers used by the text input.
 static void TestUtf8Helpers(void) {
-    const char *text = "a\xC3\xA9!b"; // a, é (2 bytes), '!', b
+    const char *text = "a\xC3\xA9!b"; // a, ÃƒÂ© (2 bytes), '!', b
     int32_t length = 5;
     CHECK(ClayWidgets__Utf8NextBoundary(text, length, 0) == 1);
     CHECK(ClayWidgets__Utf8NextBoundary(text, length, 1) == 3); // skips the continuation byte
@@ -1203,6 +1203,8 @@ int main(void) {
     Clay_SetMeasureTextFunction(FakeMeasureText, nullptr);
 
     const TestCase tests[] = {
+        { "scrollbar wheel routing", TestScrollbarWheelRouting },
+        { "editor wheel routing", TestEditorWheelRouting },
         { "numeric input", TestNumberInput },
         { "slider label clipping", TestSliderLabelClipping },
         { "control pointer capture", TestControlClickCapture },

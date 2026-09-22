@@ -595,7 +595,9 @@ Momentum stays with its original scroll container when the pointer moves.
 Changing direction responds immediately, and clicking, keyboard navigation,
 opening or closing a modal, or setting a scroll position programmatically
 cancels pending motion. Nested widget clips forward vertical wheel input to the
-enclosing scroll area. Scrollbar dragging is always direct. Clay's own
+enclosing scroll area. Text areas handle wheel input only while focused;
+unfocused or disabled editors pass it to the enclosing panel. Single-line
+fields always pass vertical wheel input through. Scrollbar dragging is always direct. Clay's own
 drag-scroll momentum is separate, controlled by `enableDragScroll` in
 `BeginFrame`.
 

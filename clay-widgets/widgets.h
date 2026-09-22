@@ -380,15 +380,14 @@ typedef struct ClayWidgets_Context {
     // dwell timer) and available to custom widgets via ClayWidgets_GetState.
     ClayWidgets_StateSlot states[CLAY_WIDGETS_MAX_STATE_SLOTS];
 
-    // A hovered widget clip that Clay treats as a scroll container but that can't
-    // consume a vertical wheel (a horizontally-clipped table, a single-line text
-    // field). Recorded during layout; next BeginFrame forwards the swallowed
-    // wheel straight to the enclosing scroll panel (wheelFallthroughPanelId) so
-    // the panel scrolls even when the clip covers all of it. Box is last frame's
-    // geometry, used to confirm the pointer is still over the clip.
+    // Previous layout's wheel routes, resolved against current pointer hits
+    // before scrolling. focusId lets active editors keep their own wheel.
     uint32_t wheelFallthroughId;
-    uint32_t wheelFallthroughPanelId; // content id of the scroll panel to forward to (0 = none)
-    Clay_BoundingBox wheelFallthroughBox;
+    uint32_t wheelFallthroughPanelId;
+    struct {
+        uint32_t clipId, panelId, focusId, focusedPanelId;
+    } wheelRoutes[CLAY_WIDGETS_MAX_FOCUSABLES];
+    int32_t wheelRouteCount;
 
     // Stack of open scroll-panel content ids, so a clip widget can find the
     // scroll panel it lives in. Pushed by BeginScrollPanel, popped by

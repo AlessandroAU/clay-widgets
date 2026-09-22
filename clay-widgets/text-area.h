@@ -300,14 +300,12 @@ bool ClayWidgets_TextArea(
         wrapWidth = contentData.boundingBox.width - caretPad;
     }
 
-    // The content clip is a real Clay scroll container, so a wheel over it is
-    // consumed whenever it can scroll; when the content fits, let the wheel
-    // fall through to an enclosing scroll panel instead of being swallowed.
+    // Only the focused editor owns wheel scrolling. Inactive editors and
+    // editors whose content fits pass the wheel to their enclosing panel.
     bool canScrollVertically = scrollData.found
         && scrollData.contentDimensions.height > scrollData.scrollContainerDimensions.height + 0.5f;
-    if (!canScrollVertically) {
-        ClayWidgets__RegisterWheelFallthrough(ctx, contentId, over);
-    }
+    ClayWidgets__RegisterWheelRoute(ctx, contentId,
+        canScrollVertically && !options.disabled ? id.id : 0);
 
     if (focused && contentData.found) {
         // Clicks on the scrollbar drag the thumb (scroll-bar.h); they must not

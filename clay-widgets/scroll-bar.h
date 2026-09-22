@@ -75,6 +75,7 @@ static void ClayWidgets__ScrollBarAt(
 
     Clay_ElementId scrollBarTrackId = Clay_GetElementIdWithIndex(CLAY_STRING("ClayWidgetsScrollBarTrack"), scrollContainerId.id);
     Clay_ElementId scrollBarId = Clay_GetElementIdWithIndex(CLAY_STRING("ClayWidgetsScrollBarThumb"), scrollContainerId.id);
+    ClayWidgets__RegisterScrollbarWheel(ctx, scrollBarTrackId, scrollContainerId);
     ClayWidgets__KeepPointerCapture(ctx, scrollBarId);
     bool overThumb = Clay_PointerOver(scrollBarId);
     // Keep the pointer cursor for the whole drag, even when the pointer

@@ -103,6 +103,7 @@ void ClayWidgets_SetCornerRadius(ClayWidgets_Context *ctx, Clay_ElementId id, Cl
 #define CLAY_WIDGETS__ERROR_FLAG_TABLE_COLS (1u << 2)
 #define CLAY_WIDGETS__ERROR_FLAG_STATE      (1u << 3)
 #define CLAY_WIDGETS__ERROR_FLAG_DECORATIONS (1u << 4)
+#define CLAY_WIDGETS__ERROR_FLAG_WHEEL_ROUTES (1u << 5)
 
 static int16_t ClayWidgets__OverlayZ(ClayWidgets_Context *ctx, int16_t offset) {
     int32_t base = ctx->overlayDepth ? ctx->overlayBases[ctx->overlayDepth - 1] : 0;
@@ -194,13 +195,6 @@ static float ClayWidgets__Clamp(float value, float minValue, float maxValue) {
         return maxValue;
     }
     return value;
-}
-
-static bool ClayWidgets__PointInBoundingBox(float x, float y, Clay_BoundingBox box) {
-    return x >= box.x
-        && y >= box.y
-        && x <= (box.x + box.width)
-        && y <= (box.y + box.height);
 }
 
 static int32_t ClayWidgets__StrLenBounded(const char *text, int32_t maxLength) {
@@ -1037,32 +1031,66 @@ static ClayWidgets__ButtonInteraction ClayWidgets__InteractButton(ClayWidgets_Co
     return result;
 }
 
-// Registers a hovered clip element whose Clay clip becomes a scroll container but
-// can't consume a vertical wheel (a horizontally-clipped table, a single-line
-// text field). Clay routes the wheel to the innermost clip under the pointer and
-// drops it if that clip can't scroll in the wheel's direction, so without this
-// the widget silently eats the scroll. Recorded here (during layout, using last
-// frame's box) and acted on in the next BeginFrame, which forwards the wheel
-// directly to the enclosing scroll panel. Call every frame the pointer is over
-// the element.
-static void ClayWidgets__RegisterWheelFallthrough(ClayWidgets_Context *ctx, Clay_ElementId clipId, bool pointerOver) {
-    if (!ctx || !pointerOver) {
+// Register every eligible clip, including those not hovered yet. The pointer
+// can enter a field as its parent scrolls beneath it between frames.
+static void ClayWidgets__RegisterWheelRoute(ClayWidgets_Context *ctx, Clay_ElementId clipId, uint32_t focusId) {
+    if (!ctx) return;
+    if (ctx->wheelRouteCount >= CLAY_WIDGETS_MAX_FOCUSABLES) {
+        ClayWidgets__ReportError(ctx, CLAY_WIDGETS__ERROR_FLAG_WHEEL_ROUTES,
+            "wheel routing table full; raise CLAY_WIDGETS_MAX_FOCUSABLES");
         return;
     }
-    Clay_ElementData data = Clay_GetElementData(clipId);
-    if (data.found) {
-        ctx->wheelFallthroughId = clipId.id;
-        ctx->wheelFallthroughBox = data.boundingBox;
-        // The innermost scroll panel currently open around this clip is the one to
-        // forward the wheel to. 0 if the clip isn't inside a scroll panel, or if
-        // nesting ran past the stack (depth is counted unconditionally but only
-        // stored up to the cap, so a depth beyond the cap has no recorded id -
-        // guard the index to avoid reading past scrollPanelStack).
-        ctx->wheelFallthroughPanelId =
-            (ctx->scrollPanelDepth > 0 && ctx->scrollPanelDepth <= CLAY_WIDGETS_MAX_SCROLL_NESTING)
-                ? ctx->scrollPanelStack[ctx->scrollPanelDepth - 1]
-                : 0;
+    int32_t i = ctx->wheelRouteCount++;
+    ctx->wheelRoutes[i].clipId = clipId.id;
+    ctx->wheelRoutes[i].focusId = focusId;
+    ctx->wheelRoutes[i].focusedPanelId = clipId.id;
+    ctx->wheelRoutes[i].panelId =
+        ctx->scrollPanelDepth > 0 && ctx->scrollPanelDepth <= CLAY_WIDGETS_MAX_SCROLL_NESTING
+            ? ctx->scrollPanelStack[ctx->scrollPanelDepth - 1] : 0;
+}
+
+// Floating scrollbars may be the only hovered elements. Give the track its
+// owner's wheel policy, including focus-dependent forwarding for text areas.
+static void ClayWidgets__RegisterScrollbarWheel(ClayWidgets_Context *ctx,
+    Clay_ElementId trackId, Clay_ElementId containerId) {
+    int32_t owner = -1;
+    for (int32_t i = 0; i < ctx->wheelRouteCount; ++i)
+        if (ctx->wheelRoutes[i].clipId == containerId.id) owner = i;
+    int32_t index = ctx->wheelRouteCount;
+    ClayWidgets__RegisterWheelRoute(ctx, trackId, 0);
+    if (ctx->wheelRouteCount == index) return;
+    if (owner >= 0) {
+        ctx->wheelRoutes[index] = ctx->wheelRoutes[owner];
+        ctx->wheelRoutes[index].clipId = trackId.id;
+    } else {
+        ctx->wheelRoutes[index].panelId = containerId.id;
     }
+}
+
+static void ClayWidgets__RegisterWheelFallthrough(ClayWidgets_Context *ctx, Clay_ElementId clipId, bool pointerOver) {
+    (void)pointerOver;
+    ClayWidgets__RegisterWheelRoute(ctx, clipId, 0);
+}
+
+static void ClayWidgets__ResolveWheelRoute(ClayWidgets_Context *ctx) {
+    ctx->wheelFallthroughId = ctx->wheelFallthroughPanelId = 0;
+    for (int32_t i = 0; i < ctx->wheelRouteCount; ++i) {
+        if (ctx->wheelRoutes[i].focusId && ctx->wheelRoutes[i].focusId == ctx->focusedId) continue;
+        for (int axis = 0; axis < 2; ++axis)
+            if (ctx->scrollMomentumIds[axis] == ctx->wheelRoutes[i].clipId) ctx->scrollMomentumRemaining[axis] = 0;
+    }
+    Clay_ElementIdArray hovered = Clay_GetPointerOverIds();
+    for (int32_t h = 0; h < hovered.length; ++h) {
+        for (int32_t i = 0; i < ctx->wheelRouteCount; ++i) {
+            if (ctx->wheelRoutes[i].clipId != hovered.internalArray[h].id) continue;
+            // Resolve focused editors explicitly too, so direct and smooth
+            // wheels select the same container regardless of Clay's pool order.
+            ctx->wheelFallthroughId = ctx->wheelRoutes[i].clipId;
+            ctx->wheelFallthroughPanelId = ctx->wheelRoutes[i].focusId && ctx->wheelRoutes[i].focusId == ctx->focusedId
+                ? ctx->wheelRoutes[i].focusedPanelId : ctx->wheelRoutes[i].panelId;
+        }
+    }
+    ctx->wheelRouteCount = 0;
 }
 
 static int32_t ClayWidgets__CursorFromMouse(
@@ -1134,10 +1162,7 @@ static void ClayWidgets__UpdateWheelMomentum(ClayWidgets_Context *ctx, Clay_Vect
     for (int axis=0;axis<2;++axis) {
         float delta = axis ? wheel.y : wheel.x;
         Clay_ElementId destination = target;
-        if (axis && ctx->wheelFallthroughId && ctx->wheelFallthroughPanelId) {
-            Clay_ElementId clip = {0};clip.id=ctx->wheelFallthroughId;
-            if (Clay_PointerOver(clip)) destination.id=ctx->wheelFallthroughPanelId;
-        }
+        if (axis && ctx->wheelFallthroughId) destination.id = ctx->wheelFallthroughPanelId;
         if (interrupted) ctx->scrollMomentumRemaining[axis]=0;
         if (delta != 0) {
             // A new target or direction takes over immediately; residual motion
@@ -1559,6 +1584,7 @@ void ClayWidgets_BeginFrame(
     Clay_Vector2 pointerPosition = { input.mouseX, input.mouseY };
     Clay_Vector2 scrollDelta = { input.scrollX, input.scrollY };
     Clay_SetPointerState(pointerPosition, input.pointerDown);
+    ClayWidgets__ResolveWheelRoute(ctx);
 
     // While a widget has captured the pointer (a slider or scroll-bar thumb being
     // dragged, a held button), suppress pointer drag-scrolling so moving the mouse
@@ -1567,18 +1593,14 @@ void ClayWidgets_BeginFrame(
     // so this holds for every frame after the initial press.
     bool dragScroll = enableDragScroll && ctx->activeId == 0;
     bool smoothWheel = ctx->animationsEnabled && ctx->scrollMomentumTime > 0;
-    Clay_UpdateScrollContainers(dragScroll, smoothWheel ? (Clay_Vector2){0} : scrollDelta, input.deltaTime);
+    Clay_Vector2 clayWheel = scrollDelta;
+    if (ctx->wheelFallthroughId) clayWheel.y = 0;
+    Clay_UpdateScrollContainers(dragScroll, smoothWheel ? (Clay_Vector2){0} : clayWheel, input.deltaTime);
     if (smoothWheel) ClayWidgets__UpdateWheelMomentum(ctx,scrollDelta);
     else memset(ctx->scrollMomentumRemaining,0,sizeof(ctx->scrollMomentumRemaining));
 
-    // A widget whose clip can't consume a vertical wheel (a horizontally-clipped
-    // table, a single-line text field) registered itself last frame while
-    // hovered. Clay just handed it the wheel and dropped it, so forward that
-    // wheel straight to the scroll panel the widget lives in. Done directly
-    // (rather than by moving the pointer) so it works even when the clip covers
-    // the whole panel, leaving no bare panel pixel to reroute onto.
-    if (!smoothWheel && scrollDelta.y != 0.0f && ctx->wheelFallthroughId != 0 && ctx->wheelFallthroughPanelId != 0
-        && ClayWidgets__PointInBoundingBox(pointerPosition.x, pointerPosition.y, ctx->wheelFallthroughBox)) {
+    // Apply the routed wheel once to its resolved destination.
+    if (!smoothWheel && scrollDelta.y != 0 && ctx->wheelFallthroughId && ctx->wheelFallthroughPanelId) {
         Clay_ElementId panelId = CLAY__INIT(Clay_ElementId) CLAY__DEFAULT_STRUCT;
         panelId.id = ctx->wheelFallthroughPanelId;
         Clay_ScrollContainerData panelScroll = Clay_GetScrollContainerData(panelId);
@@ -1591,9 +1613,7 @@ void ClayWidgets_BeginFrame(
             panelScroll.scrollPosition->y = ClayWidgets__Clamp(y, -maxScroll, 0.0f);
         }
     }
-    // Consume the registration; hovered clip widgets re-register during this
-    // frame's layout, so a stale entry can't keep scrolling after the pointer
-    // leaves the widget.
+    // Layout registers next frame's eligible clips afresh.
     ctx->wheelFallthroughId = 0;
 
     Clay_BeginLayout();

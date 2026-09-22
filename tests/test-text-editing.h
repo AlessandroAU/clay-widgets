@@ -34,7 +34,7 @@ static void TestTextInputEditingAndClipboard(void) {
 
     // A two-byte UTF-8 codepoint inserts and deletes as one unit.
     ClayWidgets_Input typeAccent = MakeInput();
-    typeAccent.textUtf8 = "\xC3\xA9"; // é
+    typeAccent.textUtf8 = "\xC3\xA9"; // ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¾ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¾ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©
     typeAccent.textUtf8Length = 2;
     Frame(typeAccent, body);
     CHECK(std::strcmp(buffer, "ab\xC3\xA9") == 0);
@@ -436,4 +436,97 @@ static void TestTextAreaOverlaysClippedToPanel(void) {
     }
     CHECK(selectionRects > 0);
     CHECK(sawThumb);
+}
+
+
+static void TestEditorWheelRouting(void) {
+    for (bool smooth : {false, true}) {
+        for (int variant = 0; variant < 3; ++variant) {
+            bool multiline = variant != 0;
+            bool scrollbar = variant == 2;
+            ResetUi(); ui.animationsEnabled = smooth;
+            auto panel = CLAY_IDI("EditorWheelPanel", smooth * 3 + variant);
+            auto editor = CLAY_IDI("EditorWheelField", smooth * 3 + variant);
+            auto content = multiline
+                ? Clay_GetElementIdWithIndex(CLAY_STRING("ClayWidgetsTextAreaContent"), editor.id)
+                : Clay_GetElementIdWithIndex(CLAY_STRING("ClayWidgetsTextInputInner"), editor.id);
+            char text[256] = "one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten";
+            bool disabled = false;
+            auto draw = [&] {
+                ClayWidgets_BeginScrollPanel(&ui, panel, {CLAY_SIZING_FIXED(400), CLAY_SIZING_FIXED(220), 1, 1, 1});
+                if (multiline) {
+                    ClayWidgets_TextAreaOptions options = {}; options.height = 80; options.disabled = disabled;
+                    ClayWidgets_TextArea(&ui, editor, CLAY_STRING(""), text, sizeof(text), options);
+                } else {
+                    ClayWidgets_TextInputOptions options = {}; options.disabled = disabled;
+                    ClayWidgets_TextInput(&ui, editor, CLAY_STRING(""), text, sizeof(text), options);
+                }
+                CLAY_AUTO_ID({ .layout = { .sizing = { .height = CLAY_SIZING_FIXED(600) } } }) {}
+                ClayWidgets_EndScrollPanel(&ui, panel);
+            };
+            Frame(MakeInput(), draw); Frame(MakeInput(), draw);
+            auto outer = Clay_GetScrollContainerData(ClayWidgets__ScrollPanelContentId(panel));
+            auto inner = Clay_GetScrollContainerData(content);
+            auto hoverTarget = scrollbar ? Clay_GetElementIdWithIndex(CLAY_STRING("ClayWidgetsScrollBarThumb"), content.id) : content;
+            auto box = Clay_GetElementData(hoverTarget).boundingBox;
+            auto wheel = MakeInput(); wheel.mouseX = box.x + 2; wheel.mouseY = box.y + 2; wheel.scrollY = -1;
+            // Enter the field and scroll on the same frame, without a hover frame.
+            Frame(wheel, draw);
+            CHECK(outer.scrollPosition->y < 0);
+            CHECK(inner.scrollPosition->y == 0);
+            float previous = outer.scrollPosition->y;
+            Frame(wheel, draw); CHECK(outer.scrollPosition->y < previous);
+            CHECK(inner.scrollPosition->y == 0);
+            if (multiline) {
+                memset(ui.scrollMomentumRemaining, 0, sizeof(ui.scrollMomentumRemaining));
+                outer.scrollPosition->y = 0;
+                Frame(MakeInput(), draw);
+                box = Clay_GetElementData(content).boundingBox;
+                Frame(PressAt(box.x + 5, box.y + 5), draw);
+                Frame(ReleaseAt(box.x + 5, box.y + 5), draw);
+                CHECK(ui.focusedId == editor.id);
+                inner.scrollPosition->y = 0;
+                box = Clay_GetElementData(hoverTarget).boundingBox;
+                wheel.mouseX = box.x + 2; wheel.mouseY = box.y + 2;
+                Frame(wheel, draw);
+                CHECK(inner.scrollPosition->y < 0);
+                CHECK(outer.scrollPosition->y == 0);
+                disabled = true; Frame(MakeInput(), draw);
+                memset(ui.scrollMomentumRemaining, 0, sizeof(ui.scrollMomentumRemaining));
+                float before = inner.scrollPosition->y;
+                Frame(wheel, draw);
+                CHECK(outer.scrollPosition->y < 0 && inner.scrollPosition->y == before);
+            }
+            CHECK(g_errors.empty());
+        }
+    }
+}
+
+
+static void TestScrollbarWheelRouting(void) {
+    for (bool smooth : {false, true}) {
+        for (bool thumb : {false, true}) {
+            ResetUi(); ui.animationsEnabled = smooth;
+            auto panel = CLAY_IDI("ScrollbarWheelPanel", smooth * 2 + thumb);
+            auto draw = [&] {
+                ClayWidgets_BeginScrollPanel(&ui, panel, {CLAY_SIZING_FIXED(300), CLAY_SIZING_FIXED(160), 1, 1, 1});
+                CLAY_AUTO_ID({ .layout = { .sizing = { .height = CLAY_SIZING_FIXED(800) } } }) {}
+                ClayWidgets_EndScrollPanel(&ui, panel);
+            };
+            Frame(MakeInput(), draw); Frame(MakeInput(), draw); Frame(MakeInput(), draw);
+            auto content = ClayWidgets__ScrollPanelContentId(panel);
+            auto target = Clay_GetElementIdWithIndex(thumb ? CLAY_STRING("ClayWidgetsScrollBarThumb") : CLAY_STRING("ClayWidgetsScrollBarTrack"), content.id);
+            CHECK(Clay_GetElementData(target).found);
+            auto box = Clay_GetElementData(target).boundingBox;
+            auto wheel = MakeInput(); wheel.mouseX = box.x + box.width / 2;
+            wheel.mouseY = box.y + box.height / 2; wheel.scrollY = -1;
+            auto scroll = Clay_GetScrollContainerData(content);
+            Frame(wheel, draw);
+            CHECK(scroll.scrollPosition->y < 0);
+            if (!smooth) CHECK(scroll.scrollPosition->y == -10); // exactly once
+            float before = scroll.scrollPosition->y;
+            Frame(wheel, draw); CHECK(scroll.scrollPosition->y < before);
+            CHECK(g_errors.empty());
+        }
+    }
 }
