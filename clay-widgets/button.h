@@ -29,7 +29,7 @@ bool ClayWidgets_ButtonEx(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_Stri
         return false;
     }
     options.disabled = options.disabled || ctx->disabledDepth > 0;
-    if (options.disabled && ctx->activeId == id.id) ctx->activeId = 0;
+    ClayWidgets__ButtonInteraction interaction = ClayWidgets__InteractButton(ctx, id, options.disabled, id);
 
 
     // Disabled: inert. No focus registration, no press/click tracking, always
@@ -63,26 +63,10 @@ bool ClayWidgets_ButtonEx(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_Stri
         return false;
     }
 
-    bool over = Clay_PointerOver(id);
-    if (over) {
-        ClayWidgets__SetCursor(ctx, CLAY_WIDGETS_CURSOR_POINTER);
-    }
-    bool focused = ClayWidgets__RegisterFocusable(ctx, id, over);
-    bool pressedThisFrame = ctx->input.pointerPressed && over;
-
-    if (pressedThisFrame) {
-        ctx->activeId = id.id;
-    }
-
-    if (!ctx->input.pointerDown && ctx->activeId == id.id) {
-        ctx->activeId = 0;
-    }
-
-    bool active = ctx->input.pointerDown && ctx->activeId == id.id;
-    bool clicked = ClayWidgets__ConsumeClick(ctx, over && ctx->releasedActiveId == id.id);
-    if (!clicked && ClayWidgets__ActivateFocused(ctx, id)) {
-        clicked = true;
-    }
+    bool over = interaction.over;
+    bool focused = interaction.focused;
+    bool active = interaction.active;
+    bool clicked = interaction.clicked;
 
     // Per-variant resting / hover / pressed fills and text color. DEFAULT keeps
     // the original theme-driven look; PRIMARY and DANGER carry their own palette.

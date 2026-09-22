@@ -397,6 +397,7 @@ typedef struct ClayWidgets_Context {
     int32_t scrollPanelDepth;
 
     uint32_t activeId;
+    uint32_t activeDeclaredId; // capture owner seen by interaction handling this frame
     uint32_t releasedActiveId;
     uint32_t focusedId;
     uint32_t focusOrder[CLAY_WIDGETS_MAX_FOCUSABLES];
@@ -569,6 +570,7 @@ typedef struct ClayWidgets_ScrollPanelOptions {
 #include "slider.h"
 #include "progress-bar.h"
 #include "text-input.h"
+#include "number-input.h"
 #include "text-area.h"
 #include "combo.h"
 #include "listbox.h"
@@ -577,11 +579,12 @@ typedef struct ClayWidgets_ScrollPanelOptions {
 #include "stepper.h"
 #include "table.h"
 #include "tooltip.h"
+#include "scroll-bar.h"
 #include "modal.h"
 #include "toast.h"
 #include "menu.h"
-#include "scroll-bar.h"
 #include "scroll-panel.h"
+#include "color-picker.h"
 #include "collection.h"
 #include "split-pane.h"
 

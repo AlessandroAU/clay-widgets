@@ -103,7 +103,8 @@ int main(int argc, char **argv) {
         } else if (std::strcmp(argv[i], "--openmodal") == 0) {
             shotOpenModal = true;
         } else if (std::strcmp(argv[i], "--popup") == 0 && i + 1 < argc) {
-            shotPopup = std::strcmp(argv[++i], "draggable") == 0 ? 2 : 1;
+            const char *popup = argv[++i];
+            shotPopup = std::strcmp(popup, "color") == 0 ? 3 : std::strcmp(popup, "draggable") == 0 ? 2 : 1;
         } else if (std::strcmp(argv[i], "--mouse2") == 0 && i + 2 < argc) {
             forceMouse2X = (float)std::atof(argv[++i]);
             forceMouse2Y = (float)std::atof(argv[++i]);
@@ -240,7 +241,7 @@ int main(int argc, char **argv) {
     if (shotOpenModal) {
         demo.showDeleteModal = true;
     }
-    demo.showGalleryModal = shotPopup != 0;
+    demo.showGalleryModal = shotPopup == 1 || shotPopup == 2;
     demo.galleryModalDraggable = shotPopup == 2;
     if (shotToast) {
         ClayWidgets_ShowToast(&ui, CLAY_STRING("Changes applied"), CLAY_WIDGETS_BADGE_SUCCESS, 6.0f);
@@ -357,6 +358,12 @@ int main(int argc, char **argv) {
         );
 
         bool compactLayout = GetScreenWidth() < 900;
+
+        if (shotPath && shotPopup == 3 && shotFrameCounter == 1) {
+            demo.activeView = kViewGallery;
+            ui.requestedFocusId = ClayWidgets__ChildId(CLAY_ID("GalleryColor"), CLAY_STRING("Trigger"), 0).id;
+            ui.input.keyEnter = true;
+        }
 
         CLAY(CLAY_ID("Root"), {
             .layout = {

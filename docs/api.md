@@ -257,6 +257,59 @@ with an accent underline, meant to sit in the header row of a framed tab plane).
 Radios, tabs and segmented cells all behave as one-of-N over a caller-owned
 selection; a focused segmented control moves with Left/Right.
 
+### Numeric input
+
+```c
+bool ClayWidgets_NumberInput(ClayWidgets_Context *ctx, Clay_ElementId id,
+                            Clay_String label, int32_t *value, ClayWidgets_NumberInputOptions options);
+```
+
+Options are `{minValue, maxValue, step, disabled}`. The field accepts signed
+integers, with Up/Down stepping (Left/Right move the caret). In-range edits apply
+immediately. Enter or loss of focus clamps out-of-range drafts; empty or sign-only
+drafts revert to the current value. Escape resets the draft. Non-numeric edits
+are rejected. External value changes refresh the text; disabled fields never
+modify the value. Returns true when the caller's value changes.
+
+### Colour picker
+
+```c
+bool ClayWidgets_ColorPicker(ClayWidgets_Context *ctx, Clay_ElementId id,
+                            Clay_Color *color, ClayWidgets_ColorPickerOptions options);
+```
+
+A themed Windows-style colour dialog, opened by a colour swatch button. It
+includes 48 basic colours, a hue/saturation spectrum, a vertical luminance strip,
+editable RGB and HSL controls, hex entry, and checkerboard previews. Dialogs show
+the original colour beside the draft. The dialog inherits the active
+theme's surfaces, fonts, borders and bevels; it needs no platform colour dialog.
+
+Options are `{showAlpha, disabled, inlinePanel}`. Zero initialization opens a
+RGB dialog and preserves alpha. Set `showAlpha` for a 0-255 alpha slider;
+`inlinePanel` embeds the panel directly and applies changes immediately.
+In dialog mode, changes are held in a draft until **OK**. Cancel, Escape, the
+close button and an outside click discard the draft. The return value is true
+only when the caller's colour changes. Disabled pickers leave it untouched.
+
+The palette is one Tab stop: arrow keys move its highlight, Home/End jump
+to the first/last swatch, and Enter/Space selects it. Tab moves to the spectrum. Arrow keys
+adjust hue/saturation on the spectrum and Up/Down adjusts luminance (Home/End
+select its extremes). RGB and HSL fields accept typing and Up/Down adjustment. Hue uses 0-360 degrees;
+saturation and luminance use 0-100%. Hex accepts RRGGBB (or RRGGBBAA with alpha),
+with an optional `#`. Complete hex values apply immediately; incomplete drafts
+revert on Enter or loss of focus.
+Pointer drags continue outside the spectrum and clamp at its edges.
+The caller owns the `Clay_Color` (channels 0-255); each picker needs a unique ID.
+Hue is retained through grey/black so adjusting luminance does not lose it.
+The spectrum uses ordinary Clay rectangles (about 2,300 elements per open
+picker), and works with all backends and the single-header distribution.
+
+```cpp
+Clay_Color color = {80, 140, 220, 255}; // retain between frames
+ClayWidgets_ColorPicker(&ui, CLAY_ID("Tint"), &color,
+                        ClayWidgets_ColorPickerOptions{true, false, false});
+```
+
 ## Editors
 
 ```c
@@ -485,7 +538,7 @@ void ClayWidgets_EndDisabled(ClayWidgets_Context *ctx);
 
 `BeginModal` opens a fixed, centered dialog; everything between Begin and End is
 the body, and Begin returns false (opening no elements) when the dialog is
-closed. `ClayWidgets_ModalOptions` is `{draggable, width}` - width 0 means 440px,
+closed. `ClayWidgets_ModalOptions` is `{draggable, width, maxHeight, noEscapeClose, noOutsideClose}` - width 0 means 440px,
 clamped to the viewport:
 
 ```cpp
@@ -496,7 +549,10 @@ Dragging starts on the title bar, excluding its close button. The position is
 kept while open, constrained to the viewport when the dialog fits, and reset to
 center on reopening. Drag state comes from the widget state pool; an exhausted
 pool leaves the dialog centered. Both forms close on Escape, on a scrim click,
-or via the X.
+or via the X. Set `noEscapeClose` or `noOutsideClose` to disable that dismissal
+route; the close button remains available. `maxHeight` defaults to the viewport
+minus theme margins; a positive value imposes a smaller cap. Overflowing body
+content scrolls while the title bar remains visible.
 
 Modals trap keyboard focus: widgets outside leave the Tab order and give up
 focus. Initial focus goes to the close button - call `ClayWidgets_RequestFocus`

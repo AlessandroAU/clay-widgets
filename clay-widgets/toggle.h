@@ -22,21 +22,11 @@ bool ClayWidgets_ToggleEx(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_Stri
     disabled = disabled || ctx->disabledDepth > 0;
 
 
-    bool over = disabled ? false : Clay_PointerOver(id);
-    if (over) {
-        ClayWidgets__SetCursor(ctx, CLAY_WIDGETS_CURSOR_POINTER);
-    }
-    bool focused = disabled ? false : ClayWidgets__RegisterFocusable(ctx, id, over);
-    bool clicked = false;
-    if (!disabled) {
-        clicked = ClayWidgets__ConsumeClick(ctx, over);
-        if (!clicked && ClayWidgets__ActivateFocused(ctx, id)) {
-            clicked = true;
-        }
-        if (clicked) {
-            *value = !(*value);
-        }
-    }
+    ClayWidgets__ButtonInteraction interaction = ClayWidgets__InteractButton(ctx, id, disabled, id);
+    bool over = interaction.over;
+    bool focused = interaction.focused;
+    bool clicked = interaction.clicked;
+    if (clicked) *value = !*value;
 
     // Built from the same inline-control size as the check box and radio, so a
     // row mixing all three lines up at any type scale. The ratios reproduce the

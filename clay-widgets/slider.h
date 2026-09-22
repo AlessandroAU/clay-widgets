@@ -50,7 +50,7 @@ bool ClayWidgets_Slider(
 
     if (!options.disabled) {
         if (ctx->input.pointerPressed && over) {
-            ctx->activeId = id.id;
+            ClayWidgets__CapturePointer(ctx, id.id);
         }
         if (!ctx->input.pointerDown && ctx->activeId == id.id) {
             ctx->activeId = 0;
@@ -159,6 +159,7 @@ bool ClayWidgets_Slider(
                     },
                     .pointerCaptureMode = CLAY_POINTER_CAPTURE_MODE_PASSTHROUGH,
                     .attachTo = CLAY_ATTACH_TO_ELEMENT_WITH_ID,
+                    .clipTo = CLAY_CLIP_TO_ATTACHED_PARENT,
                 },
             }) {
                 CLAY_TEXT(valueText, {

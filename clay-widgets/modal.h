@@ -30,6 +30,9 @@ bool ClayWidgets_BeginModal(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_St
 typedef struct ClayWidgets_ModalOptions {
     bool draggable; // Drag the title bar; each opening starts centered.
     float width;    // Zero uses 440px; clamped to the viewport.
+    float maxHeight; // Zero uses the viewport minus its margins; body scrolls.
+    bool noEscapeClose;
+    bool noOutsideClose;
 } ClayWidgets_ModalOptions;
 bool ClayWidgets_BeginModalEx(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_String title, bool *open, ClayWidgets_ModalOptions options);
 void ClayWidgets_EndModal(ClayWidgets_Context *ctx, Clay_ElementId id);
@@ -65,8 +68,8 @@ bool ClayWidgets_BeginModalEx(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_
     // scrim that is not inside the dialog. Detected before any element opens so
     // the modal vanishes on the same frame it is dismissed.
     bool topmost = !ctx->focusTrapPrevId || ctx->focusTrapPrevId == dialogId.id;
-    bool dismiss = topmost && ctx->input.keyEscape && !ctx->openComboId && !ctx->openMenuId && !ctx->openContextMenuId;
-    if (topmost && ctx->input.pointerPressed && Clay_PointerOver(scrimId) && !Clay_PointerOver(dialogId)) {
+    bool dismiss = topmost && !options.noEscapeClose && ctx->input.keyEscape && !ctx->openComboId && !ctx->openMenuId && !ctx->openContextMenuId;
+    if (topmost && !options.noOutsideClose && ctx->input.pointerPressed && Clay_PointerOver(scrimId) && !Clay_PointerOver(dialogId)) {
         dismiss = true;
     }
     if (dismiss) {
@@ -79,6 +82,9 @@ bool ClayWidgets_BeginModalEx(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_
     float screenW = ctx->layoutDimensions.width;
     float screenH = ctx->layoutDimensions.height;
     float dialogWidth = fminf(options.width > 0 ? options.width : 440.0f, fmaxf(1.0f,screenW - 40.0f));
+
+    float availableHeight = fmaxf(1, screenH - 2 * ctx->theme.spacing.lg);
+    float maxHeight = options.maxHeight > 0 ? fminf(options.maxHeight, availableHeight) : availableHeight;
 
     // Trap keyboard focus inside the dialog while it is open: widgets outside
     // (registered while insideFocusTrap is false) drop out of the Tab order
@@ -104,11 +110,12 @@ bool ClayWidgets_BeginModalEx(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_
     ClayWidgets__ModalDragState *drag = options.draggable
         ? (ClayWidgets__ModalDragState *)ClayWidgets_GetState(ctx,titleId.id,sizeof(ClayWidgets__ModalDragState)) : NULL;
     if (drag) {
+        ClayWidgets__KeepPointerCapture(ctx, titleId);
         if (newlyOpened) memset(drag,0,sizeof(*drag));
         bool overTitle = topmost && Clay_PointerOver(titleId) && !Clay_PointerOver(closeId);
         if (overTitle || ctx->activeId == titleId.id) ClayWidgets__SetCursor(ctx,CLAY_WIDGETS_CURSOR_POINTER);
         if (overTitle && ctx->input.pointerPressed) {
-            ctx->activeId = titleId.id;
+            ClayWidgets__CapturePointer(ctx, titleId.id);
             drag->startPointer = (Clay_Vector2){ctx->input.mouseX,ctx->input.mouseY};
             drag->startOffset = drag->offset;
         }
@@ -155,7 +162,7 @@ bool ClayWidgets_BeginModalEx(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_
     ClayWidgets_SetShadow(ctx, dialogId);
     ClayWidgets__BeginElement(dialogId, CLAY__INIT(Clay_ElementDeclaration){
         .layout = {
-            .sizing = { .width = CLAY_SIZING_FIXED(dialogWidth), .height = CLAY_SIZING_FIT(0, 0) },
+            .sizing = { .width = CLAY_SIZING_FIXED(dialogWidth), .height = CLAY_SIZING_FIT(0, maxHeight) },
             .padding = CLAY_PADDING_ALL(frameInset),
             .childGap = beveled ? ctx->theme.spacing.xs : ctx->theme.spacing.md,
             .layoutDirection = CLAY_TOP_TO_BOTTOM,
@@ -183,7 +190,6 @@ bool ClayWidgets_BeginModalEx(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_
             .childAlignment = { .x = CLAY_ALIGN_X_LEFT, .y = CLAY_ALIGN_Y_CENTER },
             .layoutDirection = CLAY_LEFT_TO_RIGHT,
         },
-        // A render command with this ID keeps pointer capture alive during drag.
         .backgroundColor = beveled ? ctx->theme.accentColor : ctx->theme.surfaceColor,
     }) {
         CLAY_AUTO_ID({
@@ -222,14 +228,20 @@ bool ClayWidgets_BeginModalEx(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_
 
     // Body: carries the content inset, so the title bar above it can run the
     // full width of the dialog. Closed by EndModal.
-    ClayWidgets__BeginElement(ClayWidgets__ChildId(dialogId, CLAY_STRING("ClayWidgetsModalBody"), 0),
+    Clay_ElementId bodyId = ClayWidgets__ChildId(dialogId, CLAY_STRING("ClayWidgetsModalBody"), 0);
+    if (ctx->scrollPanelDepth < CLAY_WIDGETS_MAX_SCROLL_NESTING)
+        ctx->scrollPanelStack[ctx->scrollPanelDepth] = bodyId.id;
+    ctx->scrollPanelDepth++;
+    uint16_t bodyInset = beveled ? ctx->theme.spacing.md : 0;
+    ClayWidgets__BeginScrollElement(bodyId,
         CLAY__INIT(Clay_ElementDeclaration){
             .layout = {
                 .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_FIT(0, 0) },
-                .padding = beveled ? CLAY_PADDING_ALL(ctx->theme.spacing.md) : (Clay_Padding){ 0, 0, 0, 0 },
+                .padding = { bodyInset, (uint16_t)(bodyInset + CLAY_WIDGETS_SCROLLBAR_WIDTH + ctx->theme.spacing.sm), bodyInset, bodyInset },
                 .childGap = ctx->theme.spacing.md,
                 .layoutDirection = CLAY_TOP_TO_BOTTOM,
             },
+            .clip = { .vertical = true },
         });
 
     ClayWidgets__Describe(ctx,dialogId,CLAY_WIDGETS_ROLE_DIALOG,title,false,false);
@@ -237,10 +249,11 @@ bool ClayWidgets_BeginModalEx(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_
 }
 
 void ClayWidgets_EndModal(ClayWidgets_Context *ctx, Clay_ElementId id) {
-    (void)id;
     if (!ctx) {
         return;
     }
+    ClayWidgets_ScrollBar(ctx, ClayWidgets__ChildId(ClayWidgets__ModalDialogId(id), CLAY_STRING("ClayWidgetsModalBody"), 0));
+    if (ctx->scrollPanelDepth > 0) ctx->scrollPanelDepth--;
     ctx->currentModalId = ctx->modalParents[ctx->overlayDepth - 1];
     ctx->insideFocusTrap = ctx->currentModalId != 0;
     ClayWidgets__PopOverlay(ctx);

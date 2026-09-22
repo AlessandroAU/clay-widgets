@@ -87,6 +87,11 @@ static void DrawGalleryView(ClayWidgets_Context &ui, DemoState &s, DemoIcons &ic
             }
             ClayWidgets_EndCard(&ui, CLAY_ID("RangesCard"));
 
+            ClayWidgets_BeginCard(&ui, CLAY_ID("ColorPickerCard"), CLAY_STRING("Colour picker"));
+            ClayWidgets_ColorPicker(&ui, CLAY_ID("GalleryColor"), &s.galleryColor,
+                ClayWidgets_ColorPickerOptions{true, false});
+            ClayWidgets_EndCard(&ui, CLAY_ID("ColorPickerCard"));
+
             ClayWidgets_BeginCard(&ui, CLAY_ID("TabsCard"), CLAY_STRING("Attached tabs"));
             {
                 CLAY(CLAY_ID("MiniTabPlane"), {

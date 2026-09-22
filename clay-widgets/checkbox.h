@@ -21,21 +21,11 @@ bool ClayWidgets_CheckboxEx(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_St
     // Disabled: inert. No focus registration, no click; always returns false.
     // The box keeps a plain border (never the focus ring), the check fill is a
     // muted accent, and the label text is muted.
-    bool over = disabled ? false : Clay_PointerOver(id);
-    if (over) {
-        ClayWidgets__SetCursor(ctx, CLAY_WIDGETS_CURSOR_POINTER);
-    }
-    bool focused = disabled ? false : ClayWidgets__RegisterFocusable(ctx, id, over);
-    bool clicked = false;
-    if (!disabled) {
-        clicked = ClayWidgets__ConsumeClick(ctx, over);
-        if (!clicked && ClayWidgets__ActivateFocused(ctx, id)) {
-            clicked = true;
-        }
-        if (clicked) {
-            *value = !(*value);
-        }
-    }
+    ClayWidgets__ButtonInteraction interaction = ClayWidgets__InteractButton(ctx, id, disabled, id);
+    bool over = interaction.over;
+    bool focused = interaction.focused;
+    bool clicked = interaction.clicked;
+    if (clicked) *value = !*value;
 
     Clay_Color checkFill = disabled
         ? ClayWidgets__MixColor(ctx->theme.accentColor, ctx->theme.surfaceColor, ctx->theme.disabledMix)

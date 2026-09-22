@@ -264,9 +264,10 @@ bool ClayWidgets_DataTable(ClayWidgets_Context *ctx, Clay_ElementId id,
         for (int32_t i=0;i<columnCount;++i) {
             Clay_ElementId header = ClayWidgets__ChildId(id, CLAY_STRING("TableHeader"), i);
             Clay_ElementId handle = ClayWidgets__ChildId(id, CLAY_STRING("TableResize"), i);
+            if (!disabled) ClayWidgets__KeepPointerCapture(ctx, handle);
             bool overHandle = !disabled && Clay_PointerOver(handle);
             if (overHandle || ctx->activeId == handle.id) ClayWidgets__SetCursor(ctx, CLAY_WIDGETS_CURSOR_RESIZE_X);
-            if (ctx->input.pointerPressed && overHandle) { ctx->activeId=handle.id; state->dragX=ctx->input.mouseX; state->dragWidth=state->widths[i]; }
+            if (ctx->input.pointerPressed && overHandle) { ClayWidgets__CapturePointer(ctx, handle.id); state->dragX=ctx->input.mouseX; state->dragWidth=state->widths[i]; }
             if (!disabled && ctx->activeId==handle.id && ctx->input.pointerDown) {
                 state->widths[i]=fmaxf(minWidth,state->dragWidth+ctx->input.mouseX-state->dragX); state->widthChanged=true;
                 state->fixedWidthColumns |= (uint16_t)(1u << i);
@@ -274,7 +275,7 @@ bool ClayWidgets_DataTable(ClayWidgets_Context *ctx, Clay_ElementId id,
             bool overHeader = !disabled && !overHandle && Clay_PointerOver(header);
             bool headerFocused = compare && !disabled && ClayWidgets__RegisterFocusable(ctx, header, overHeader);
             if (compare && overHeader) ClayWidgets__SetCursor(ctx, CLAY_WIDGETS_CURSOR_POINTER);
-            if (compare && ctx->input.pointerPressed && overHeader) ctx->activeId = header.id;
+            if (compare && ctx->input.pointerPressed && overHeader) ClayWidgets__CapturePointer(ctx, header.id);
             bool sort = compare && !disabled && (ClayWidgets__ConsumeClick(ctx,overHeader && ctx->releasedActiveId == header.id)
                 || (headerFocused && ClayWidgets__ActivateFocused(ctx,header)));
             if (sort) {

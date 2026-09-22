@@ -62,19 +62,20 @@ The tree separates three things: the renderer-agnostic **widget library**, the
 - Radio buttons
 - Tabs (pill and attached styles)
 - Slider
+- Colour picker (Windows-style palette and spectrum dialog, editable RGB/HSL and hex, original/new previews, optional alpha)
 - Progress bar
 - Text input
 - Combo box (dropdown select)
 - List box (selectable, keyboard-navigable list)
 - Selectable list row (color swatch + label + trailing text)
 - Segmented control (joined single-select buttons)
-- Stepper / number input (+/- with min/max/step)
+- Stepper (+/- with min/max/step) and editable integer input
 - Badge / chip / tag (status pills)
 - Menu bar with drop-down menus
 - Right-click context menu
 - Tooltip (hover, delayed)
 - Toast / notification (transient, auto-dismissing, stacks up to a small queue)
-- Modal dialog (dimming scrim)
+- Modal dialog (dimming scrim, bounded scrolling body, configurable dismissal)
 - Card / group box (titled bordered container)
 - Collapsible / accordion section
 - Tree view (hierarchical expand/collapse)

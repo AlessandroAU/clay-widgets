@@ -45,19 +45,19 @@ bool ClayWidgets_Stepper(
     Clay_ElementId plusId = Clay_GetElementIdWithIndex(CLAY_STRING("ClayWidgetsStepperPlus"), id.id);
 
     bool over = options.disabled ? false : Clay_PointerOver(id);
-    if (!options.disabled && (Clay_PointerOver(minusId) || Clay_PointerOver(plusId))) {
-        ClayWidgets__SetCursor(ctx, CLAY_WIDGETS_CURSOR_POINTER); // only the +/- buttons are click targets
-    }
     bool focused = options.disabled ? false : ClayWidgets__RegisterFocusable(ctx, id, over);
+    if (options.disabled && ctx->focusedId == id.id) ctx->focusedId = 0;
+    ClayWidgets__ButtonInteraction minus = ClayWidgets__InteractButton(ctx, minusId, options.disabled, id);
+    ClayWidgets__ButtonInteraction plus = ClayWidgets__InteractButton(ctx, plusId, options.disabled, id);
     bool changed = false;
 
     int32_t start = *value;
     int64_t candidate = *value;
     if (!options.disabled) {
-        if (ClayWidgets__ConsumeClick(ctx, Clay_PointerOver(minusId))) {
+        if (minus.clicked) {
             candidate -= step;
         }
-        if (ClayWidgets__ConsumeClick(ctx, Clay_PointerOver(plusId))) {
+        if (plus.clicked) {
             candidate += step;
         }
         if (focused) {
@@ -83,8 +83,8 @@ bool ClayWidgets_Stepper(
     // Two raised spin buttons around a sunken value well - the classic spinner.
     Clay_ElementId valueId = ClayWidgets__ChildId(id, CLAY_STRING("ClayWidgetsStepperValue"), 0);
     bool beveled = ClayWidgets__IsBeveled(ctx);
-    ClayWidgets_SetEdge(ctx, minusId, minusOver && ctx->input.pointerDown ? CLAY_WIDGETS_EDGE_SUNKEN : CLAY_WIDGETS_EDGE_RAISED);
-    ClayWidgets_SetEdge(ctx, plusId, plusOver && ctx->input.pointerDown ? CLAY_WIDGETS_EDGE_SUNKEN : CLAY_WIDGETS_EDGE_RAISED);
+    ClayWidgets_SetEdge(ctx, minusId, minus.over && minus.active ? CLAY_WIDGETS_EDGE_SUNKEN : CLAY_WIDGETS_EDGE_RAISED);
+    ClayWidgets_SetEdge(ctx, plusId, plus.over && plus.active ? CLAY_WIDGETS_EDGE_SUNKEN : CLAY_WIDGETS_EDGE_RAISED);
     ClayWidgets_SetEdge(ctx, valueId, CLAY_WIDGETS_EDGE_SUNKEN);
     if (focused) {
         ClayWidgets__FocusRect(ctx, valueId);

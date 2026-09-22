@@ -75,6 +75,7 @@ static void ClayWidgets__ScrollBarAt(
 
     Clay_ElementId scrollBarTrackId = Clay_GetElementIdWithIndex(CLAY_STRING("ClayWidgetsScrollBarTrack"), scrollContainerId.id);
     Clay_ElementId scrollBarId = Clay_GetElementIdWithIndex(CLAY_STRING("ClayWidgetsScrollBarThumb"), scrollContainerId.id);
+    ClayWidgets__KeepPointerCapture(ctx, scrollBarId);
     bool overThumb = Clay_PointerOver(scrollBarId);
     // Keep the pointer cursor for the whole drag, even when the pointer
     // wanders off the thumb mid-drag.
@@ -91,7 +92,7 @@ static void ClayWidgets__ScrollBarAt(
     }
 
     if (ctx->input.pointerPressed && overThumb && drag) {
-        ctx->activeId = scrollBarId.id;
+        ClayWidgets__CapturePointer(ctx, scrollBarId.id);
         drag->startMouseY = ctx->input.mouseY;
         drag->startScrollY = scrollData.scrollPosition->y;
     }

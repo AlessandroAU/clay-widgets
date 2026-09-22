@@ -207,6 +207,7 @@ struct DemoState {
 
     // Gallery
     int32_t galleryClicks = 0;
+    Clay_Color galleryColor = {80, 140, 220, 255};
     bool autosave = true;
     bool telemetryLocked = true; // shown via a disabled checkbox
     int32_t quality = 2;         // radio values 1..3

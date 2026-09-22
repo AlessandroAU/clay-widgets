@@ -957,6 +957,16 @@ static void ClayWidgets__Describe(ClayWidgets_Context *ctx, Clay_ElementId id, C
 }
 
 static void ClayWidgets__ScrollIntoView(ClayWidgets_Context *ctx, Clay_ElementId item, Clay_ElementId panel);
+// Keep capture tied to declared interaction, including invisible or clipped controls.
+static void ClayWidgets__KeepPointerCapture(ClayWidgets_Context *ctx, Clay_ElementId id) {
+    if (!ctx->disabledDepth && ctx->activeId == id.id) ctx->activeDeclaredId = id.id;
+}
+
+static void ClayWidgets__CapturePointer(ClayWidgets_Context *ctx, uint32_t id) {
+    ctx->activeId = id;
+    ctx->activeDeclaredId = id;
+}
+
 static bool ClayWidgets__RegisterFocusable(ClayWidgets_Context *ctx, Clay_ElementId id, bool over) {
     if (!ctx) {
         return false;
@@ -972,6 +982,7 @@ static bool ClayWidgets__RegisterFocusable(ClayWidgets_Context *ctx, Clay_Elemen
         return false;
     }
 
+    ClayWidgets__KeepPointerCapture(ctx, id);
     if (ctx->focusCount < CLAY_WIDGETS_MAX_FOCUSABLES) {
         ctx->focusOrder[ctx->focusCount++] = id.id;
     } else {
@@ -995,6 +1006,35 @@ static bool ClayWidgets__RegisterFocusable(ClayWidgets_Context *ctx, Clay_Elemen
 
 static bool ClayWidgets__ActivateFocused(ClayWidgets_Context *ctx, Clay_ElementId id) {
     return ctx && !ctx->disabledDepth && ctx->focusedId == id.id && (ctx->input.keyEnter || ctx->input.keySpace);
+}
+
+typedef struct ClayWidgets__ButtonInteraction {
+    bool over, focused, active, clicked;
+} ClayWidgets__ButtonInteraction;
+
+// focusId may be a shared group ID; the group registers once for Tab traversal.
+static ClayWidgets__ButtonInteraction ClayWidgets__InteractButton(ClayWidgets_Context *ctx,
+    Clay_ElementId id, bool disabled, Clay_ElementId focusId) {
+    ClayWidgets__ButtonInteraction result = {0};
+    disabled = disabled || ctx->disabledDepth > 0;
+    if (disabled) {
+        if (ctx->activeId == id.id) ctx->activeId = 0;
+        if (ctx->focusedId == id.id) ctx->focusedId = 0;
+        return result;
+    }
+    result.over = Clay_PointerOver(id);
+    result.focused = focusId.id == id.id
+        ? ClayWidgets__RegisterFocusable(ctx, id, result.over) : ctx->focusedId == focusId.id;
+    ClayWidgets__KeepPointerCapture(ctx, id);
+    if (result.over) ClayWidgets__SetCursor(ctx, CLAY_WIDGETS_CURSOR_POINTER);
+    if (result.over && ctx->input.pointerPressed) {
+        ClayWidgets__CapturePointer(ctx, id.id);
+        ctx->focusedId = focusId.id;
+    }
+    result.active = ctx->input.pointerDown && ctx->activeId == id.id;
+    result.clicked = ClayWidgets__ConsumeClick(ctx, result.over && ctx->releasedActiveId == id.id);
+    if (focusId.id == id.id && ClayWidgets__ActivateFocused(ctx, id)) result.clicked = true;
+    return result;
 }
 
 // Registers a hovered clip element whose Clay clip becomes a scroll container but
@@ -1468,6 +1508,7 @@ void ClayWidgets_BeginFrame(
     }
 
     ctx->input = input;
+    ctx->activeDeclaredId = 0;
     ctx->releasedActiveId = !input.pointerDown ? ctx->activeId : 0;
     if (!input.pointerDown) ctx->activeId = 0;
     ctx->layoutDimensions = layoutSize;
@@ -1567,11 +1608,7 @@ Clay_RenderCommandArray ClayWidgets_EndFrame(ClayWidgets_Context *ctx) {
     if (ctx && ctx->modalCount < ctx->modalCountPrev) {
         ctx->focusedId = ctx->modalReturnFocus[ctx->modalCount];
     }
-    if (ctx && ctx->activeId) {
-        bool present = false;
-        for (int32_t i=0;i<result.length;++i) if (Clay_RenderCommandArray_Get(&result,i)->id == ctx->activeId) { present=true; break; }
-        if (!present) ctx->activeId = 0;
-    }
+    if (ctx && ctx->activeId != ctx->activeDeclaredId) ctx->activeId = 0;
     return result;
 }
 void ClayWidgets_SetClipboardWriteFunction(ClayWidgets_Context *ctx, ClayWidgets_TrySetClipboardTextFunction fn) {

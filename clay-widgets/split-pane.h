@@ -27,7 +27,7 @@ bool ClayWidgets_BeginSplit(ClayWidgets_Context *ctx, Clay_ElementId id, float *
     if (!isfinite(*ratio)) *ratio = 0.5f;
     bool over = !ctx->disabledDepth && Clay_PointerOver(divider);
     bool focused = ClayWidgets__RegisterFocusable(ctx, divider, over);
-    if (ctx->input.pointerPressed && over) ctx->activeId = divider.id;
+    if (ctx->input.pointerPressed && over) ClayWidgets__CapturePointer(ctx, divider.id);
     if (!ctx->disabledDepth && ctx->activeId == divider.id && ctx->input.pointerDown && extent > 6) {
         *ratio = ((options.vertical ? ctx->input.mouseY - box.boundingBox.y : ctx->input.mouseX - box.boundingBox.x) - 3) / extent;
     }
@@ -74,7 +74,7 @@ bool ClayWidgets_BeginResizablePanel(ClayWidgets_Context *ctx, Clay_ElementId id
     bool focused = ClayWidgets__RegisterFocusable(ctx,handle,over);
     if (over) ClayWidgets__SetCursor(ctx,CLAY_WIDGETS_CURSOR_RESIZE_XY);
     if (state && ctx->input.pointerPressed && over) {
-        ctx->activeId=handle.id; state->x=ctx->input.mouseX; state->y=ctx->input.mouseY; state->w=size->width; state->h=size->height;
+        ClayWidgets__CapturePointer(ctx, handle.id); state->x=ctx->input.mouseX; state->y=ctx->input.mouseY; state->w=size->width; state->h=size->height;
     }
     if (state && !ctx->disabledDepth && ctx->activeId==handle.id && ctx->input.pointerDown) {
         size->width=state->w+ctx->input.mouseX-state->x; size->height=state->h+ctx->input.mouseY-state->y;
