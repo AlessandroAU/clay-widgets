@@ -165,11 +165,13 @@ int main(int argc, char **argv) {
         // font) if the embedded bytes are bad, and warm the most-used size. The
         // other sizes bake lazily on first use.
         int probeSize = FontCache_PixelSize(fontCache, 16.0f);
-        Font probe = ClayWidgets_BakeFont(kEmbeddedRobotoTTF, static_cast<int>(kEmbeddedRobotoTTFSize), probeSize);
+        Font probe = ClayWidgets_BakeFont(kEmbeddedRobotoTTF, static_cast<int>(kEmbeddedRobotoTTFSize), probeSize,
+            nullptr, 0, fontCache.textGamma);
         if (probe.texture.id != 0) {
             SetTextureFilter(probe.texture, TEXTURE_FILTER_BILINEAR);
             fontCache.haveEmbedded = true;
-            fontCache.atlases.emplace_back(probeSize, probe);
+            // Keyed by the curve it was baked with, like every lazily baked atlas.
+            fontCache.atlases.push_back(BakedAtlas{probeSize, FontCache_GammaKey(fontCache), probe});
         } else {
             TraceLog(LOG_WARNING, "Failed to decode embedded font. Using default font.");
         }

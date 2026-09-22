@@ -19,6 +19,7 @@
 #include "clay.h"
 #include "clay-widgets/widgets.h"
 #include "raylib.h"
+#include "rlgl.h"
 
 // Gamma-correct the text atlas so anti-aliased edges aren't composited too light
 // (raylib blends coverage in sRGB space, which makes text read thin - worst on
@@ -141,22 +142,38 @@ static void AppendUtf8FromCodepoint(char *buffer, int &length, int maxLength, in
 // The TTF bytes are supplied by the app (ttfData/ttfSize) so this backend has
 // no opinion about which font ships - the demo points them at its embedded
 // font header; another app can point them at any TTF in memory.
+//
+// An atlas is identified by the size it was baked at and by the gamma curve
+// baked into its coverage, because the correction that thickens light-on-dark
+// text would thicken dark-on-light text too - the wrong way. Keying on both
+// lets a light and a dark surface keep their own atlas instead of fighting
+// over one.
+struct BakedAtlas {
+    int pixelSize;
+    int gammaKey; // textGamma * 100, rounded; floats make poor map keys
+    Font font;
+};
 struct FontFace {
     uint16_t id;
     const unsigned char *data;
     int size;
     std::vector<int> codepoints;
-    std::vector<std::pair<int, Font>> atlases;
+    std::vector<BakedAtlas> atlases;
 };
 struct FontCache {
     float dpiScale = 1.0f;
+    float textGamma = CLAY_WIDGETS_TEXT_GAMMA; // > 1 thickens (light on dark), < 1 thins
     Font fallback = {};                        // used if the app font failed
     const unsigned char *ttfData = nullptr;    // app-supplied TTF bytes
     int ttfSize = 0;
     bool haveEmbedded = false;                 // true once a bake from ttfData succeeded
-    std::vector<std::pair<int, Font>> atlases; // physical pixel size -> baked Font
+    std::vector<BakedAtlas> atlases;           // fallback face, keyed as above
     std::vector<FontFace> faces; // registered IDs; registration order is fallback order
 };
+
+static int FontCache_GammaKey(const FontCache &cache) {
+    return (int)std::lround(cache.textGamma*100.0f);
+}
 
 // TTF bytes must outlive the cache. Glyph lists are copied. Register before layout;
 // call Clay_ResetMeasureTextCache after replacing a face used by existing text.
@@ -164,7 +181,7 @@ struct FontCache {
     const int *codepoints = nullptr, int count = 0) {
     if (!data || size <= 0 || count < 0 || (count && !codepoints)) return false;
     for (auto &face : cache.faces) if (face.id == id) {
-        for (auto &atlas : face.atlases) UnloadFont(atlas.second);
+        for (auto &atlas : face.atlases) UnloadFont(atlas.font);
         face = FontFace{id, data, size, {}, {}};
         if (count) face.codepoints.assign(codepoints, codepoints + count);
         return true;
@@ -184,36 +201,40 @@ static int FontCache_PixelSize(const FontCache &cache, float logicalSize) {
 // Never returns null: falls back to the default font if no app font was
 // supplied or a bake fails.
 static Font *FontCache_Get(FontCache &cache, int pixelSize, uint16_t fontId = 0) {
+    const int gammaKey = FontCache_GammaKey(cache);
     for (auto &face : cache.faces) if (face.id == fontId) {
-        for (auto &atlas : face.atlases) if (atlas.first == pixelSize) return &atlas.second;
-        Font font = ClayWidgets_BakeFont(face.data, face.size, pixelSize, face.codepoints.data(), (int)face.codepoints.size());
+        for (auto &atlas : face.atlases) {
+            if (atlas.pixelSize == pixelSize && atlas.gammaKey == gammaKey) return &atlas.font;
+        }
+        Font font = ClayWidgets_BakeFont(face.data, face.size, pixelSize, face.codepoints.data(),
+            (int)face.codepoints.size(), cache.textGamma);
         if (!font.texture.id) return &cache.fallback;
         SetTextureFilter(font.texture, TEXTURE_FILTER_BILINEAR);
-        face.atlases.emplace_back(pixelSize, font);
-        return &face.atlases.back().second;
+        face.atlases.push_back(BakedAtlas{pixelSize, gammaKey, font});
+        return &face.atlases.back().font;
     }
     if (!cache.haveEmbedded || !cache.ttfData || cache.ttfSize <= 0) {
         return &cache.fallback;
     }
     for (auto &entry : cache.atlases) {
-        if (entry.first == pixelSize) {
-            return &entry.second;
+        if (entry.pixelSize == pixelSize && entry.gammaKey == gammaKey) {
+            return &entry.font;
         }
     }
-    Font baked = ClayWidgets_BakeFont(cache.ttfData, cache.ttfSize, pixelSize);
+    Font baked = ClayWidgets_BakeFont(cache.ttfData, cache.ttfSize, pixelSize, nullptr, 0, cache.textGamma);
     if (baked.texture.id == 0) {
         return &cache.fallback;
     }
     SetTextureFilter(baked.texture, TEXTURE_FILTER_BILINEAR);
-    cache.atlases.emplace_back(pixelSize, baked);
-    return &cache.atlases.back().second;
+    cache.atlases.push_back(BakedAtlas{pixelSize, gammaKey, baked});
+    return &cache.atlases.back().font;
 }
 
 static void FontCache_Unload(FontCache &cache) {
-    for (auto &face : cache.faces) for (auto &atlas : face.atlases) UnloadFont(atlas.second);
+    for (auto &face : cache.faces) for (auto &atlas : face.atlases) UnloadFont(atlas.font);
     cache.faces.clear();
     for (auto &entry : cache.atlases) {
-        UnloadFont(entry.second);
+        UnloadFont(entry.font);
     }
     cache.atlases.clear();
     cache.haveEmbedded = false;
@@ -334,7 +355,225 @@ static void DrawRectangleRoundedPerCorner(Rectangle rect, Clay_CornerRadius cr, 
     }
 }
 
+// Rounded boxes are drawn from a signed distance field rather than from
+// triangle fans. Two reasons. raylib rasterizes DrawRectangleRounded with no
+// multisampling, and the offscreen targets this backend renders into cannot be
+// made multisampled, so every curve came out hard-stepped. And a background and
+// its border arrive as two separate Clay commands: rasterizing them as two
+// independent approximations of the same outline left the fill peeking out
+// around the border as a speckled rim, most visible on a toggle's accent pill.
+//
+// One shader evaluates the rounded box once per fragment and derives both the
+// fill and the ring from that single distance, so the two cannot disagree, and
+// the coverage ramp antialiases every curve. The quad is measured in device
+// pixels, which makes the distance gradient exactly one pixel per unit - no
+// derivative instructions, so the shader stays valid on GLSL ES as well.
+
+#if defined(PLATFORM_WEB) || defined(__EMSCRIPTEN__)
+static const char *kClayWidgetsShapeVS = R"GLSL(#version 100
+attribute vec3 vertexPosition;
+attribute vec2 vertexTexCoord;
+attribute vec4 vertexColor;
+varying vec2 fragTexCoord;
+varying vec4 fragColor;
+uniform mat4 mvp;
+void main() {
+    fragTexCoord = vertexTexCoord;
+    fragColor = vertexColor;
+    gl_Position = mvp*vec4(vertexPosition, 1.0);
+}
+)GLSL";
+
+static const char *kClayWidgetsShapeFS = R"GLSL(#version 100
+precision highp float;
+varying vec2 fragTexCoord;
+varying vec4 fragColor;
+uniform vec2 uQuadHalf;
+uniform vec2 uRectHalf;
+uniform vec4 uRadii;
+uniform float uBorder;
+uniform vec4 uFill;
+uniform vec4 uStroke;
+
+float ClayWidgets_BoxDistance(vec2 p, vec2 halfSize, vec4 radii) {
+    float r = (p.y > 0.0) ? ((p.x > 0.0) ? radii.z : radii.w)
+                          : ((p.x > 0.0) ? radii.y : radii.x);
+    vec2 q = abs(p) - halfSize + vec2(r);
+    return min(max(q.x, q.y), 0.0) + length(max(q, vec2(0.0))) - r;
+}
+
+void main() {
+    vec2 p = (fragTexCoord*2.0 - 1.0)*uQuadHalf;
+    float d = ClayWidgets_BoxDistance(p, uRectHalf, uRadii);
+    float outer = clamp(0.5 - d, 0.0, 1.0);
+    float inner = (uBorder > 0.0) ? clamp(0.5 - (d + uBorder), 0.0, 1.0) : outer;
+    float ringAlpha = max(outer - inner, 0.0)*uStroke.a;
+    float fillAlpha = inner*uFill.a;
+    float alpha = ringAlpha + fillAlpha;
+    vec3 rgb = (alpha > 0.0) ? (uStroke.rgb*ringAlpha + uFill.rgb*fillAlpha)/alpha : vec3(0.0);
+    gl_FragColor = vec4(rgb, alpha)*fragColor;
+}
+)GLSL";
+#else
+static const char *kClayWidgetsShapeVS = R"GLSL(#version 330
+in vec3 vertexPosition;
+in vec2 vertexTexCoord;
+in vec4 vertexColor;
+out vec2 fragTexCoord;
+out vec4 fragColor;
+uniform mat4 mvp;
+void main() {
+    fragTexCoord = vertexTexCoord;
+    fragColor = vertexColor;
+    gl_Position = mvp*vec4(vertexPosition, 1.0);
+}
+)GLSL";
+
+static const char *kClayWidgetsShapeFS = R"GLSL(#version 330
+in vec2 fragTexCoord;
+in vec4 fragColor;
+out vec4 finalColor;
+
+uniform vec2 uQuadHalf;   // half the drawn quad, device pixels (shape + AA margin)
+uniform vec2 uRectHalf;   // half the shape itself, device pixels
+uniform vec4 uRadii;      // radii in device pixels: top-left, top-right, bottom-right, bottom-left
+uniform float uBorder;    // ring thickness, device pixels; 0 draws a solid fill
+uniform vec4 uFill;       // straight-alpha fill color
+uniform vec4 uStroke;     // straight-alpha border color
+
+float ClayWidgets_BoxDistance(vec2 p, vec2 halfSize, vec4 radii) {
+    float r = (p.y > 0.0) ? ((p.x > 0.0) ? radii.z : radii.w)
+                          : ((p.x > 0.0) ? radii.y : radii.x);
+    vec2 q = abs(p) - halfSize + vec2(r);
+    return min(max(q.x, q.y), 0.0) + length(max(q, vec2(0.0))) - r;
+}
+
+void main() {
+    // fragTexCoord spans the quad, so p lands in device pixels measured from the
+    // shape's centre, with +y pointing down the screen.
+    vec2 p = (fragTexCoord*2.0 - 1.0)*uQuadHalf;
+    float d = ClayWidgets_BoxDistance(p, uRectHalf, uRadii);
+
+    // A one-pixel linear ramp across each boundary approximates the pixel's area
+    // coverage; p is in device pixels, so the distance gradient is exactly 1.
+    float outer = clamp(0.5 - d, 0.0, 1.0);
+    float inner = (uBorder > 0.0) ? clamp(0.5 - (d + uBorder), 0.0, 1.0) : outer;
+
+    // Ring and fill tile the shape without overlapping, so the two premultiplied
+    // contributions simply add; dividing back out keeps the output straight-alpha
+    // like every other draw in this backend.
+    float ringAlpha = max(outer - inner, 0.0)*uStroke.a;
+    float fillAlpha = inner*uFill.a;
+    float alpha = ringAlpha + fillAlpha;
+    vec3 rgb = (alpha > 0.0) ? (uStroke.rgb*ringAlpha + uFill.rgb*fillAlpha)/alpha : vec3(0.0);
+    finalColor = vec4(rgb, alpha)*fragColor;
+}
+)GLSL";
+#endif
+
+struct ClayWidgets_ShapeShader {
+    Shader shader = {};
+    bool ready = false;
+    int quadHalf = -1, rectHalf = -1, radii = -1, border = -1, fill = -1, stroke = -1;
+};
+
+// One shader per GL context, compiled on first use. ClayWidgets_UnloadShapes()
+// resets it so a host that tears its context down and builds a new one does not
+// keep drawing through a stale program id.
+static ClayWidgets_ShapeShader &ClayWidgets_Shapes() {
+    static ClayWidgets_ShapeShader shapes;
+    static bool attempted = false;
+    if (!attempted) {
+        attempted = true;
+        shapes.shader = LoadShaderFromMemory(kClayWidgetsShapeVS, kClayWidgetsShapeFS);
+        if (IsShaderValid(shapes.shader)) {
+            shapes.quadHalf = GetShaderLocation(shapes.shader, "uQuadHalf");
+            shapes.rectHalf = GetShaderLocation(shapes.shader, "uRectHalf");
+            shapes.radii = GetShaderLocation(shapes.shader, "uRadii");
+            shapes.border = GetShaderLocation(shapes.shader, "uBorder");
+            shapes.fill = GetShaderLocation(shapes.shader, "uFill");
+            shapes.stroke = GetShaderLocation(shapes.shader, "uStroke");
+            shapes.ready = shapes.quadHalf >= 0 && shapes.rectHalf >= 0 && shapes.radii >= 0
+                && shapes.border >= 0 && shapes.fill >= 0 && shapes.stroke >= 0;
+        }
+        if (!shapes.ready) {
+            TraceLog(LOG_WARNING, "clay-widgets: shape shader unavailable, shapes will be aliased");
+        }
+    }
+    return shapes;
+}
+
+// Call before destroying the GL context the shader was compiled in.
+[[maybe_unused]] static void ClayWidgets_UnloadShapes() {
+    ClayWidgets_ShapeShader &shapes = ClayWidgets_Shapes();
+    if (shapes.ready) {
+        UnloadShader(shapes.shader);
+    }
+    shapes = ClayWidgets_ShapeShader{};
+}
+
+// Draws one rounded box: a solid fill when borderWidth is 0, otherwise a ring of
+// that thickness inset from the same outline. rect and the radii are in logical
+// units; scale converts them to the device pixels the shader measures in.
+// Returns false when the shader is unavailable so the caller can fall back.
+static bool DrawRectangleRoundedSDF(Rectangle rect, Clay_CornerRadius cr, float borderWidth,
+    Color fill, Color stroke, float scale) {
+    ClayWidgets_ShapeShader &shapes = ClayWidgets_Shapes();
+    if (!shapes.ready || rect.width <= 0.0f || rect.height <= 0.0f || scale <= 0.0f) {
+        return false;
+    }
+
+    const float halfW = rect.width*0.5f*scale;
+    const float halfH = rect.height*0.5f*scale;
+    const float maxRadius = std::min(halfW, halfH);
+    auto deviceRadius = [&](float r) { return std::min(std::max(r*scale, 0.0f), maxRadius); };
+    float radii[4] = {deviceRadius(cr.topLeft), deviceRadius(cr.topRight),
+                      deviceRadius(cr.bottomRight), deviceRadius(cr.bottomLeft)};
+    float rectHalf[2] = {halfW, halfH};
+    // The coverage ramp reaches one pixel past the outline, so the quad has to too.
+    float quadHalf[2] = {halfW + 1.0f, halfH + 1.0f};
+    float border = std::max(borderWidth*scale, 0.0f);
+    auto toVec4 = [](Color c, float *out) {
+        out[0] = c.r/255.0f; out[1] = c.g/255.0f; out[2] = c.b/255.0f; out[3] = c.a/255.0f;
+    };
+    float fillValue[4], strokeValue[4];
+    toVec4(fill, fillValue);
+    toVec4(stroke, strokeValue);
+
+    // Begin/EndShaderMode bracket each shape because rlgl batches geometry: the
+    // uniforms below describe this shape alone, and switching the active shader
+    // is what forces the batch to reach the GPU before the next shape sets its own.
+    BeginShaderMode(shapes.shader);
+    SetShaderValue(shapes.shader, shapes.quadHalf, quadHalf, SHADER_UNIFORM_VEC2);
+    SetShaderValue(shapes.shader, shapes.rectHalf, rectHalf, SHADER_UNIFORM_VEC2);
+    SetShaderValue(shapes.shader, shapes.radii, radii, SHADER_UNIFORM_VEC4);
+    SetShaderValue(shapes.shader, shapes.border, &border, SHADER_UNIFORM_FLOAT);
+    SetShaderValue(shapes.shader, shapes.fill, fillValue, SHADER_UNIFORM_VEC4);
+    SetShaderValue(shapes.shader, shapes.stroke, strokeValue, SHADER_UNIFORM_VEC4);
+
+    const float cx = rect.x + rect.width*0.5f;
+    const float cy = rect.y + rect.height*0.5f;
+    const float ex = quadHalf[0]/scale;
+    const float ey = quadHalf[1]/scale;
+    rlSetTexture(rlGetTextureIdDefault());
+    rlBegin(RL_QUADS);
+        rlNormal3f(0.0f, 0.0f, 1.0f);
+        rlColor4ub(255, 255, 255, 255);
+        rlTexCoord2f(0.0f, 0.0f); rlVertex2f(cx - ex, cy - ey);
+        rlTexCoord2f(0.0f, 1.0f); rlVertex2f(cx - ex, cy + ey);
+        rlTexCoord2f(1.0f, 1.0f); rlVertex2f(cx + ex, cy + ey);
+        rlTexCoord2f(1.0f, 0.0f); rlVertex2f(cx + ex, cy - ey);
+    rlEnd();
+    rlSetTexture(0);
+    EndShaderMode();
+    return true;
+}
+
 static void RenderClayCommands(Clay_RenderCommandArray commands, FontCache &fontCache) {
+    // Logical units reach the screen multiplied by raylib's HighDPI scale, which
+    // is the same factor the font cache bakes its atlases at. The shape shader
+    // and the pixel snapping below both need it to reason in device pixels.
+    const float scale = fontCache.dpiScale > 0.0f ? fontCache.dpiScale : 1.0f;
     std::vector<Rectangle> scissorStack;
     std::vector<Color> overlayStack;
     bool scissorEnabled = false;
@@ -352,6 +591,10 @@ static void RenderClayCommands(Clay_RenderCommandArray commands, FontCache &font
         }
     };
 
+    auto snapToDevice = [&](float v) {
+        return scale > 0.0f ? std::round(v*scale)/scale : std::round(v);
+    };
+
     auto applyOverlay = [&](Color c) -> Color {
         Color out = c;
         for (Color overlay : overlayStack) {
@@ -362,25 +605,31 @@ static void RenderClayCommands(Clay_RenderCommandArray commands, FontCache &font
 
     for (int i = 0; i < commands.length; ++i) {
         Clay_RenderCommand *cmd = Clay_RenderCommandArray_Get(&commands, i);
-        // Snap boxes to whole pixels. Clay lays out in floats, so sibling
+        // Snap boxes to whole device pixels. Clay lays out in floats, so sibling
         // edges land on fractional coordinates and rasterize as a half-pixel
         // blur that reads as uneven widths and gaps (three equally-grown
         // cards can each look a different size). Rounding the two edges
         // independently (rather than x and width) keeps adjacent elements
-        // flush with each other.
-        float x0 = std::round(cmd->boundingBox.x);
-        float y0 = std::round(cmd->boundingBox.y);
+        // flush with each other. Snapping in device rather than logical units
+        // matters at fractional scales, where a whole logical coordinate lands
+        // mid-pixel and the shape shader's coverage ramp would soften an edge
+        // that was meant to be straight.
+        float x0 = snapToDevice(cmd->boundingBox.x);
+        float y0 = snapToDevice(cmd->boundingBox.y);
         Rectangle rect = {
             x0,
             y0,
-            std::round(cmd->boundingBox.x + cmd->boundingBox.width) - x0,
-            std::round(cmd->boundingBox.y + cmd->boundingBox.height) - y0,
+            snapToDevice(cmd->boundingBox.x + cmd->boundingBox.width) - x0,
+            snapToDevice(cmd->boundingBox.y + cmd->boundingBox.height) - y0,
         };
 
         switch (cmd->commandType) {
             case CLAY_RENDER_COMMAND_TYPE_RECTANGLE: {
                 Color color = applyOverlay(ToRaylibColor(cmd->renderData.rectangle.backgroundColor));
-                DrawRectangleRoundedPerCorner(rect, cmd->renderData.rectangle.cornerRadius, roundedCornerSegments, color);
+                if (!DrawRectangleRoundedSDF(rect, cmd->renderData.rectangle.cornerRadius, 0.0f,
+                        color, BLANK, scale)) {
+                    DrawRectangleRoundedPerCorner(rect, cmd->renderData.rectangle.cornerRadius, roundedCornerSegments, color);
+                }
                 break;
             }
             case CLAY_RENDER_COMMAND_TYPE_TEXT: {
@@ -397,6 +646,11 @@ static void RenderClayCommands(Clay_RenderCommandArray commands, FontCache &font
                 bool uniformWidth = b.width.left == b.width.right
                     && b.width.top == b.width.bottom
                     && b.width.left == b.width.top;
+                if (uniformWidth && b.width.left > 0
+                    && DrawRectangleRoundedSDF(rect, b.cornerRadius, (float)b.width.left,
+                        BLANK, c, scale)) {
+                    break;
+                }
                 if (radius > 0.0f && uniformWidth && b.width.left > 0) {
                     // Draw a rounded, inset border whose outer edge aligns with the
                     // element's rounded background so fills never appear to bleed past it.
