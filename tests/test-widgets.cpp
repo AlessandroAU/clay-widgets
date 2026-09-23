@@ -430,6 +430,29 @@ static void TestSliderKeyboard(void) {
     CHECK(ui.focusedId != sliderId.id);
 }
 
+// showThumb only restyles the slider: the box keeps its full height as the
+// pointer target, and a press anywhere along it still sets the value.
+static void TestSliderThumb(void) {
+    Clay_ElementId sliderId = CLAY_ID("ThumbSlider");
+    float value = 0.0f;
+    ClayWidgets_SliderOptions options = {};
+    options.minValue = 0.0f;
+    options.maxValue = 10.0f;
+    options.step = 1.0f;
+    options.showThumb = true;
+    auto body = [&]() { ClayWidgets_Slider(&ui, sliderId, &value, options); };
+
+    Frame(MakeInput(), body);
+    Clay_ElementData data = Clay_GetElementData(sliderId);
+    CHECK(data.found);
+    CHECK(data.boundingBox.height == 24.0f);
+    float x = data.boundingBox.x + data.boundingBox.width * 0.8f;
+    float y = data.boundingBox.y + 2.0f; // above the thin track, still inside the target
+    Frame(PressAt(x, y), body);
+    Frame(ReleaseAt(x, y), body);
+    CHECK(value > 5.0f && value <= 10.0f);
+}
+
 // A disabled stepper ignores clicks and keys.
 static void TestStepperDisabled(void) {
     Clay_ElementId stepperId = CLAY_ID("DisabledStepper");
@@ -1234,6 +1257,7 @@ int main(void) {
         { "text area soft word wrap", TestTextAreaSoftWrap },
         { "text area overlays clipped to panel", TestTextAreaOverlaysClippedToPanel },
         { "slider keyboard + disabled", TestSliderKeyboard },
+        { "slider thumb style keeps its pointer target", TestSliderThumb },
         { "stepper disabled", TestStepperDisabled },
         { "scratch overflow reported", TestScratchOverflowReported },
         { "focusables overflow reported", TestFocusablesOverflowReported },

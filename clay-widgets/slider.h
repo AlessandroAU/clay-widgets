@@ -106,26 +106,68 @@ bool ClayWidgets_Slider(
         ClayWidgets__FocusRect(ctx, id);
     }
 
+    // With showThumb the box itself turns invisible - it stays only as the
+    // pointer target and focus outline - and a thin track plus a round handle
+    // are drawn inside it.
+    const Clay_Color clear = CLAY__INIT(Clay_Color){0, 0, 0, 0};
     CLAY(id, {
         .layout = {
-            .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_FIXED(18) },
+            .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_FIXED(options.showThumb ? 24.f : 18.f) },
             .padding = CLAY_PADDING_ALL((uint16_t)(ClayWidgets__IsBeveled(ctx) ? 2 : 1)),
             .childAlignment = { .x = CLAY_ALIGN_X_LEFT, .y = CLAY_ALIGN_Y_CENTER },
         },
-        .backgroundColor = ctx->theme.surfaceAltColor,
+        .backgroundColor = options.showThumb ? clear : ctx->theme.surfaceAltColor,
         .cornerRadius = CLAY_CORNER_RADIUS(ctx->theme.radiusSm > 0 ? 9.0f : 0.0f),
-        .border = ClayWidgets__Border(ctx, (focused || over) ? ctx->theme.focusRingColor : ctx->theme.borderColor),
+        .border = ClayWidgets__Border(ctx, (focused || over) ? ctx->theme.focusRingColor
+            : options.showThumb ? clear : ctx->theme.borderColor),
     }) {
-        CLAY_AUTO_ID({
-            .layout = {
-                .sizing = {
-                    .width = CLAY_SIZING_PERCENT(t),
-                    .height = CLAY_SIZING_GROW(0),
+        if (options.showThumb) {
+            CLAY_AUTO_ID({
+                .layout = { .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_FIXED(4) } },
+                .backgroundColor = ctx->theme.borderColor,
+                .cornerRadius = CLAY_CORNER_RADIUS(2),
+            }) {
+                CLAY_AUTO_ID({
+                    .layout = { .sizing = { .width = CLAY_SIZING_PERCENT(t), .height = CLAY_SIZING_FIXED(4) } },
+                    .backgroundColor = ctx->theme.accentColor,
+                    .cornerRadius = CLAY_CORNER_RADIUS(2),
+                }) {}
+            }
+            // The handle rides a floating row: a spacer as wide as the fill, then
+            // the handle. The right padding keeps it inside the track at t = 1,
+            // and passthrough leaves drags to the slider underneath.
+            CLAY_AUTO_ID({
+                .layout = {
+                    .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_FIXED(16) },
+                    .padding = { .right = 16 },
+                    .layoutDirection = CLAY_LEFT_TO_RIGHT,
                 },
-            },
-            .backgroundColor = fillColor,
-            .cornerRadius = CLAY_CORNER_RADIUS(ctx->theme.radiusSm > 0 ? 8.0f : 0.0f),
-        }) {}
+                .floating = {
+                    .attachPoints = { .element = CLAY_ATTACH_POINT_LEFT_CENTER, .parent = CLAY_ATTACH_POINT_LEFT_CENTER },
+                    .pointerCaptureMode = CLAY_POINTER_CAPTURE_MODE_PASSTHROUGH,
+                    .attachTo = CLAY_ATTACH_TO_PARENT,
+                    .clipTo = CLAY_CLIP_TO_ATTACHED_PARENT,
+                },
+            }) {
+                CLAY_AUTO_ID({ .layout = { .sizing = { .width = CLAY_SIZING_PERCENT(t), .height = CLAY_SIZING_FIXED(16) } } }) {}
+                CLAY_AUTO_ID({
+                    .layout = { .sizing = { .width = CLAY_SIZING_FIXED(16), .height = CLAY_SIZING_FIXED(16) } },
+                    .backgroundColor = options.disabled ? fillColor : ctx->theme.accentColor,
+                    .cornerRadius = CLAY_CORNER_RADIUS(8),
+                }) {}
+            }
+        } else {
+            CLAY_AUTO_ID({
+                .layout = {
+                    .sizing = {
+                        .width = CLAY_SIZING_PERCENT(t),
+                        .height = CLAY_SIZING_GROW(0),
+                    },
+                },
+                .backgroundColor = fillColor,
+                .cornerRadius = CLAY_CORNER_RADIUS(ctx->theme.radiusSm > 0 ? 8.0f : 0.0f),
+            }) {}
+        }
 
         // Live value, centered over the whole track. Floating so it overlays the
         // fill without affecting layout, and pointer-passthrough so it never

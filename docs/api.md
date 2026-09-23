@@ -246,8 +246,9 @@ bool ClayWidgets_Stepper(ClayWidgets_Context *ctx, Clay_ElementId id, int32_t *v
 `CLAY_SIZING_FIT(0, 0)`, i.e. wrap to the label.
 
 `ClayWidgets_SliderOptions` is `{minValue, maxValue, step, showValue,
-valueDecimals, disabled}`; `valueDecimals <= 0` derives the precision from the
-step and range. A focused slider steps with Left/Right (by `step`, or 1% of the
+valueDecimals, disabled, showThumb}`; `valueDecimals <= 0` derives the precision
+from the step and range. `showThumb` draws a thin track with a round handle
+instead of a filled bar, keeping the full-height pointer target. A focused slider steps with Left/Right (by `step`, or 1% of the
 range) and jumps with Home/End. `ClayWidgets_StepperOptions` is
 `{minValue, maxValue, step, disabled}`; a focused stepper increments with
 Up/Right and decrements with Down/Left.

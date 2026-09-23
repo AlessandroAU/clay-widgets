@@ -520,6 +520,7 @@ typedef struct ClayWidgets_SliderOptions {
     bool showValue;        // draw the live value centered over the track
     int32_t valueDecimals; // decimals for the value text; <= 0 = auto from step/range
     bool disabled;         // inert: no focus, pointer or keyboard interaction
+    bool showThumb;        // thin track and a visible handle; the pointer target keeps the full height
 } ClayWidgets_SliderOptions;
 
 typedef struct ClayWidgets_StepperOptions {
