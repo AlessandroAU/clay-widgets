@@ -253,8 +253,10 @@ range) and jumps with Home/End. `ClayWidgets_StepperOptions` is
 `{minValue, maxValue, step, disabled}`; a focused stepper increments with
 Up/Right and decrements with Down/Left.
 
-Tab styles are `PILL` (standalone navigation pill) and `ATTACHED` (top-rounded
-with an accent underline, meant to sit in the header row of a framed tab plane).
+Tab styles are `PILL` (standalone navigation pill), `ATTACHED` (top-rounded
+with an accent underline, meant to sit in the header row of a framed tab plane)
+and `SIDEBAR` (a full-width, left-aligned row with an accent bar on the current
+page, for a vertical page list beside the content).
 Radios, tabs and segmented cells all behave as one-of-N over a caller-owned
 selection; a focused segmented control moves with Left/Right.
 

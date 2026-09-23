@@ -12,6 +12,10 @@ typedef enum ClayWidgets_TabStyle {
     // accent underline on the active tab so it reads as part of the framed
     // surface below rather than a free-floating button.
     CLAY_WIDGETS_TAB_STYLE_ATTACHED = 1,
+    // Entry in a vertical navigation column: fills the column's width, label
+    // left-aligned, with an accent bar marking the current page - the settings
+    // sidebar pattern. Stack several in a fixed-width column beside the page.
+    CLAY_WIDGETS_TAB_STYLE_SIDEBAR = 2,
 } ClayWidgets_TabStyle;
 
 // A single tab in a tab strip. Behaves like a radio: pass a distinct
@@ -22,7 +26,8 @@ typedef enum ClayWidgets_TabStyle {
 // ClayWidgets_TabEx lets you pick CLAY_WIDGETS_TAB_STYLE_ATTACHED, which is
 // meant to sit in the header row of a framed "tab plane" (see the demo): lay
 // several out in a horizontal strip directly above a bordered content body and
-// switch the body on *selectedValue.
+// switch the body on *selectedValue. CLAY_WIDGETS_TAB_STYLE_SIDEBAR stacks the
+// same way vertically, as a page list beside the content.
 bool ClayWidgets_Tab(
     ClayWidgets_Context *ctx,
     Clay_ElementId id,
@@ -80,6 +85,45 @@ bool ClayWidgets_TabEx(
     ClayWidgets_SetEdge(ctx, id, CLAY_WIDGETS_EDGE_RAISED);
     if (focused) {
         ClayWidgets__FocusRect(ctx, id);
+    }
+
+    if (style == CLAY_WIDGETS_TAB_STYLE_SIDEBAR) {
+        // Quiet until it matters: no fill at rest, the hover color under the
+        // pointer and on the current page, and the accent reserved for the bar.
+        Clay_Color background = transparent;
+        if (selected || over) {
+            background = ctx->theme.hoverColor;
+        }
+        if (beveled && selected) {
+            ClayWidgets_SetEdge(ctx, id, CLAY_WIDGETS_EDGE_SUNKEN);
+        }
+        CLAY(id, {
+            .layout = {
+                .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_FIT(0, 0) },
+                .padding = { .left = ctx->theme.spacing.sm, .right = ctx->theme.spacing.lg, .top = ctx->theme.spacing.sm, .bottom = ctx->theme.spacing.sm },
+                .childGap = ctx->theme.spacing.sm,
+                .childAlignment = { .x = CLAY_ALIGN_X_LEFT, .y = CLAY_ALIGN_Y_CENTER },
+                .layoutDirection = CLAY_LEFT_TO_RIGHT,
+            },
+            .backgroundColor = background,
+            .cornerRadius = CLAY_CORNER_RADIUS((float)ctx->theme.radiusSm),
+            .border = ClayWidgets__Border(ctx, focused ? ctx->theme.focusRingColor : transparent),
+            .transition = ClayWidgets__ColorTransition(ctx),
+        }) {
+            // The bar keeps its slot when hidden so labels never shift.
+            CLAY_AUTO_ID({
+                .layout = { .sizing = { .width = CLAY_SIZING_FIXED(3), .height = CLAY_SIZING_FIXED((float)ctx->theme.fontSizeBody) } },
+                .backgroundColor = selected ? ctx->theme.accentColor : transparent,
+                .cornerRadius = CLAY_CORNER_RADIUS(1.5f),
+            }) {}
+            CLAY_TEXT(text, {
+                .textColor = ctx->theme.textColor,
+                .fontId = ctx->theme.fontBody,
+                .fontSize = ctx->theme.fontSizeBody,
+                .wrapMode = CLAY_TEXT_WRAP_NONE,
+            });
+        }
+        return changed;
     }
 
     if (style == CLAY_WIDGETS_TAB_STYLE_ATTACHED) {

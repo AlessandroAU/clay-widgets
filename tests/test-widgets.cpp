@@ -453,6 +453,40 @@ static void TestSliderThumb(void) {
     CHECK(value > 5.0f && value <= 10.0f);
 }
 
+// Sidebar tabs fill their column, stay keyboard-operable like every tab, and
+// select on click.
+static void TestSidebarTabs(void) {
+    int32_t page = 0;
+    Clay_ElementId first = CLAY_ID("SidebarFirst"), second = CLAY_ID("SidebarSecond");
+    auto body = [&]() {
+        CLAY(CLAY_ID("SidebarColumn"), {
+            .layout = { .sizing = { .width = CLAY_SIZING_FIXED(200) }, .layoutDirection = CLAY_TOP_TO_BOTTOM },
+        }) {
+            ClayWidgets_TabEx(&ui, first, CLAY_STRING("First"), 0, &page, CLAY_WIDGETS_TAB_STYLE_SIDEBAR);
+            ClayWidgets_TabEx(&ui, second, CLAY_STRING("Second"), 1, &page, CLAY_WIDGETS_TAB_STYLE_SIDEBAR);
+        }
+    };
+    Frame(MakeInput(), body);
+    Clay_ElementData firstData = Clay_GetElementData(first);
+    CHECK(firstData.found && firstData.boundingBox.width == 200.0f);
+
+    ClayWidgets_Input tab = MakeInput();
+    tab.keyTab = true;
+    Frame(tab, body);
+    Frame(tab, body);
+    CHECK(ui.focusedId == second.id);
+    ClayWidgets_Input enter = MakeInput();
+    enter.keyEnter = true;
+    Frame(enter, body);
+    CHECK(page == 1);
+
+    Clay_ElementData firstBox = Clay_GetElementData(first);
+    float x = firstBox.boundingBox.x + 20.0f, y = firstBox.boundingBox.y + firstBox.boundingBox.height * 0.5f;
+    Frame(PressAt(x, y), body);
+    Frame(ReleaseAt(x, y), body);
+    CHECK(page == 0);
+}
+
 // A disabled stepper ignores clicks and keys.
 static void TestStepperDisabled(void) {
     Clay_ElementId stepperId = CLAY_ID("DisabledStepper");
@@ -1258,6 +1292,7 @@ int main(void) {
         { "text area overlays clipped to panel", TestTextAreaOverlaysClippedToPanel },
         { "slider keyboard + disabled", TestSliderKeyboard },
         { "slider thumb style keeps its pointer target", TestSliderThumb },
+        { "sidebar tabs fill their column and take focus", TestSidebarTabs },
         { "stepper disabled", TestStepperDisabled },
         { "scratch overflow reported", TestScratchOverflowReported },
         { "focusables overflow reported", TestFocusablesOverflowReported },
