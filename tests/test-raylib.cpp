@@ -49,6 +49,15 @@ int main() {
     }
     check(separate,"padded glyphs do not overlap in the atlas");
     check(advances,"baked glyphs carry advances");
+    // A face index the file does not have bakes its default face rather than
+    // failing, so a stale fontconfig index can never leave text unrendered.
+    check(!FontCache_Register(cache,3,kEmbeddedRobotoTTF,(int)kEmbeddedRobotoTTFSize,ascii,3,-1),"reject negative face index");
+    check(FontCache_Register(cache,3,kEmbeddedRobotoTTF,(int)kEmbeddedRobotoTTFSize,ascii,3,1L<<16),"register named instance");
+    Font instance=*FontCache_Get(cache,16,3);
+    check(instance.texture.id!=cache.fallback.texture.id && instance.glyphCount==3,"missing instance bakes the default face");
+    Font first=ClayWidgets_BakeFont(kEmbeddedRobotoTTF,(int)kEmbeddedRobotoTTFSize,16,ascii,3,CLAY_WIDGETS_TEXT_GAMMA,0);
+    check(first.glyphCount==3 && first.glyphs[2].advanceX==primary.glyphs[2].advanceX,"face index 0 is the default face");
+    UnloadFont(first);
     char buffer[8]={};int length=0;AppendUtf8FromCodepoint(buffer,length,1,0xE9);check(length==0,"encoder rejects partial UTF8");
     AppendUtf8FromCodepoint(buffer,length,8,0xD800);check(length==0,"encoder rejects surrogate");
     AppendUtf8FromCodepoint(buffer,length,8,0x1F600);check(length==4,"encoder emits whole scalar");

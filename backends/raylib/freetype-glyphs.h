@@ -19,6 +19,7 @@
 
 #include <ft2build.h>
 #include FT_FREETYPE_H
+#include FT_MULTIPLE_MASTERS_H
 
 #include "raylib.h"
 
@@ -41,17 +42,52 @@ static FT_Library ClayWidgets_FreeTypeLibrary() {
     return library;
 }
 
+// Opens faceIndex's face, at its named instance if it has one. FreeType 2.14.3
+// and earlier skip a variable font's HVAR advance deltas for a face opened as a
+// named instance (fixed upstream in 5178bdc2a, not yet released), so a bold
+// instance gets bold outlines on regular spacing and letters crowd. Opening the
+// plain face and setting the instance's coordinates makes it a variation, which
+// those versions do adjust; the outlines are the same either way.
+static FT_Face ClayWidgets_OpenFace(FT_Library library, const unsigned char *fontData, int fontDataSize,
+    long faceIndex) {
+    FT_Face face = nullptr;
+    if (FT_New_Memory_Face(library, fontData, fontDataSize, (FT_Long)(faceIndex & 0xFFFF), &face) != 0) {
+        return nullptr;
+    }
+    const long instance = faceIndex >> 16;
+    if (instance == 0) {
+        return face;
+    }
+    FT_MM_Var *variation = nullptr;
+    bool applied = false;
+    if (FT_Get_MM_Var(face, &variation) == 0) {
+        applied = instance <= (long)variation->num_namedstyles &&
+            FT_Set_Var_Design_Coordinates(face, variation->num_axis, variation->namedstyle[instance - 1].coords) == 0;
+        FT_Done_MM_Var(library, variation);
+    }
+    if (!applied) {
+        FT_Done_Face(face);
+        return nullptr;
+    }
+    return face;
+}
+
 // Fills raylib GlyphInfo records for the codepoints the font has, in the same
 // shape LoadFontData returns: 8-bit coverage images, offsets from the top of a
 // pixelSize-tall line box, whole-pixel advances. Codepoints missing from the
 // font are skipped, as raylib does, so FontCache's fallback lookup still works.
+// faceIndex is FreeType's: the face within a collection (.ttc/.otc) in the low
+// 16 bits, and a variable font's named instance, counted from 1, in the bits
+// above - the encoding fontconfig reports as FC_INDEX. Variable fonts such as
+// Cantarell and Inter ship their bold as an instance of one file, so this is
+// how to reach it; 0 is the first face at its default instance.
 // Returns null (and *glyphCount 0) on failure; free with UnloadFontData.
 static GlyphInfo *ClayWidgets_LoadGlyphsFreeType(const unsigned char *fontData, int fontDataSize, int pixelSize,
-    const int *codepoints, int codepointCount, int *glyphCount) {
+    const int *codepoints, int codepointCount, int *glyphCount, long faceIndex = 0) {
     *glyphCount = 0;
     FT_Library library = ClayWidgets_FreeTypeLibrary();
-    FT_Face face = nullptr;
-    if (!library || FT_New_Memory_Face(library, fontData, fontDataSize, 0, &face) != 0) {
+    FT_Face face = library ? ClayWidgets_OpenFace(library, fontData, fontDataSize, faceIndex) : nullptr;
+    if (!face) {
         return nullptr;
     }
 
