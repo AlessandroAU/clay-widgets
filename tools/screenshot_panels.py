@@ -130,8 +130,8 @@ def main() -> None:
     )
     parser.add_argument(
         "--out",
-        default=str(PROJECT_ROOT / "docs" / "screenshots"),
-        help="output directory for the PNGs (default: docs/screenshots)",
+        default=str(PROJECT_ROOT / "build" / "screenshots"),
+        help="output directory for the PNGs (default: build/screenshots)",
     )
     parser.add_argument(
         "--views",

@@ -1,6 +1,7 @@
 # Builds the WebAssembly demo and publishes it to GitHub Pages, so the same
 # raylib app that ships as clay-widgets-demo.exe is playable in a browser at
-# https://alessandroau.github.io/clay-widgets/.
+# https://alessandroau.github.io/clay-widgets/. The README screenshots are
+# published alongside it under /screenshots/, so CI never commits to the repo.
 #
 # Requires Pages to be enabled once for the repo:
 #   Settings -> Pages -> Build and deployment -> Source: "GitHub Actions".
@@ -23,7 +24,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build:
+  web:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -40,33 +41,17 @@ jobs:
       - name: Build the web demo
         run: python tools/build_web.py --system-emsdk
 
-      # Pages serves through Jekyll by default, which skips files starting with
-      # "_". The emscripten output has none today, but this keeps it verbatim.
-      - name: Disable Jekyll processing
-        run: touch build/web/.nojekyll
-
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
+          name: web
           path: build/web
-
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - id: deployment
-        uses: actions/deploy-pages@v4
 
   # Regenerates the README screenshots from the same demo, so they can never
   # drift from what main actually renders. GitHub runners have no GPU, so this
   # builds the desktop demo for Linux and runs it under Xvfb with Mesa's
-  # llvmpipe software rasterizer. Independent of the Pages deploy above.
+  # llvmpipe software rasterizer.
   screenshots:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -80,25 +65,43 @@ jobs:
       - name: Build raylib + demo for Linux
         run: make -j4
 
-      # --shot mode parks the pointer and replaces the live frame rate with a
-      # placeholder, so repeat captures of a view are byte-identical and the
-      # commit below only fires on real visual changes.
       - name: Capture each view
         env:
           LIBGL_ALWAYS_SOFTWARE: "1"
           GALLIUM_DRIVER: llvmpipe
-        run: xvfb-run -a --server-args="-screen 0 1280x800x24" python3 tools/screenshot_panels.py
+        run: xvfb-run -a --server-args="-screen 0 1280x800x24" python3 tools/screenshot_panels.py --out build/screenshots
 
-      - name: Commit refreshed screenshots
-        run: |
-          if git diff --quiet -- docs/screenshots; then
-            echo "Screenshots unchanged."
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add docs/screenshots
-          # [skip ci] so this commit does not trigger another run of this workflow.
-          git commit -m "docs: refresh demo screenshots [skip ci]"
-          git pull --rebase --autostash
-          git push
+      - uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: build/screenshots
+
+  # Assembles the web demo and the screenshots into one site and deploys it.
+  deploy:
+    needs: [web, screenshots]
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: web
+          path: site
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: screenshots
+          path: site/screenshots
+
+      # Pages serves through Jekyll by default, which skips files starting with
+      # "_". The emscripten output has none today, but this keeps it verbatim.
+      - name: Disable Jekyll processing
+        run: touch site/.nojekyll
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - id: deployment
+        uses: actions/deploy-pages@v4
