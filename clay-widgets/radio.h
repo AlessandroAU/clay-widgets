@@ -44,6 +44,9 @@ bool ClayWidgets_Radio(
     }
 
     float dialSize = ClayWidgets__ControlSize(ctx);
+    // The renderer snaps box edges to whole pixels, so the dot must sit a whole
+    // pixel inset from the dial; a half-pixel inset rounds it off-centre.
+    float dotSize = dialSize - 2.0f * floorf(dialSize * 0.25f);
 
     CLAY(id, {
         .layout = {
@@ -67,11 +70,11 @@ bool ClayWidgets_Radio(
             if (selected) {
                 CLAY_AUTO_ID({
                     .layout = {
-                        .sizing = { .width = CLAY_SIZING_FIXED(dialSize * 0.5f), .height = CLAY_SIZING_FIXED(dialSize * 0.5f) },
+                        .sizing = { .width = CLAY_SIZING_FIXED(dotSize), .height = CLAY_SIZING_FIXED(dotSize) },
                         .childAlignment = { .x = CLAY_ALIGN_X_CENTER, .y = CLAY_ALIGN_Y_CENTER },
                     },
                     .backgroundColor = ctx->theme.accentColor,
-                    .cornerRadius = CLAY_CORNER_RADIUS(dialSize * 0.25f),
+                    .cornerRadius = CLAY_CORNER_RADIUS(dotSize * 0.5f),
                     .floating = {
                         .attachPoints = {
                             .element = CLAY_ATTACH_POINT_CENTER_CENTER,
