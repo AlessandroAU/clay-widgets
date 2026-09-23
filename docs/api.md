@@ -642,7 +642,7 @@ does not acquire native composition events.
 
 ```cpp
 bool FontCache_Register(FontCache &cache, uint16_t id, const unsigned char *ttfBytes, int size,
-                        const int *codepoints = nullptr, int count = 0);
+                        const int *codepoints = nullptr, int count = 0, long faceIndex = 0);
 void FontCache_Unload(FontCache &cache);
 ```
 
@@ -655,6 +655,17 @@ use the same per-glyph fallback. Default coverage is Latin-1 (ASCII 32-126 plus
 bakes one atlas per pixel size on demand. Call `Clay_ResetMeasureTextCache`
 after replacing a face in use, and `FontCache_Unload` before closing the
 graphics context. This provides glyph fallback only - not shaping.
+
+`faceIndex` picks which face of the file to bake, in FreeType's encoding: the
+face within a collection (`.ttc`/`.otc`) in the low 16 bits, and a variable
+font's named instance, counted from 1, above them. This is the value fontconfig
+reports as `FC_INDEX`, so a font matched through fontconfig can be registered
+as is. Variable fonts such as Cantarell, Adwaita Sans and Inter ship their bold
+as a named instance of one file, so registering the same bytes twice - index 0
+as the regular id and the bold instance's index as the bold id - gives a real
+bold. Selecting a face needs the FreeType rasterizer (`CLAY_WIDGETS_FREETYPE`);
+without it, and for an index the file does not have, the file's default face
+is baked instead.
 
 ## Compile-time configuration
 

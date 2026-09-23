@@ -159,6 +159,7 @@ struct FontFace {
     int size;
     std::vector<int> codepoints;
     std::vector<BakedAtlas> atlases;
+    long faceIndex = 0; // collection face / variable-font instance, as FreeType encodes it
 };
 struct FontCache {
     float dpiScale = 1.0f;
@@ -177,16 +178,19 @@ static int FontCache_GammaKey(const FontCache &cache) {
 
 // TTF bytes must outlive the cache. Glyph lists are copied. Register before layout;
 // call Clay_ResetMeasureTextCache after replacing a face used by existing text.
+// faceIndex selects a face in a collection or a variable font's named instance
+// (see ClayWidgets_BakeFont), so one variable file can serve as both a regular
+// and a bold face under two ids.
 [[maybe_unused]] static bool FontCache_Register(FontCache &cache, uint16_t id, const unsigned char *data, int size,
-    const int *codepoints = nullptr, int count = 0) {
-    if (!data || size <= 0 || count < 0 || (count && !codepoints)) return false;
+    const int *codepoints = nullptr, int count = 0, long faceIndex = 0) {
+    if (!data || size <= 0 || count < 0 || (count && !codepoints) || faceIndex < 0) return false;
     for (auto &face : cache.faces) if (face.id == id) {
         for (auto &atlas : face.atlases) UnloadFont(atlas.font);
-        face = FontFace{id, data, size, {}, {}};
+        face = FontFace{id, data, size, {}, {}, faceIndex};
         if (count) face.codepoints.assign(codepoints, codepoints + count);
         return true;
     }
-    cache.faces.push_back(FontFace{id, data, size, {}, {}});
+    cache.faces.push_back(FontFace{id, data, size, {}, {}, faceIndex});
     if (count) cache.faces.back().codepoints.assign(codepoints, codepoints + count);
     return true;
 }
@@ -207,7 +211,7 @@ static Font *FontCache_Get(FontCache &cache, int pixelSize, uint16_t fontId = 0)
             if (atlas.pixelSize == pixelSize && atlas.gammaKey == gammaKey) return &atlas.font;
         }
         Font font = ClayWidgets_BakeFont(face.data, face.size, pixelSize, face.codepoints.data(),
-            (int)face.codepoints.size(), cache.textGamma);
+            (int)face.codepoints.size(), cache.textGamma, face.faceIndex);
         if (!font.texture.id) return &cache.fallback;
         SetTextureFilter(font.texture, TEXTURE_FILTER_BILINEAR);
         face.atlases.push_back(BakedAtlas{pixelSize, gammaKey, font});

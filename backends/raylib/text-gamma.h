@@ -40,10 +40,15 @@
 #endif
 
 // Bakes a .ttf byte array at pixelSize into a raylib Font. With correction
-// enabled the atlas coverage is raised to 1/gamma before upload. Returns a Font
-// whose texture.id is 0 on failure. Free the result with UnloadFont().
+// enabled the atlas coverage is raised to 1/gamma before upload. faceIndex picks
+// a face in a collection or a variable font's named instance, encoded as
+// FreeType and fontconfig do (see ClayWidgets_LoadGlyphsFreeType); it needs
+// CLAY_WIDGETS_FREETYPE, since stb_truetype only reads a file's default face,
+// which is what a build without FreeType bakes instead. Returns a Font whose
+// texture.id is 0 on failure. Free the result with UnloadFont().
 static Font ClayWidgets_BakeFont(const unsigned char *fontData, int fontDataSize, int pixelSize,
-    const int *codepoints = nullptr, int codepointCount = 0, float gamma = CLAY_WIDGETS_TEXT_GAMMA) {
+    const int *codepoints = nullptr, int codepointCount = 0, float gamma = CLAY_WIDGETS_TEXT_GAMMA,
+    long faceIndex = 0) {
     // Mirror LoadFontFromMemory's pipeline (LoadFontData -> GenImageFontAtlas)
     // so we can choose the rasterizer and reach the atlas image before it goes
     // to the GPU.
@@ -56,7 +61,10 @@ static Font ClayWidgets_BakeFont(const unsigned char *fontData, int fontDataSize
     }
     GlyphInfo *glyphs = NULL;
 #ifdef CLAY_WIDGETS_FREETYPE
-    glyphs = ClayWidgets_LoadGlyphsFreeType(fontData, fontDataSize, pixelSize, codepoints, codepointCount, &glyphCount);
+    glyphs = ClayWidgets_LoadGlyphsFreeType(fontData, fontDataSize, pixelSize, codepoints, codepointCount, &glyphCount,
+        faceIndex);
+#else
+    (void)faceIndex;
 #endif
     if (glyphs == NULL) {
         glyphs = LoadFontData(fontData, fontDataSize, pixelSize, codepoints, codepointCount, FONT_DEFAULT, &glyphCount);
