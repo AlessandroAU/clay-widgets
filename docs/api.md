@@ -679,6 +679,20 @@ The renderer-side `CLAY_WIDGETS_TEXT_GAMMA_CORRECTION` enables gamma-corrected
 atlas baking in `backends/raylib/text-gamma.h`, tuned by
 `CLAY_WIDGETS_TEXT_GAMMA` (default 1.6f).
 
+`CLAY_WIDGETS_FREETYPE` makes the same bake rasterize glyphs with FreeType
+(`backends/raylib/freetype-glyphs.h`) instead of raylib's unhinted
+stb_truetype, snapping outlines to the pixel grid so small text stays crisp.
+The host links FreeType; the Makefile builds it from `subprojects/freetype` and
+defines this by default (`make FREETYPE=0` opts out). A FreeType failure falls
+back to stb. `CLAY_WIDGETS_FREETYPE_LOAD_FLAGS` picks the hinting (default
+`FT_LOAD_TARGET_LIGHT`, vertical-only). Font sizes keep raylib's meaning (the
+ascender-to-descender height), so layouts need no retuning, though hinted
+glyphs round their advances rather than truncating them and run a little wider.
+
+Pass `offscreen = true` to `RenderClayCommands` when drawing into a render
+texture under your own `rlScalef(fontCache.dpiScale)`: raylib applies no HighDPI
+scaling to scissor rectangles there, so the backend converts them itself.
+
 ## Limits
 
 - No grapheme segmentation, text shaping or bidirectional layout; word

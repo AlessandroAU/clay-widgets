@@ -4,3 +4,6 @@
 [submodule "subprojects/raylib"]
 	path = subprojects/raylib
 	url = https://github.com/raysan5/raylib
+[submodule "subprojects/freetype"]
+	path = subprojects/freetype
+	url = https://github.com/freetype/freetype

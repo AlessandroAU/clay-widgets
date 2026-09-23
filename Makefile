@@ -41,6 +41,30 @@ LDFLAGS := -L$(RAYLIB_SRC_DIR) $(STATIC_RUNTIME)
 BUILD_DIR := build
 LOG := $(BUILD_DIR)/build.log
 
+# Hinted text. FreeType is compiled from the pinned subprojects/freetype
+# submodule as the handful of unity sources the backend needs (no configure
+# step); backends/raylib/freetype-config replaces FreeType's module list to
+# match. FREETYPE=0 falls back to raylib's unhinted stb_truetype glyphs.
+FREETYPE ?= 1
+FREETYPE_CC ?= gcc
+FREETYPE_DIR := subprojects/freetype
+FREETYPE_LIB := $(BUILD_DIR)/libfreetype.a
+FREETYPE_SRCS := $(addprefix $(FREETYPE_DIR)/src/, \
+    base/ftsystem.c base/ftinit.c base/ftdebug.c base/ftbase.c base/ftbitmap.c base/ftmm.c \
+    autofit/autofit.c truetype/truetype.c cff/cff.c sfnt/sfnt.c psaux/psaux.c \
+    psnames/psnames.c pshinter/pshinter.c smooth/smooth.c gzip/ftgzip.c)
+# Flat object names: nested build directories would need mkdir -p, which cmd.exe lacks.
+FREETYPE_OBJS := $(addprefix $(BUILD_DIR)/ft-,$(notdir $(FREETYPE_SRCS:.c=.o)))
+FREETYPE_CFLAGS := -O2 -DFT2_BUILD_LIBRARY -Ibackends/raylib/freetype-config -I$(FREETYPE_DIR)/include
+
+ifeq ($(FREETYPE),1)
+    INCLUDES += -isystem $(FREETYPE_DIR)/include
+    CXXFLAGS += -DCLAY_WIDGETS_FREETYPE
+    TEXT_LIBS := $(FREETYPE_LIB)
+else
+    TEXT_LIBS :=
+endif
+
 APP := clay-widgets-demo$(EXE)
 SRC := demo/main.cpp
 OBJ := $(BUILD_DIR)/main.o
@@ -69,8 +93,8 @@ HEADERS := $(wildcard clay-widgets/*.h backends/raylib/*.h demo/*.h demo/screens
 .PHONY: test-backend
 
 # Requires a graphics context; run locally, separately from headless CI.
-build/test-raylib$(EXE): tests/test-raylib.cpp $(HEADERS) subprojects/clay/clay.h $(RAYLIB_LIB) | $(BUILD_DIR)
-	$(CXX) $(CXXFLAGS) $(INCLUDES) tests/test-raylib.cpp -o $@ $(LDFLAGS) $(LDLIBS)
+build/test-raylib$(EXE): tests/test-raylib.cpp $(HEADERS) subprojects/clay/clay.h $(RAYLIB_LIB) $(TEXT_LIBS) | $(BUILD_DIR)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) tests/test-raylib.cpp $(TEXT_LIBS) -o $@ $(LDFLAGS) $(LDLIBS)
 
 test-backend: build/test-raylib$(EXE)
 	./build/test-raylib$(EXE)
@@ -96,8 +120,21 @@ $(BUILD_DIR):
 $(OBJ): $(SRC) $(HEADERS) | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -MMD -MP -c $(SRC) -o $(OBJ)
 
-$(APP): $(OBJ) $(RAYLIB_LIB)
-	$(CXX) $(OBJ) -o $(APP) $(LDFLAGS) $(LDLIBS)
+$(APP): $(OBJ) $(RAYLIB_LIB) $(TEXT_LIBS)
+	$(CXX) $(OBJ) $(TEXT_LIBS) -o $(APP) $(LDFLAGS) $(LDLIBS)
+
+$(FREETYPE_LIB): $(FREETYPE_OBJS)
+	$(AR) rcs $@ $^
+
+define FREETYPE_OBJECT_RULE
+$(BUILD_DIR)/ft-$(notdir $(1:.c=.o)): $(1) | $(BUILD_DIR)
+	$$(FREETYPE_CC) $$(FREETYPE_CFLAGS) -c $$< -o $$@
+endef
+$(foreach src,$(FREETYPE_SRCS),$(eval $(call FREETYPE_OBJECT_RULE,$(src))))
+
+# Only runs when a source is missing, i.e. the submodule was never fetched.
+$(FREETYPE_SRCS):
+	$(error FreeType source not found in $(FREETYPE_DIR) - run: git submodule update --init, or build with FREETYPE=0)
 
 run: $(APP)
 	./$(APP)

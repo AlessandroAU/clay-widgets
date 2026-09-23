@@ -22,7 +22,10 @@ The tree separates three things: the renderer-agnostic **widget library**, the
 - `backends/raylib/`: the raylib backend.
   - `clay-raylib-renderer.h`: turns a `Clay_RenderCommandArray` into raylib draw
     calls, plus the font-atlas cache, text-measurement callback and web frame glue.
-  - `text-gamma.h`: optional gamma-correct font-atlas baking.
+  - `text-gamma.h`: font-atlas baking, with optional gamma correction.
+  - `freetype-glyphs.h`: hinted glyph rasterization with FreeType (on by default
+    in the Makefile build; `make FREETYPE=0` uses raylib's stb_truetype).
+  - `freetype-config/`: the reduced FreeType module list the build compiles.
 - `demo/`: the demo application, one file per concern.
   - `main.cpp`: the entry point - window/font setup, the frame loop, and the
     `#include`s that assemble the demo into one translation unit.
@@ -49,6 +52,8 @@ The tree separates three things: the renderer-agnostic **widget library**, the
 - `Makefile`: builds raylib from source in `subprojects/raylib` and then builds the demo.
 - `subprojects/raylib`: raylib source (git submodule).
 - `subprojects/clay`: Clay source (git submodule, used for `clay.h`).
+- `subprojects/freetype`: FreeType source (git submodule, pinned to a release;
+  the Makefile compiles only the modules the backend uses).
 
 ## Widgets currently demonstrated
 
@@ -225,16 +230,17 @@ The desktop build is a single portable `.exe` with no external dependencies:
 
 - **No asset files.** The UI font is baked into the binary. `tools/embed_font.py`
   converts `assets/fonts/Roboto-Regular.ttf` into `assets/generated/embedded-font.h`
-  (a byte array), which the raylib backend hands to raylib's `LoadFontFromMemory`. The
+  (a byte array), which the raylib backend bakes into glyph atlases. The
   demo icons are already generated procedurally at startup, so nothing is read
   from disk at runtime - the exe runs from any directory with `assets/` absent.
   Re-run `python tools/embed_font.py` (or `make font`) only if the source font changes.
-- **No redistributable DLLs.** raylib is linked as a static `.a`, and the
+- **No redistributable DLLs.** raylib and FreeType are linked as static `.a`s, and the
   Makefile passes `-static -static-libgcc -static-libstdc++` so the GCC/C++
   runtime is linked in too. The only remaining imports are always-present
   Windows system DLLs (`kernel32`, `user32`, `gdi32`, `opengl32`, `winmm`, ...).
 - The **web build** is likewise self-contained: because the font is embedded,
   `tools/build_web.py` drops `--preload-file`, so there is no separate `index.data`.
+  It still rasterizes with stb_truetype; FreeType is desktop-only for now.
 
 ## MSYS2 setup (recommended)
 
@@ -453,3 +459,6 @@ they only change when the UI does.
 MIT - see [LICENSE](LICENSE). The bundled fonts keep their own licenses; see
 [assets/fonts/README.md](assets/fonts/README.md). Clay and raylib (git
 submodules under `subprojects/`) are zlib-licensed by their respective authors.
+FreeType (also under `subprojects/`) is used under the FreeType License (FTL):
+portions of this software are copyright © The FreeType Project
+(https://freetype.org). All rights reserved.
