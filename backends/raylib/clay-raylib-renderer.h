@@ -150,7 +150,7 @@ static void AppendUtf8FromCodepoint(char *buffer, int &length, int maxLength, in
 // over one.
 struct BakedAtlas {
     int pixelSize;
-    int gammaKey; // textGamma * 100, rounded; floats make poor map keys
+    int gammaKey; // textGamma * 100, rounded (1/1.6 keys as 63); floats make poor map keys
     Font font;
 };
 struct FontFace {
@@ -272,10 +272,17 @@ static Clay_Dimensions FontCache_Text(FontCache &cache, uint16_t id, const char 
         offset += bytes;
         if (cp == '\n') { width = std::max(width, x > 0 ? x - spacing : 0); x = 0; y += size; continue; }
         Font font = FontCache_Glyph(cache, id, size, cp);
-        if (draw) DrawTextCodepoint(font, cp, {origin.x + x, origin.y + y}, size, color);
+        // Draw the atlas at exactly one texel per device pixel. Fractional
+        // origins and rounding logical sizes at fractional DPI otherwise blur
+        // an already antialiased glyph through a second bilinear resampling.
+        const float scale = cache.dpiScale > 0 ? cache.dpiScale : 1.f;
+        const float rasterSize = (float)FontCache_PixelSize(cache, size) / scale;
+        if (draw) DrawTextCodepoint(font, cp,
+            {std::round((origin.x + x) * scale) / scale,
+             std::round((origin.y + y) * scale) / scale}, rasterSize, color);
         int index = GetGlyphIndex(font, cp);
         float advance = font.glyphs[index].advanceX ? (float)font.glyphs[index].advanceX : font.recs[index].width;
-        x += advance * size / (float)font.baseSize + spacing;
+        x += advance * rasterSize / (float)font.baseSize + spacing;
     }
     return {std::max(width, x > 0 ? x - spacing : 0), y + size};
 }
@@ -473,18 +480,19 @@ void main() {
 
 struct ClayWidgets_ShapeShader {
     Shader shader = {};
+    bool attempted = false; // compile tried in the current GL context
     bool ready = false;
     int quadHalf = -1, rectHalf = -1, radii = -1, border = -1, fill = -1, stroke = -1;
 };
 
 // One shader per GL context, compiled on first use. ClayWidgets_UnloadShapes()
-// resets it so a host that tears its context down and builds a new one does not
-// keep drawing through a stale program id.
+// resets it, attempt flag included, so a host that tears its context down and
+// builds a new one compiles afresh instead of drawing through a stale program
+// id or silently falling back to the aliased path.
 static ClayWidgets_ShapeShader &ClayWidgets_Shapes() {
     static ClayWidgets_ShapeShader shapes;
-    static bool attempted = false;
-    if (!attempted) {
-        attempted = true;
+    if (!shapes.attempted) {
+        shapes.attempted = true;
         shapes.shader = LoadShaderFromMemory(kClayWidgetsShapeVS, kClayWidgetsShapeFS);
         if (IsShaderValid(shapes.shader)) {
             shapes.quadHalf = GetShaderLocation(shapes.shader, "uQuadHalf");
@@ -512,10 +520,12 @@ static ClayWidgets_ShapeShader &ClayWidgets_Shapes() {
     shapes = ClayWidgets_ShapeShader{};
 }
 
-// Draws one rounded box: a solid fill when borderWidth is 0, otherwise a ring of
-// that thickness inset from the same outline. rect and the radii are in logical
-// units; scale converts them to the device pixels the shader measures in.
-// Returns false when the shader is unavailable so the caller can fall back.
+// Draws one rounded box from a single distance field: a ring of borderWidth
+// inset from the outline in stroke, and the area inside that ring in fill. Pass
+// BLANK to omit either, so a fill with a border width and BLANK stroke is a fill
+// shrunk to the ring's inner edge. rect and the radii are in logical units;
+// scale converts them to the device pixels the shader measures in. Returns
+// false when the shader is unavailable so the caller can fall back.
 static bool DrawRectangleRoundedSDF(Rectangle rect, Clay_CornerRadius cr, float borderWidth,
     Color fill, Color stroke, float scale) {
     ClayWidgets_ShapeShader &shapes = ClayWidgets_Shapes();
@@ -569,10 +579,14 @@ static bool DrawRectangleRoundedSDF(Rectangle rect, Clay_CornerRadius cr, float 
     return true;
 }
 
-static void RenderClayCommands(Clay_RenderCommandArray commands, FontCache &fontCache) {
-    // Logical units reach the screen multiplied by raylib's HighDPI scale, which
-    // is the same factor the font cache bakes its atlases at. The shape shader
-    // and the pixel snapping below both need it to reason in device pixels.
+// Commands are in logical units and reach the device multiplied by
+// fontCache.dpiScale, the same factor the font cache bakes its atlases at; the
+// shape shader and the pixel snapping below both need it to reason in device
+// pixels. On screen, raylib's HighDPI matrix applies that factor, scissor
+// rectangles included. Pass offscreen = true when drawing into a render texture
+// under your own rlScalef(dpiScale): raylib then takes scissor rectangles in raw
+// texture pixels, so they are converted here.
+static void RenderClayCommands(Clay_RenderCommandArray commands, FontCache &fontCache, bool offscreen = false) {
     const float scale = fontCache.dpiScale > 0.0f ? fontCache.dpiScale : 1.0f;
     std::vector<Rectangle> scissorStack;
     std::vector<Color> overlayStack;
@@ -586,13 +600,54 @@ static void RenderClayCommands(Clay_RenderCommandArray commands, FontCache &font
         }
         if (!scissorStack.empty()) {
             Rectangle r = scissorStack.back();
-            BeginScissorMode(static_cast<int>(r.x), static_cast<int>(r.y), static_cast<int>(r.width), static_cast<int>(r.height));
+            if (offscreen) {
+                // Round both edges, as the boxes are, so a clip stays flush with
+                // the content it clips at fractional scales.
+                BeginScissorMode(static_cast<int>(std::round(r.x * scale)), static_cast<int>(std::round(r.y * scale)),
+                    static_cast<int>(std::round((r.x + r.width) * scale) - std::round(r.x * scale)),
+                    static_cast<int>(std::round((r.y + r.height) * scale) - std::round(r.y * scale)));
+            } else {
+                BeginScissorMode(static_cast<int>(r.x), static_cast<int>(r.y), static_cast<int>(r.width),
+                    static_cast<int>(r.height));
+            }
             scissorEnabled = true;
         }
     };
 
     auto snapToDevice = [&](float v) {
         return scale > 0.0f ? std::round(v*scale)/scale : std::round(v);
+    };
+
+    // A fill and its border arrive as separate commands. Drawn to the same
+    // outline, the fill's half-covered edge pixel is only half covered again by
+    // the ring, leaving a faint rim of fill colour under an opaque border. So a
+    // fill stops at the ring's inner edge when an opaque uniform border follows
+    // it on the same box. Clay emits the border after the element's fill and
+    // children, and border commands carry a derived id, so match on the box.
+    struct OpaqueBorder {
+        Clay_BoundingBox box;
+        float width;
+        int index;
+    };
+    std::vector<OpaqueBorder> opaqueBorders;
+    for (int i = 0; i < commands.length; ++i) {
+        const Clay_RenderCommand *cmd = Clay_RenderCommandArray_Get(&commands, i);
+        if (cmd->commandType != CLAY_RENDER_COMMAND_TYPE_BORDER) continue;
+        const Clay_BorderRenderData &b = cmd->renderData.border;
+        bool uniform = b.width.left > 0 && b.width.left == b.width.right
+            && b.width.left == b.width.top && b.width.left == b.width.bottom;
+        if (uniform && ToRaylibColor(b.color).a == 255) {
+            opaqueBorders.push_back({cmd->boundingBox, (float)b.width.left, i});
+        }
+    }
+    auto borderInset = [&](const Clay_RenderCommand *cmd, int index) {
+        for (const OpaqueBorder &border : opaqueBorders) {
+            const Clay_BoundingBox &a = border.box, &c = cmd->boundingBox;
+            if (border.index > index && a.x == c.x && a.y == c.y && a.width == c.width && a.height == c.height) {
+                return border.width;
+            }
+        }
+        return 0.0f;
     };
 
     auto applyOverlay = [&](Color c) -> Color {
@@ -626,9 +681,16 @@ static void RenderClayCommands(Clay_RenderCommandArray commands, FontCache &font
         switch (cmd->commandType) {
             case CLAY_RENDER_COMMAND_TYPE_RECTANGLE: {
                 Color color = applyOverlay(ToRaylibColor(cmd->renderData.rectangle.backgroundColor));
-                if (!DrawRectangleRoundedSDF(rect, cmd->renderData.rectangle.cornerRadius, 0.0f,
-                        color, BLANK, scale)) {
-                    DrawRectangleRoundedPerCorner(rect, cmd->renderData.rectangle.cornerRadius, roundedCornerSegments, color);
+                const Clay_CornerRadius &cr = cmd->renderData.rectangle.cornerRadius;
+                const float inset = borderInset(cmd, i);
+                bool sharp = cr.topLeft <= 0.0f && cr.topRight <= 0.0f
+                    && cr.bottomRight <= 0.0f && cr.bottomLeft <= 0.0f;
+                if (sharp && inset <= 0.0f) {
+                    // Snapped edges already sit on device pixels, so the shader
+                    // would add a batch flush and change nothing.
+                    DrawRectangleRec(rect, color);
+                } else if (!DrawRectangleRoundedSDF(rect, cr, inset, color, BLANK, scale)) {
+                    DrawRectangleRoundedPerCorner(rect, cr, roundedCornerSegments, color);
                 }
                 break;
             }
