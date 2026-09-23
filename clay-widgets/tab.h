@@ -90,7 +90,9 @@ bool ClayWidgets_TabEx(
     if (style == CLAY_WIDGETS_TAB_STYLE_SIDEBAR) {
         // Quiet until it matters: no fill at rest, the hover color under the
         // pointer and on the current page, and the accent reserved for the bar.
-        Clay_Color background = transparent;
+        // At rest the hover color is cleared rather than {0,0,0,0}, so the hover
+        // fade eases alpha alone instead of flashing through black.
+        Clay_Color background = ClayWidgets__FadeToClear(ctx->theme.hoverColor);
         if (selected || over) {
             background = ctx->theme.hoverColor;
         }

@@ -485,6 +485,23 @@ static void TestSidebarTabs(void) {
     Frame(PressAt(x, y), body);
     Frame(ReleaseAt(x, y), body);
     CHECK(page == 0);
+
+    // Hovering a resting tab fades in the hover color's alpha alone; easing
+    // from {0,0,0,0} would drag the fill through black on the way.
+    ui.animationsEnabled = true;
+    for (int frame = 0; frame < 30; ++frame) {
+        Frame(MakeInput(), body);
+    }
+    Clay_ElementData secondBox = Clay_GetElementData(second);
+    ClayWidgets_Input hover = MakeInput();
+    hover.mouseX = secondBox.boundingBox.x + 20.0f;
+    hover.mouseY = secondBox.boundingBox.y + secondBox.boundingBox.height * 0.5f;
+    Frame(hover, body);
+    Clay_RenderCommand fading = {};
+    CHECK(FindCommandById(Frame(hover, body), second.id, &fading));
+    Clay_Color fill = fading.renderData.rectangle.backgroundColor, target = ui.theme.hoverColor;
+    CHECK(fill.a > 0 && fill.a < target.a);
+    CHECK(fill.r == target.r && fill.g == target.g && fill.b == target.b);
 }
 
 // A disabled stepper ignores clicks and keys.
