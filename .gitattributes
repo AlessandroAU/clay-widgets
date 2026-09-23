@@ -1,0 +1,9 @@
+# Normalise every text file to LF in the repository and in checkouts, whatever
+# the committer's core.autocrlf, so patches and the generated amalgam apply
+# and diff cleanly on every platform.
+* text=auto eol=lf
+
+*.png binary
+*.ico binary
+*.ttf binary
+*.otf binary
