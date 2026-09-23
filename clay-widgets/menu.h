@@ -26,6 +26,10 @@
 bool ClayWidgets_BeginMenu(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_String title);
 void ClayWidgets_EndMenu(ClayWidgets_Context *ctx, Clay_ElementId id);
 bool ClayWidgets_MenuItem(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_String label);
+// A menu item with a check box before its label, for a setting the menu toggles
+// ("Show grid", "Start at login"). Choosing it flips *value, returns true and
+// closes the menu, as MenuItem does.
+bool ClayWidgets_MenuCheckItem(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_String label, bool *value);
 void ClayWidgets_MenuSeparator(ClayWidgets_Context *ctx);
 
 // Right-click context menu. Uses the same MenuItem / MenuSeparator rows as the
@@ -197,10 +201,9 @@ void ClayWidgets_EndMenu(ClayWidgets_Context *ctx, Clay_ElementId id) {
     ClayWidgets__PopOverlay(ctx);
 }
 
-bool ClayWidgets_MenuItem(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_String label) {
-    if (!ctx) {
-        return false;
-    }
+// One menu row: its interaction, then its layout. `checked` is null for a plain
+// item; otherwise the row leads with a check box showing *checked.
+static bool ClayWidgets__MenuRow(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_String label, const bool *checked) {
 
     bool over = Clay_PointerOver(id);
     if (over) {
@@ -237,12 +240,36 @@ bool ClayWidgets_MenuItem(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_Stri
                 .top = ctx->theme.spacing.sm,
                 .bottom = ctx->theme.spacing.sm,
             },
+            .childGap = ctx->theme.spacing.sm,
             .childAlignment = { .x = CLAY_ALIGN_X_LEFT, .y = CLAY_ALIGN_Y_CENTER },
         },
         .backgroundColor = over ? ctx->theme.selectionColor : ClayWidgets__FadeToClear(ctx->theme.selectionColor),
         .cornerRadius = CLAY_CORNER_RADIUS((float)ctx->theme.radiusSm),
         .transition = ClayWidgets__ColorTransition(ctx),
     }) {
+        if (checked) {
+            // The check box ClayWidgets_Checkbox draws, sized to the menu text.
+            bool on = *checked;
+            float boxSize = (float)ctx->theme.fontSizeBody;
+            Clay_Color fill = ctx->theme.accentColor;
+            CLAY(ClayWidgets__ChildId(id, CLAY_STRING("ClayWidgetsMenuCheck"), 0), {
+                .layout = {
+                    .sizing = { .width = CLAY_SIZING_FIXED(boxSize), .height = CLAY_SIZING_FIXED(boxSize) },
+                    .childAlignment = { .x = CLAY_ALIGN_X_CENTER, .y = CLAY_ALIGN_Y_CENTER },
+                },
+                .backgroundColor = on ? fill : ctx->theme.surfaceAltColor,
+                .cornerRadius = CLAY_CORNER_RADIUS((float)ctx->theme.radiusSm),
+                .border = ClayWidgets__Border(ctx, on ? fill : ctx->theme.borderColor),
+            }) {
+                if (on) {
+                    CLAY_TEXT(CLAY_STRING("X"), {
+                        .textColor = ctx->theme.onAccentColor,
+                        .fontId = ctx->theme.fontBody,
+                        .fontSize = (uint16_t)(boxSize * 0.7f),
+                    });
+                }
+            }
+        }
         CLAY_TEXT(label, {
             .textColor = over ? ctx->theme.onSelectionColor : ctx->theme.textColor,
             .fontId = ctx->theme.fontBody,
@@ -251,8 +278,21 @@ bool ClayWidgets_MenuItem(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_Stri
         });
     }
 
-    ClayWidgets__Describe(ctx,id,CLAY_WIDGETS_ROLE_MENU_ITEM,label,false,false);
+    ClayWidgets__Describe(ctx,id,checked ? CLAY_WIDGETS_ROLE_CHECKBOX : CLAY_WIDGETS_ROLE_MENU_ITEM,label,
+        checked && *checked,ctx->disabledDepth > 0);
     return clicked;
+}
+
+bool ClayWidgets_MenuItem(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_String label) {
+    return ctx && ClayWidgets__MenuRow(ctx, id, label, NULL);
+}
+
+bool ClayWidgets_MenuCheckItem(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_String label, bool *value) {
+    if (!ctx || !value || !ClayWidgets__MenuRow(ctx, id, label, value)) {
+        return false;
+    }
+    *value = !*value;
+    return true;
 }
 
 void ClayWidgets_MenuSeparator(ClayWidgets_Context *ctx) {

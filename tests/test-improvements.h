@@ -264,6 +264,27 @@ static void TestKeyboardMenu() {
     Frame(enter,body);CHECK(selected && ui.openMenuId==0 && ui.overlayDepth==0);
 }
 
+static void TestContextMenuCheckItem() {
+    auto menu=CLAY_ID("CheckMenu");auto grid=CLAY_ID("CheckGrid"),locked=CLAY_ID("CheckLocked");
+    bool showGrid=false,lockedValue=false,picked=false;
+    auto body=[&]{if(ClayWidgets_BeginContextMenu(&ui,menu)){
+        picked=ClayWidgets_MenuCheckItem(&ui,grid,CLAY_STRING("Show grid"),&showGrid);
+        ClayWidgets_BeginDisabled(&ui);ClayWidgets_MenuCheckItem(&ui,locked,CLAY_STRING("Locked"),&lockedValue);ClayWidgets_EndDisabled(&ui);
+        ClayWidgets_EndContextMenu(&ui,menu);}};
+    ClayWidgets_OpenContextMenu(&ui,menu,10,10);Frame(MakeInput(),body);Frame(MakeInput(),body);
+    auto box=Clay_GetElementData(grid).boundingBox;
+    CHECK(box.width>0 && Clay_GetElementData(ClayWidgets__ChildId(grid,CLAY_STRING("ClayWidgetsMenuCheck"),0)).found);
+    auto lockedBox=Clay_GetElementData(locked).boundingBox;
+    Frame(PressAt(lockedBox.x+5,lockedBox.y+5),body);Frame(ReleaseAt(lockedBox.x+5,lockedBox.y+5),body);
+    CHECK(!lockedValue && ui.openContextMenuId==menu.id); // a disabled item neither toggles nor closes the menu
+    Frame(PressAt(box.x+5,box.y+5),body);Frame(ReleaseAt(box.x+5,box.y+5),body);
+    CHECK(picked && showGrid && ui.openContextMenuId==0);
+    ClayWidgets_OpenContextMenu(&ui,menu,10,10);Frame(MakeInput(),body);
+    CHECK(ui.focusedId==grid.id);
+    auto enter=MakeInput();enter.keyEnter=true;Frame(enter,body);
+    CHECK(picked && !showGrid && ui.openContextMenuId==0); // Enter on the focused row toggles it back
+}
+
 static void TestNestedComposition() {
     Clay_String choices[]={CLAY_STRING("One"),CLAY_STRING("Two"),CLAY_STRING("Three")};
     char query[32]="tw";int32_t picked=0;auto search=CLAY_ID("SearchRegression");bool changed=false;

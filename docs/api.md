@@ -526,6 +526,7 @@ void ClayWidgets_EndModal(ClayWidgets_Context *ctx, Clay_ElementId id);
 bool ClayWidgets_BeginMenu(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_String title);
 void ClayWidgets_EndMenu(ClayWidgets_Context *ctx, Clay_ElementId id);
 bool ClayWidgets_MenuItem(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_String label);
+bool ClayWidgets_MenuCheckItem(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_String label, bool *value);
 void ClayWidgets_MenuSeparator(ClayWidgets_Context *ctx);
 bool ClayWidgets_RightClicked(ClayWidgets_Context *ctx, Clay_ElementId id);
 void ClayWidgets_OpenContextMenu(ClayWidgets_Context *ctx, Clay_ElementId menuId, float x, float y);
@@ -569,7 +570,10 @@ Begin that cannot open returns false.
 Only one menu is open at a time; clicking a title toggles it and, once any menu
 is open, hovering another title switches to it. A menu closes when an item is
 chosen, on a press outside, or on Escape. Context menus reuse `MenuItem` and
-`MenuSeparator` but float at a stored cursor position.
+`MenuSeparator` but float at a stored cursor position. `MenuCheckItem` is a
+`MenuItem` led by a check box showing `*value`; choosing it flips the value and
+closes the menu. Wrap items in `BeginDisabled`/`EndDisabled` to show them greyed
+and inert.
 
 Tooltips attach to an already-declared anchor by id, so emit them after the
 anchor element closes while its parent is still open. They appear after the
