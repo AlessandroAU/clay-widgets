@@ -1294,6 +1294,7 @@ int main(void) {
         { "editor history, validation, adapters", TestEditorFeatures },
         { "virtual collections and panels", TestCollectionsAndPanels },
         { "keyboard menus", TestKeyboardMenu },
+        { "context menu check items", TestContextMenuCheckItem },
         { "fixed and draggable modals", TestDraggableModal },
         { "wheel momentum", TestWheelMomentum },
         { "nested focus and table scrolling", TestNestedComposition },
