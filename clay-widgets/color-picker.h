@@ -283,7 +283,7 @@ static void ClayWidgets__ColorHex(ClayWidgets_Context *ctx, Clay_ElementId id,
         if (strlen(digits) == (alpha ? 8u : 6u)) {
             packed = (uint32_t)strtoul(digits, NULL, 16);
             uint32_t rgb = alpha ? packed >> 8 : packed;
-            *color = (Clay_Color){(float)(rgb >> 16), (float)((rgb >> 8) & 255), (float)(rgb & 255), alpha ? (float)(packed & 255) : color->a};
+            *color = CLAY__INIT(Clay_Color) {(float)(rgb >> 16), (float)((rgb >> 8) & 255), (float)(rgb & 255), alpha ? (float)(packed & 255) : color->a};
             ClayWidgets__ColorSync(state, *color);
         }
     }
@@ -306,9 +306,9 @@ static void ClayWidgets__ColorControls(ClayWidgets_Context *ctx, Clay_ElementId 
             for (int i = 0; i < 3; ++i) {
                 int32_t value = (int32_t)roundf(ClayWidgets__ColorChannel(channels[i]));
                 if (ClayWidgets_NumberInput(ctx, ClayWidgets__ChildId(id, CLAY_STRING("Channel"), i), labels[i], &value,
-                    (ClayWidgets_NumberInputOptions){0, 255, 1, disabled})) {
+                    CLAY__INIT(ClayWidgets_NumberInputOptions) {0, 255, 1, disabled})) {
                     channels[i] = (float)value;
-                    *color = (Clay_Color){channels[0], channels[1], channels[2], channels[3]};
+                    *color = CLAY__INIT(Clay_Color) {channels[0], channels[1], channels[2], channels[3]};
                     ClayWidgets__ColorSync(state, *color);
                 }
             }
@@ -330,7 +330,7 @@ static void ClayWidgets__ColorControls(ClayWidgets_Context *ctx, Clay_ElementId 
                 int32_t limit = i == 0 ? 360 : 100;
                 int32_t value = (int32_t)roundf(*hsl[i] * limit);
                 if (ClayWidgets_NumberInput(ctx, ClayWidgets__ChildId(id, CLAY_STRING("HSL"), i), hslLabels[i], &value,
-                    (ClayWidgets_NumberInputOptions){0, limit, 1, disabled})) {
+                    CLAY__INIT(ClayWidgets_NumberInputOptions) {0, limit, 1, disabled})) {
                     *hsl[i] = (float)value / limit;
                     *color = ClayWidgets__HslColor(state->hue, state->saturation, state->lightness, color->a);
                 }
@@ -342,7 +342,7 @@ static void ClayWidgets__ColorControls(ClayWidgets_Context *ctx, Clay_ElementId 
         ClayWidgets_Label(ctx, CLAY_STRING("Alpha"));
         float alphaValue = ClayWidgets__ColorChannel(color->a);
         if (ClayWidgets_Slider(ctx, ClayWidgets__ChildId(id, CLAY_STRING("Channel"), 3), &alphaValue,
-            (ClayWidgets_SliderOptions){0,255,1,true,0,disabled}) && !disabled) color->a = alphaValue;
+            CLAY__INIT(ClayWidgets_SliderOptions) {0,255,1,true,0,disabled}) && !disabled) color->a = alphaValue;
     }
 
 }
@@ -357,7 +357,7 @@ static void ClayWidgets__ColorPreview(ClayWidgets_Context *ctx, Clay_ElementId i
     Clay_Color fills[2];
     for (int i = 0; i < 2; ++i) {
         float base = i ? 180.0f : 230.0f;
-        fills[i] = (Clay_Color){
+        fills[i] = CLAY__INIT(Clay_Color) {
             base + (ClayWidgets__ColorChannel(color.r) - base) * alpha,
             base + (ClayWidgets__ColorChannel(color.g) - base) * alpha,
             base + (ClayWidgets__ColorChannel(color.b) - base) * alpha, 255};
@@ -485,16 +485,16 @@ bool ClayWidgets_ColorPicker(ClayWidgets_Context *ctx, Clay_ElementId id,
     ClayWidgets__Describe(ctx, trigger, CLAY_WIDGETS_ROLE_BUTTON, CLAY_STRING("Choose colour"), false, disabled);
     bool changed = false;
     Clay_ElementId dialog = ClayWidgets__ChildId(id, CLAY_STRING("Dialog"), 0);
-    if (ClayWidgets_BeginModalEx(ctx, dialog, CLAY_STRING("Colour"), &state->open, (ClayWidgets_ModalOptions){true, 640})) {
+    if (ClayWidgets_BeginModalEx(ctx, dialog, CLAY_STRING("Colour"), &state->open, CLAY__INIT(ClayWidgets_ModalOptions) {true, 640})) {
         Clay_ElementId scroll = ClayWidgets__ChildId(id, CLAY_STRING("Scroll"), 0);
-        ClayWidgets_BeginScrollPanel(ctx, scroll, (ClayWidgets_ScrollPanelOptions){
+        ClayWidgets_BeginScrollPanel(ctx, scroll, CLAY__INIT(ClayWidgets_ScrollPanelOptions) {
             CLAY_SIZING_GROW(0), CLAY_SIZING_FIT(0, fmaxf(40, ctx->layoutDimensions.height - 180)),
             1, ctx->theme.spacing.sm, ctx->theme.spacing.sm});
         ClayWidgets__ColorPanel(ctx, ClayWidgets__ChildId(id, CLAY_STRING("Panel"), 0), &state->draft, options, state, original);
         ClayWidgets_EndScrollPanel(ctx, scroll);
         CLAY_AUTO_ID({ .layout = { .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_FIT(0) }, .childGap = ctx->theme.spacing.sm, .childAlignment = { .x = CLAY_ALIGN_X_RIGHT } } }) {
             if (ClayWidgets_Button(ctx, ClayWidgets__ChildId(id, CLAY_STRING("Cancel"), 0), CLAY_STRING("Cancel"))) state->open = false;
-            if (ClayWidgets_ButtonEx(ctx, ClayWidgets__ChildId(id, CLAY_STRING("OK"), 0), CLAY_STRING("OK"), (ClayWidgets_ButtonOptions){CLAY_WIDGETS_BUTTON_PRIMARY, false})) {
+            if (ClayWidgets_ButtonEx(ctx, ClayWidgets__ChildId(id, CLAY_STRING("OK"), 0), CLAY_STRING("OK"), CLAY__INIT(ClayWidgets_ButtonOptions) {CLAY_WIDGETS_BUTTON_PRIMARY, false})) {
                 changed = !ClayWidgets__ColorEqual(*color, state->draft); *color = state->draft; state->open = false;
             }
         }

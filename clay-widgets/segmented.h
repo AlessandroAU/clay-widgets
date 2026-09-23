@@ -111,7 +111,7 @@ bool ClayWidgets_Segmented(
                 .backgroundColor = cellBg,
                 .cornerRadius = cr,
                 .border = ClayWidgets__EdgeBorder(ctx, ctx->theme.borderColor,
-                    CLAY__INIT(Clay_BorderWidth){ (uint16_t)(i > 0 ? 1 : 0), 0, 0, 0, 0 }),
+                    CLAY__INIT(Clay_BorderWidth) { (uint16_t)(i > 0 ? 1 : 0), 0, 0, 0, 0 }),
                 .transition = ClayWidgets__ColorTransition(ctx),
             }) {
                 CLAY_TEXT(segments[i], {

@@ -115,7 +115,7 @@ bool ClayWidgets_TabEx(
             },
             .backgroundColor = background,
             .cornerRadius = { .topLeft = (float)ctx->theme.radiusSm, .topRight = (float)ctx->theme.radiusSm, .bottomLeft = 0, .bottomRight = 0 },
-            .border = ClayWidgets__EdgeBorder(ctx, underlineColor, CLAY__INIT(Clay_BorderWidth){ 0, 0, 0, underlineWidth, 0 }),
+            .border = ClayWidgets__EdgeBorder(ctx, underlineColor, CLAY__INIT(Clay_BorderWidth) { 0, 0, 0, underlineWidth, 0 }),
             .transition = ClayWidgets__ColorTransition(ctx),
         }) {
             CLAY_TEXT(text, {

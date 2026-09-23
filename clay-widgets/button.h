@@ -77,16 +77,16 @@ bool ClayWidgets_ButtonEx(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_Stri
     switch (options.variant) {
         case CLAY_WIDGETS_BUTTON_PRIMARY:
             base = ctx->theme.accentColor;
-            hover = ClayWidgets__MixColor(ctx->theme.accentColor, (Clay_Color){255, 255, 255, 255}, 0.12f);
-            pressed = ClayWidgets__MixColor(ctx->theme.accentColor, (Clay_Color){0, 0, 0, 255}, 0.15f);
+            hover = ClayWidgets__MixColor(ctx->theme.accentColor, CLAY__INIT(Clay_Color) {255, 255, 255, 255}, 0.12f);
+            pressed = ClayWidgets__MixColor(ctx->theme.accentColor, CLAY__INIT(Clay_Color) {0, 0, 0, 255}, 0.15f);
             textColor = ctx->theme.onAccentColor;
             break;
         case CLAY_WIDGETS_BUTTON_DANGER:
             // The theme's shared danger color (same as badges and toasts),
             // with hover/pressed derived the same way as PRIMARY.
             base = ctx->theme.dangerColor;
-            hover = ClayWidgets__MixColor(ctx->theme.dangerColor, (Clay_Color){255, 255, 255, 255}, 0.12f);
-            pressed = ClayWidgets__MixColor(ctx->theme.dangerColor, (Clay_Color){0, 0, 0, 255}, 0.15f);
+            hover = ClayWidgets__MixColor(ctx->theme.dangerColor, CLAY__INIT(Clay_Color) {255, 255, 255, 255}, 0.12f);
+            pressed = ClayWidgets__MixColor(ctx->theme.dangerColor, CLAY__INIT(Clay_Color) {0, 0, 0, 255}, 0.15f);
             textColor = ctx->theme.onAccentColor;
             break;
         case CLAY_WIDGETS_BUTTON_DEFAULT:
@@ -143,7 +143,7 @@ bool ClayWidgets_ButtonEx(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_Stri
 }
 
 bool ClayWidgets_Button(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_String text) {
-    return ClayWidgets_ButtonEx(ctx, id, text, (ClayWidgets_ButtonOptions){CLAY_WIDGETS_BUTTON_DEFAULT, false});
+    return ClayWidgets_ButtonEx(ctx, id, text, CLAY__INIT(ClayWidgets_ButtonOptions) {CLAY_WIDGETS_BUTTON_DEFAULT, false});
 }
 
 #endif

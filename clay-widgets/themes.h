@@ -52,11 +52,11 @@ static ClayWidgets_Theme ClayWidgets__BuildTheme(
     // Semantic status palette and overlay colors. One set of defaults for all
     // presets so a status reads identically across themes; presets override
     // after building (as Win95 does with the radii) when the look demands it.
-    theme.successColor = (Clay_Color){46, 160, 67, 255};
-    theme.warningColor = (Clay_Color){191, 135, 0, 255};
-    theme.dangerColor = (Clay_Color){207, 54, 54, 255};
-    theme.onAccentColor = (Clay_Color){245, 248, 252, 255};
-    theme.scrimColor = (Clay_Color){0, 0, 0, 150};
+    theme.successColor = CLAY__INIT(Clay_Color) {46, 160, 67, 255};
+    theme.warningColor = CLAY__INIT(Clay_Color) {191, 135, 0, 255};
+    theme.dangerColor = CLAY__INIT(Clay_Color) {207, 54, 54, 255};
+    theme.onAccentColor = CLAY__INIT(Clay_Color) {245, 248, 252, 255};
+    theme.scrimColor = CLAY__INIT(Clay_Color) {0, 0, 0, 150};
     theme.disabledMix = 0.5f;
 
     // Highlight bar and typed-into surfaces both follow the preset's own colors
@@ -71,11 +71,11 @@ static ClayWidgets_Theme ClayWidgets__BuildTheme(
     // caller that flips edgeStyle to BEVEL gets a coherent look rather than
     // four transparent bands.
     theme.edgeStyle = CLAY_WIDGETS_EDGE_STYLE_FLAT;
-    theme.edgeHighlightColor = ClayWidgets__MixColor(surfaceAltColor, (Clay_Color){255, 255, 255, 255}, 0.55f);
-    theme.edgeLightColor = ClayWidgets__MixColor(surfaceAltColor, (Clay_Color){255, 255, 255, 255}, 0.25f);
+    theme.edgeHighlightColor = ClayWidgets__MixColor(surfaceAltColor, CLAY__INIT(Clay_Color) {255, 255, 255, 255}, 0.55f);
+    theme.edgeLightColor = ClayWidgets__MixColor(surfaceAltColor, CLAY__INIT(Clay_Color) {255, 255, 255, 255}, 0.25f);
     theme.edgeShadowColor = borderColor;
-    theme.edgeDarkColor = ClayWidgets__MixColor(borderColor, (Clay_Color){0, 0, 0, 255}, 0.6f);
-    theme.shadowColor = (Clay_Color){0, 0, 0, 110};
+    theme.edgeDarkColor = ClayWidgets__MixColor(borderColor, CLAY__INIT(Clay_Color) {0, 0, 0, 255}, 0.6f);
+    theme.shadowColor = CLAY__INIT(Clay_Color) {0, 0, 0, 110};
     theme.shadowOffset = 0;
 
     theme.radiusSm = 6;
@@ -103,46 +103,46 @@ ClayWidgets_Theme ClayWidgets_DefaultTheme(void) {
 
 ClayWidgets_Theme ClayWidgets_ThemeSlate(void) {
     return ClayWidgets__BuildTheme(
-        (Clay_Color){245, 245, 245, 255},
-        (Clay_Color){176, 184, 196, 255},
-        (Clay_Color){33, 37, 43, 255},
-        (Clay_Color){45, 50, 58, 255},
-        (Clay_Color){44, 153, 255, 255},
-        (Clay_Color){44, 153, 255, 110},
-        (Clay_Color){80, 88, 100, 255},
-        (Clay_Color){59, 66, 77, 255},
-        (Clay_Color){70, 79, 92, 255},
-        (Clay_Color){130, 197, 255, 255}
+        CLAY__INIT(Clay_Color) {245, 245, 245, 255},
+        CLAY__INIT(Clay_Color) {176, 184, 196, 255},
+        CLAY__INIT(Clay_Color) {33, 37, 43, 255},
+        CLAY__INIT(Clay_Color) {45, 50, 58, 255},
+        CLAY__INIT(Clay_Color) {44, 153, 255, 255},
+        CLAY__INIT(Clay_Color) {44, 153, 255, 110},
+        CLAY__INIT(Clay_Color) {80, 88, 100, 255},
+        CLAY__INIT(Clay_Color) {59, 66, 77, 255},
+        CLAY__INIT(Clay_Color) {70, 79, 92, 255},
+        CLAY__INIT(Clay_Color) {130, 197, 255, 255}
     );
 }
 
 ClayWidgets_Theme ClayWidgets_ThemeSand(void) {
     return ClayWidgets__BuildTheme(
-        (Clay_Color){56, 44, 32, 255},
-        (Clay_Color){126, 107, 84, 255},
-        (Clay_Color){238, 226, 205, 255},
-        (Clay_Color){226, 211, 188, 255},
-        (Clay_Color){195, 120, 63, 255},
-        (Clay_Color){195, 120, 63, 110},
-        (Clay_Color){174, 152, 122, 255},
-        (Clay_Color){216, 199, 173, 255},
-        (Clay_Color){202, 182, 154, 255},
-        (Clay_Color){223, 142, 81, 255}
+        CLAY__INIT(Clay_Color) {56, 44, 32, 255},
+        CLAY__INIT(Clay_Color) {126, 107, 84, 255},
+        CLAY__INIT(Clay_Color) {238, 226, 205, 255},
+        CLAY__INIT(Clay_Color) {226, 211, 188, 255},
+        CLAY__INIT(Clay_Color) {195, 120, 63, 255},
+        CLAY__INIT(Clay_Color) {195, 120, 63, 110},
+        CLAY__INIT(Clay_Color) {174, 152, 122, 255},
+        CLAY__INIT(Clay_Color) {216, 199, 173, 255},
+        CLAY__INIT(Clay_Color) {202, 182, 154, 255},
+        CLAY__INIT(Clay_Color) {223, 142, 81, 255}
     );
 }
 
 ClayWidgets_Theme ClayWidgets_ThemeForest(void) {
     return ClayWidgets__BuildTheme(
-        (Clay_Color){234, 244, 236, 255},
-        (Clay_Color){159, 181, 165, 255},
-        (Clay_Color){25, 44, 37, 255},
-        (Clay_Color){33, 59, 48, 255},
-        (Clay_Color){92, 188, 123, 255},
-        (Clay_Color){92, 188, 123, 110},
-        (Clay_Color){68, 104, 84, 255},
-        (Clay_Color){43, 74, 60, 255},
-        (Clay_Color){54, 90, 72, 255},
-        (Clay_Color){145, 223, 171, 255}
+        CLAY__INIT(Clay_Color) {234, 244, 236, 255},
+        CLAY__INIT(Clay_Color) {159, 181, 165, 255},
+        CLAY__INIT(Clay_Color) {25, 44, 37, 255},
+        CLAY__INIT(Clay_Color) {33, 59, 48, 255},
+        CLAY__INIT(Clay_Color) {92, 188, 123, 255},
+        CLAY__INIT(Clay_Color) {92, 188, 123, 110},
+        CLAY__INIT(Clay_Color) {68, 104, 84, 255},
+        CLAY__INIT(Clay_Color) {43, 74, 60, 255},
+        CLAY__INIT(Clay_Color) {54, 90, 72, 255},
+        CLAY__INIT(Clay_Color) {145, 223, 171, 255}
     );
 }
 
@@ -159,16 +159,16 @@ ClayWidgets_Theme ClayWidgets_ThemeForest(void) {
 // than a classic one.
 ClayWidgets_Theme ClayWidgets_ThemeWin95(void) {
     ClayWidgets_Theme theme = ClayWidgets__BuildTheme(
-        (Clay_Color){0, 0, 0, 255},          // textColor        - black
-        (Clay_Color){90, 90, 90, 255},       // textMutedColor   - dim label grey
-        (Clay_Color){192, 192, 192, 255},    // surfaceColor     - 3D face grey
-        (Clay_Color){192, 192, 192, 255},    // surfaceAltColor  - button/tab face
-        (Clay_Color){0, 0, 128, 255},        // accentColor      - navy selection
-        (Clay_Color){0, 0, 128, 90},         // accentMutedColor - navy wash
-        (Clay_Color){128, 128, 128, 255},    // borderColor      - shadow grey
-        (Clay_Color){198, 198, 198, 255},    // hoverColor       - barely-lit face
-        (Clay_Color){176, 176, 176, 255},    // pressedColor     - sunken grey
-        (Clay_Color){0, 0, 0, 255}           // focusRingColor   - black focus rect
+        CLAY__INIT(Clay_Color) {0, 0, 0, 255},          // textColor        - black
+        CLAY__INIT(Clay_Color) {90, 90, 90, 255},       // textMutedColor   - dim label grey
+        CLAY__INIT(Clay_Color) {192, 192, 192, 255},    // surfaceColor     - 3D face grey
+        CLAY__INIT(Clay_Color) {192, 192, 192, 255},    // surfaceAltColor  - button/tab face
+        CLAY__INIT(Clay_Color) {0, 0, 128, 255},        // accentColor      - navy selection
+        CLAY__INIT(Clay_Color) {0, 0, 128, 90},         // accentMutedColor - navy wash
+        CLAY__INIT(Clay_Color) {128, 128, 128, 255},    // borderColor      - shadow grey
+        CLAY__INIT(Clay_Color) {198, 198, 198, 255},    // hoverColor       - barely-lit face
+        CLAY__INIT(Clay_Color) {176, 176, 176, 255},    // pressedColor     - sunken grey
+        CLAY__INIT(Clay_Color) {0, 0, 0, 255}           // focusRingColor   - black focus rect
     );
 
     // Square, beveled-era corners - the defining trait of the classic look.
@@ -179,27 +179,27 @@ ClayWidgets_Theme ClayWidgets_ThemeWin95(void) {
     // from: 3DLIGHT and 3DHILIGHT catch the light from the top left, 3DSHADOW
     // and 3DDKSHADOW fall away to the bottom right.
     theme.edgeStyle = CLAY_WIDGETS_EDGE_STYLE_BEVEL;
-    theme.edgeLightColor = (Clay_Color){223, 223, 223, 255};
-    theme.edgeHighlightColor = (Clay_Color){255, 255, 255, 255};
-    theme.edgeShadowColor = (Clay_Color){128, 128, 128, 255};
-    theme.edgeDarkColor = (Clay_Color){10, 10, 10, 255};
+    theme.edgeLightColor = CLAY__INIT(Clay_Color) {223, 223, 223, 255};
+    theme.edgeHighlightColor = CLAY__INIT(Clay_Color) {255, 255, 255, 255};
+    theme.edgeShadowColor = CLAY__INIT(Clay_Color) {128, 128, 128, 255};
+    theme.edgeDarkColor = CLAY__INIT(Clay_Color) {10, 10, 10, 255};
 
     // The hard shadow menus and dialogs cast onto the surface behind them.
-    theme.shadowColor = (Clay_Color){0, 0, 0, 96};
+    theme.shadowColor = CLAY__INIT(Clay_Color) {0, 0, 0, 96};
     theme.shadowOffset = 4;
 
     // Anything you type or pick into is a white well; the highlight bar behind
     // a menu item or list row is solid navy with white text.
-    theme.fieldColor = (Clay_Color){255, 255, 255, 255};
-    theme.selectionColor = (Clay_Color){0, 0, 128, 255};
-    theme.onSelectionColor = (Clay_Color){255, 255, 255, 255};
+    theme.fieldColor = CLAY__INIT(Clay_Color) {255, 255, 255, 255};
+    theme.selectionColor = CLAY__INIT(Clay_Color) {0, 0, 128, 255};
+    theme.onSelectionColor = CLAY__INIT(Clay_Color) {255, 255, 255, 255};
 
     // Era-appropriate status colors: the saturated primaries of the classic
     // 16-color palette, with pure white for text on filled surfaces.
-    theme.successColor = (Clay_Color){0, 128, 0, 255};
-    theme.warningColor = (Clay_Color){128, 96, 0, 255};
-    theme.dangerColor = (Clay_Color){192, 0, 0, 255};
-    theme.onAccentColor = (Clay_Color){255, 255, 255, 255};
+    theme.successColor = CLAY__INIT(Clay_Color) {0, 128, 0, 255};
+    theme.warningColor = CLAY__INIT(Clay_Color) {128, 96, 0, 255};
+    theme.dangerColor = CLAY__INIT(Clay_Color) {192, 0, 0, 255};
+    theme.onAccentColor = CLAY__INIT(Clay_Color) {255, 255, 255, 255};
 
     // Small type and tight spacing, the way a 96-DPI dialog was laid out.
     theme.fontSizeBody = 16;
@@ -239,8 +239,8 @@ static void ClayWidgets__MacGeometry(ClayWidgets_Theme *theme) {
     // Menu items, dropdown items and hovered rows take the accent as a solid
     // bar with light text, the way a Mac menu highlights.
     theme->selectionColor = theme->accentColor;
-    theme->onSelectionColor = (Clay_Color){255, 255, 255, 255};
-    theme->onAccentColor = (Clay_Color){255, 255, 255, 255};
+    theme->onSelectionColor = CLAY__INIT(Clay_Color) {255, 255, 255, 255};
+    theme->onAccentColor = CLAY__INIT(Clay_Color) {255, 255, 255, 255};
 
     // No drop shadow: a Mac popover casts a soft shadow on every side, and the
     // one this library can draw is a hard offset pair of strips, which would
@@ -250,22 +250,22 @@ static void ClayWidgets__MacGeometry(ClayWidgets_Theme *theme) {
 
 ClayWidgets_Theme ClayWidgets_ThemeMacLight(void) {
     ClayWidgets_Theme theme = ClayWidgets__BuildTheme(
-        (Clay_Color){29, 29, 31, 255},       // textColor        - near black
-        (Clay_Color){134, 134, 139, 255},    // textMutedColor   - secondary label
-        (Clay_Color){245, 245, 247, 255},    // surfaceColor     - window background
-        (Clay_Color){255, 255, 255, 255},    // surfaceAltColor  - cards and controls
-        (Clay_Color){0, 122, 255, 255},      // accentColor      - system blue
-        (Clay_Color){0, 122, 255, 72},       // accentMutedColor - selected row wash
-        (Clay_Color){209, 209, 214, 255},    // borderColor      - hairline
-        (Clay_Color){242, 242, 247, 255},    // hoverColor       - control, hovered
-        (Clay_Color){229, 229, 234, 255},    // pressedColor     - control, held
-        (Clay_Color){0, 113, 227, 255}       // focusRingColor   - keyboard focus
+        CLAY__INIT(Clay_Color) {29, 29, 31, 255},       // textColor        - near black
+        CLAY__INIT(Clay_Color) {134, 134, 139, 255},    // textMutedColor   - secondary label
+        CLAY__INIT(Clay_Color) {245, 245, 247, 255},    // surfaceColor     - window background
+        CLAY__INIT(Clay_Color) {255, 255, 255, 255},    // surfaceAltColor  - cards and controls
+        CLAY__INIT(Clay_Color) {0, 122, 255, 255},      // accentColor      - system blue
+        CLAY__INIT(Clay_Color) {0, 122, 255, 72},       // accentMutedColor - selected row wash
+        CLAY__INIT(Clay_Color) {209, 209, 214, 255},    // borderColor      - hairline
+        CLAY__INIT(Clay_Color) {242, 242, 247, 255},    // hoverColor       - control, hovered
+        CLAY__INIT(Clay_Color) {229, 229, 234, 255},    // pressedColor     - control, held
+        CLAY__INIT(Clay_Color) {0, 113, 227, 255}       // focusRingColor   - keyboard focus
     );
 
-    theme.successColor = (Clay_Color){52, 199, 89, 255};
-    theme.warningColor = (Clay_Color){255, 149, 0, 255};
-    theme.dangerColor = (Clay_Color){255, 59, 48, 255};
-    theme.scrimColor = (Clay_Color){0, 0, 0, 90};
+    theme.successColor = CLAY__INIT(Clay_Color) {52, 199, 89, 255};
+    theme.warningColor = CLAY__INIT(Clay_Color) {255, 149, 0, 255};
+    theme.dangerColor = CLAY__INIT(Clay_Color) {255, 59, 48, 255};
+    theme.scrimColor = CLAY__INIT(Clay_Color) {0, 0, 0, 90};
     theme.disabledMix = 0.55f;
 
     ClayWidgets__MacGeometry(&theme);
@@ -274,27 +274,27 @@ ClayWidgets_Theme ClayWidgets_ThemeMacLight(void) {
 
 ClayWidgets_Theme ClayWidgets_ThemeMacDark(void) {
     ClayWidgets_Theme theme = ClayWidgets__BuildTheme(
-        (Clay_Color){245, 245, 247, 255},    // textColor        - near white
-        (Clay_Color){152, 152, 157, 255},    // textMutedColor   - secondary label
-        (Clay_Color){28, 28, 30, 255},       // surfaceColor     - window background
-        (Clay_Color){44, 44, 46, 255},       // surfaceAltColor  - cards and controls
-        (Clay_Color){10, 132, 255, 255},     // accentColor      - system blue, dark
-        (Clay_Color){10, 132, 255, 96},      // accentMutedColor - selected row wash
-        (Clay_Color){58, 58, 60, 255},       // borderColor      - hairline
-        (Clay_Color){58, 58, 60, 255},       // hoverColor       - control, hovered
-        (Clay_Color){72, 72, 74, 255},       // pressedColor     - control, held
-        (Clay_Color){64, 156, 255, 255}      // focusRingColor   - keyboard focus
+        CLAY__INIT(Clay_Color) {245, 245, 247, 255},    // textColor        - near white
+        CLAY__INIT(Clay_Color) {152, 152, 157, 255},    // textMutedColor   - secondary label
+        CLAY__INIT(Clay_Color) {28, 28, 30, 255},       // surfaceColor     - window background
+        CLAY__INIT(Clay_Color) {44, 44, 46, 255},       // surfaceAltColor  - cards and controls
+        CLAY__INIT(Clay_Color) {10, 132, 255, 255},     // accentColor      - system blue, dark
+        CLAY__INIT(Clay_Color) {10, 132, 255, 96},      // accentMutedColor - selected row wash
+        CLAY__INIT(Clay_Color) {58, 58, 60, 255},       // borderColor      - hairline
+        CLAY__INIT(Clay_Color) {58, 58, 60, 255},       // hoverColor       - control, hovered
+        CLAY__INIT(Clay_Color) {72, 72, 74, 255},       // pressedColor     - control, held
+        CLAY__INIT(Clay_Color) {64, 156, 255, 255}      // focusRingColor   - keyboard focus
     );
 
-    theme.successColor = (Clay_Color){48, 209, 88, 255};
-    theme.warningColor = (Clay_Color){255, 159, 10, 255};
-    theme.dangerColor = (Clay_Color){255, 69, 58, 255};
-    theme.scrimColor = (Clay_Color){0, 0, 0, 140};
+    theme.successColor = CLAY__INIT(Clay_Color) {48, 209, 88, 255};
+    theme.warningColor = CLAY__INIT(Clay_Color) {255, 159, 10, 255};
+    theme.dangerColor = CLAY__INIT(Clay_Color) {255, 69, 58, 255};
+    theme.scrimColor = CLAY__INIT(Clay_Color) {0, 0, 0, 140};
 
     ClayWidgets__MacGeometry(&theme);
     // Entry fields recede in dark mode rather than lifting: a text field is
     // darker than the card it sits on, not lighter.
-    theme.fieldColor = (Clay_Color){28, 28, 30, 255};
+    theme.fieldColor = CLAY__INIT(Clay_Color) {28, 28, 30, 255};
     return theme;
 }
 

@@ -4,6 +4,9 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#ifdef __cplusplus
+#include <cstddef>
+#endif
 
 #include "clay.h"
 
@@ -315,7 +318,12 @@ typedef struct ClayWidgets_StateSlot {
     uint32_t id;    // 0 = empty
     uint32_t frame; // last frame this slot was requested (drives LRU recycling)
     union {
-        max_align_t align; // fundamental alignment; over-aligned states require caller storage
+        // Fundamental alignment; over-aligned states require caller storage.
+#ifdef __cplusplus
+        std::max_align_t align;
+#else
+        max_align_t align;
+#endif
         unsigned char bytes[CLAY_WIDGETS_STATE_SLOT_SIZE];
     } data;
 } ClayWidgets_StateSlot;

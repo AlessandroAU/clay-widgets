@@ -226,8 +226,8 @@ bool ClayWidgets_Combo(
     Clay_CornerRadius triggerRadius = { r, r, r, r };
     if (isOpen) {
         triggerRadius = flipUp
-            ? (Clay_CornerRadius){ 0.0f, 0.0f, r, r }
-            : (Clay_CornerRadius){ r, r, 0.0f, 0.0f };
+            ? CLAY__INIT(Clay_CornerRadius) { 0.0f, 0.0f, r, r }
+            : CLAY__INIT(Clay_CornerRadius) { r, r, 0.0f, 0.0f };
     }
 
     CLAY(id, {
@@ -253,7 +253,7 @@ bool ClayWidgets_Combo(
                 },
                 // The drop-down button sits inside the field's sunken edge, so
                 // on a beveled theme the field's own padding shrinks to it.
-                .padding = (Clay_Padding){
+                .padding = CLAY__INIT(Clay_Padding) {
                     .left = ctx->theme.spacing.sm,
                     .right = (uint16_t)(beveled ? 2 : ctx->theme.spacing.sm),
                     .top = (uint16_t)(beveled ? 2 : 0),
@@ -288,7 +288,7 @@ bool ClayWidgets_Combo(
                     },
                     .childAlignment = { .x = CLAY_ALIGN_X_CENTER, .y = CLAY_ALIGN_Y_CENTER },
                 },
-                .backgroundColor = beveled ? ctx->theme.surfaceAltColor : (Clay_Color){ 0, 0, 0, 0 },
+                .backgroundColor = beveled ? ctx->theme.surfaceAltColor : CLAY__INIT(Clay_Color) { 0, 0, 0, 0 },
             }) {
                 CLAY_TEXT(CLAY_STRING("v"), {
                     .textColor = beveled ? ctx->theme.textColor : ctx->theme.textMutedColor,
@@ -313,24 +313,24 @@ bool ClayWidgets_Combo(
                 },
                 .backgroundColor = beveled ? ctx->theme.fieldColor : ctx->theme.surfaceAltColor,
                 .cornerRadius = flipUp
-                    ? (Clay_CornerRadius){ r, r, 0.0f, 0.0f }
-                    : (Clay_CornerRadius){ 0.0f, 0.0f, r, r },
+                    ? CLAY__INIT(Clay_CornerRadius) { r, r, 0.0f, 0.0f }
+                    : CLAY__INIT(Clay_CornerRadius) { 0.0f, 0.0f, r, r },
                 .floating = {
                     .parentId = triggerId.id,
                     .zIndex = ClayWidgets__OverlayZ(ctx, 0),
                     .attachPoints = flipUp
-                        ? (Clay_FloatingAttachPoints){
+                        ? CLAY__INIT(Clay_FloatingAttachPoints) {
                               .element = CLAY_ATTACH_POINT_LEFT_BOTTOM,
                               .parent = CLAY_ATTACH_POINT_LEFT_TOP,
                           }
-                        : (Clay_FloatingAttachPoints){
+                        : CLAY__INIT(Clay_FloatingAttachPoints) {
                               .element = CLAY_ATTACH_POINT_LEFT_TOP,
                               .parent = CLAY_ATTACH_POINT_LEFT_BOTTOM,
                           },
                     .attachTo = CLAY_ATTACH_TO_ELEMENT_WITH_ID,
                 },
                 .clip = { .vertical = true, .childOffset = Clay_GetScrollOffset() },
-                .border = ClayWidgets__EdgeBorder(ctx, ctx->theme.focusRingColor, CLAY__INIT(Clay_BorderWidth){
+                .border = ClayWidgets__EdgeBorder(ctx, ctx->theme.focusRingColor, CLAY__INIT(Clay_BorderWidth) {
                     1, 1, (uint16_t)(flipUp ? 1 : 0), (uint16_t)(flipUp ? 0 : 1), 0 }),
             }) {
                 for (int32_t i = 0; i < itemCount; i++) {

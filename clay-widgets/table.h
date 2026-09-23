@@ -60,7 +60,7 @@ bool ClayWidgets_BeginTable(ClayWidgets_Context *ctx, Clay_ElementId id, const C
 
     // A list view: white well, raised header buttons across the top.
     ClayWidgets_SetEdge(ctx, id, CLAY_WIDGETS_EDGE_SUNKEN);
-    ClayWidgets__BeginElement(id, CLAY__INIT(Clay_ElementDeclaration){
+    ClayWidgets__BeginElement(id, CLAY__INIT(Clay_ElementDeclaration) {
         .layout = {
             .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_FIT(0, 0) },
             .padding = CLAY_PADDING_ALL((uint16_t)(ClayWidgets__IsBeveled(ctx) ? 2 : 0)),
@@ -89,7 +89,7 @@ bool ClayWidgets_BeginTable(ClayWidgets_Context *ctx, Clay_ElementId id, const C
         // rectangles - without the matching radius its fill paints a square
         // block outside the container's arc.
         .cornerRadius = { .topLeft = radius, .topRight = radius, .bottomLeft = 0, .bottomRight = 0 },
-        .border = ClayWidgets__EdgeBorder(ctx, ctx->theme.borderColor, CLAY__INIT(Clay_BorderWidth){ 0, 0, 0, 1, 0 }),
+        .border = ClayWidgets__EdgeBorder(ctx, ctx->theme.borderColor, CLAY__INIT(Clay_BorderWidth) { 0, 0, 0, 1, 0 }),
     }) {
         for (int32_t i = 0; i < ctx->tableColCount; ++i) {
             CLAY_AUTO_ID({
@@ -180,7 +180,7 @@ void ClayWidgets_EndTable(ClayWidgets_Context *ctx, Clay_ElementId id) {
         Clay_ElementId lastRow = CLAY__INIT(Clay_ElementId) CLAY__DEFAULT_STRUCT;
         lastRow.id = ctx->tableLastRowIds[depth];
         ClayWidgets_SetCornerRadius(ctx, lastRow,
-            CLAY__INIT(Clay_CornerRadius){ 0.0f, 0.0f, radius, radius });
+            CLAY__INIT(Clay_CornerRadius) { 0.0f, 0.0f, radius, radius });
     }
     ctx->tableColCount = ctx->tableSavedCounts[depth];
     memcpy(ctx->tableColWidths,ctx->tableSavedWidths[depth],sizeof(ctx->tableColWidths));

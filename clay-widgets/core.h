@@ -707,7 +707,7 @@ static Clay_Dimensions ClayWidgets__MeasureSlice(
     config.fontSize = fontSize;
     config.letterSpacing = letterSpacing;
     config.wrapMode = CLAY_TEXT_WRAP_NONE;
-    return ctx->measureText((Clay_StringSlice){ .length = length, .chars = text, .baseChars = text }, &config, ctx->measureTextUserData);
+    return ctx->measureText(CLAY__INIT(Clay_StringSlice) { .length = length, .chars = text, .baseChars = text }, &config, ctx->measureTextUserData);
 }
 
 static float ClayWidgets__MeasureWidth(
@@ -1333,21 +1333,21 @@ typedef struct ClayWidgets__EdgeBand {
 static int32_t ClayWidgets__EdgeBands(const ClayWidgets_Theme *theme, ClayWidgets_Edge edge, ClayWidgets__EdgeBand bands[2]) {
     switch (edge) {
         case CLAY_WIDGETS_EDGE_RAISED:
-            bands[0] = CLAY__INIT(ClayWidgets__EdgeBand){ theme->edgeLightColor, theme->edgeDarkColor };
-            bands[1] = CLAY__INIT(ClayWidgets__EdgeBand){ theme->edgeHighlightColor, theme->edgeShadowColor };
+            bands[0] = CLAY__INIT(ClayWidgets__EdgeBand) { theme->edgeLightColor, theme->edgeDarkColor };
+            bands[1] = CLAY__INIT(ClayWidgets__EdgeBand) { theme->edgeHighlightColor, theme->edgeShadowColor };
             return 2;
         case CLAY_WIDGETS_EDGE_SUNKEN:
-            bands[0] = CLAY__INIT(ClayWidgets__EdgeBand){ theme->edgeDarkColor, theme->edgeHighlightColor };
-            bands[1] = CLAY__INIT(ClayWidgets__EdgeBand){ theme->edgeShadowColor, theme->edgeLightColor };
+            bands[0] = CLAY__INIT(ClayWidgets__EdgeBand) { theme->edgeDarkColor, theme->edgeHighlightColor };
+            bands[1] = CLAY__INIT(ClayWidgets__EdgeBand) { theme->edgeShadowColor, theme->edgeLightColor };
             return 2;
         case CLAY_WIDGETS_EDGE_RAISED_THIN:
-            bands[0] = CLAY__INIT(ClayWidgets__EdgeBand){ theme->edgeHighlightColor, theme->edgeShadowColor };
+            bands[0] = CLAY__INIT(ClayWidgets__EdgeBand) { theme->edgeHighlightColor, theme->edgeShadowColor };
             return 1;
         case CLAY_WIDGETS_EDGE_SUNKEN_THIN:
-            bands[0] = CLAY__INIT(ClayWidgets__EdgeBand){ theme->edgeShadowColor, theme->edgeHighlightColor };
+            bands[0] = CLAY__INIT(ClayWidgets__EdgeBand) { theme->edgeShadowColor, theme->edgeHighlightColor };
             return 1;
         case CLAY_WIDGETS_EDGE_FRAME:
-            bands[0] = CLAY__INIT(ClayWidgets__EdgeBand){ theme->edgeDarkColor, theme->edgeDarkColor };
+            bands[0] = CLAY__INIT(ClayWidgets__EdgeBand) { theme->edgeDarkColor, theme->edgeDarkColor };
             return 1;
         case CLAY_WIDGETS_EDGE_NONE:
         default:
@@ -1368,7 +1368,7 @@ static int32_t ClayWidgets__DecorationRectsAfter(const ClayWidgets_Theme *theme,
 
 static Clay_RenderCommand ClayWidgets__DecorationRect(const Clay_RenderCommand *source, float x, float y, float width, float height, Clay_Color color) {
     Clay_RenderCommand command = CLAY__INIT(Clay_RenderCommand) CLAY__DEFAULT_STRUCT;
-    command.boundingBox = CLAY__INIT(Clay_BoundingBox){ x, y, width, height };
+    command.boundingBox = CLAY__INIT(Clay_BoundingBox) { x, y, width, height };
     command.renderData.rectangle.backgroundColor = color;
     command.userData = source->userData;
     command.id = source->id;
@@ -1595,7 +1595,7 @@ void ClayWidgets_BeginFrame(
     bool smoothWheel = ctx->animationsEnabled && ctx->scrollMomentumTime > 0;
     Clay_Vector2 clayWheel = scrollDelta;
     if (ctx->wheelFallthroughId) clayWheel.y = 0;
-    Clay_UpdateScrollContainers(dragScroll, smoothWheel ? (Clay_Vector2){0} : clayWheel, input.deltaTime);
+    Clay_UpdateScrollContainers(dragScroll, smoothWheel ? CLAY__INIT(Clay_Vector2) {0} : clayWheel, input.deltaTime);
     if (smoothWheel) ClayWidgets__UpdateWheelMomentum(ctx,scrollDelta);
     else memset(ctx->scrollMomentumRemaining,0,sizeof(ctx->scrollMomentumRemaining));
 

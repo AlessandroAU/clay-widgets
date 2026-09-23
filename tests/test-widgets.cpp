@@ -111,7 +111,7 @@ static ClayWidgets_Input MakeInput(void) {
 // Runs one frame: BeginFrame, a full-window root column, the test body, EndFrame.
 template <typename Body>
 static Clay_RenderCommandArray Frame(ClayWidgets_Input input, Body &&body) {
-    ClayWidgets_BeginFrame(&ui, input, (Clay_Dimensions){kLayoutWidth, kLayoutHeight}, false);
+    ClayWidgets_BeginFrame(&ui, input, CLAY__INIT(Clay_Dimensions) {kLayoutWidth, kLayoutHeight}, false);
     CLAY(CLAY_ID("TestRoot"), {
         .layout = {
             .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_GROW(0) },
@@ -1199,7 +1199,7 @@ int main(void) {
         return 1;
     }
     Clay_Arena arena = Clay_CreateArenaWithCapacityAndMemory(clayMemorySize, clayMemory);
-    Clay_Initialize(arena, (Clay_Dimensions){kLayoutWidth, kLayoutHeight}, (Clay_ErrorHandler){nullptr, nullptr});
+    Clay_Initialize(arena, CLAY__INIT(Clay_Dimensions) {kLayoutWidth, kLayoutHeight}, CLAY__INIT(Clay_ErrorHandler) {nullptr, nullptr});
     Clay_SetMeasureTextFunction(FakeMeasureText, nullptr);
 
     const TestCase tests[] = {

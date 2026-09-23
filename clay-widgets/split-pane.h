@@ -39,9 +39,9 @@ bool ClayWidgets_BeginSplit(ClayWidgets_Context *ctx, Clay_ElementId id, float *
     }
     *ratio = ClayWidgets__Clamp(*ratio,low,high);
     if (over || ctx->activeId == divider.id) ClayWidgets__SetCursor(ctx, options.vertical ? CLAY_WIDGETS_CURSOR_RESIZE_Y : CLAY_WIDGETS_CURSOR_RESIZE_X);
-    ClayWidgets__BeginElement(id, (Clay_ElementDeclaration){ .layout = { .sizing = options.sizing,
+    ClayWidgets__BeginElement(id, CLAY__INIT(Clay_ElementDeclaration) { .layout = { .sizing = options.sizing,
         .layoutDirection = options.vertical ? CLAY_TOP_TO_BOTTOM : CLAY_LEFT_TO_RIGHT } });
-    ClayWidgets__BeginElement(ClayWidgets__ChildId(id,CLAY_STRING("FirstPane"),0), (Clay_ElementDeclaration){ .layout = {
+    ClayWidgets__BeginElement(ClayWidgets__ChildId(id,CLAY_STRING("FirstPane"),0), CLAY__INIT(Clay_ElementDeclaration) { .layout = {
         .sizing = { .width = options.vertical ? CLAY_SIZING_GROW(0) : CLAY_SIZING_PERCENT(*ratio),
             .height = options.vertical ? CLAY_SIZING_PERCENT(*ratio) : CLAY_SIZING_GROW(0) }, .layoutDirection = CLAY_TOP_TO_BOTTOM },
         .clip = { .horizontal = true, .vertical = true } });
@@ -59,7 +59,7 @@ void ClayWidgets_NextSplit(ClayWidgets_Context *ctx, Clay_ElementId id, bool ver
         .height = vertical ? CLAY_SIZING_FIXED(6) : CLAY_SIZING_GROW(0) } },
         .backgroundColor = ctx->focusedId == divider.id ? ctx->theme.focusRingColor
             : (beveled ? ctx->theme.surfaceAltColor : ctx->theme.borderColor) }) {}
-    ClayWidgets__BeginElement(ClayWidgets__ChildId(id,CLAY_STRING("SecondPane"),0), (Clay_ElementDeclaration){ .layout = {
+    ClayWidgets__BeginElement(ClayWidgets__ChildId(id,CLAY_STRING("SecondPane"),0), CLAY__INIT(Clay_ElementDeclaration) { .layout = {
         .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_GROW(0) }, .layoutDirection = CLAY_TOP_TO_BOTTOM },
         .clip = { .horizontal = true, .vertical = true } });
 }
@@ -89,7 +89,7 @@ bool ClayWidgets_BeginResizablePanel(ClayWidgets_Context *ctx, Clay_ElementId id
     float minW=fmaxf(24,options.minWidth), minH=fmaxf(24,options.minHeight);
     size->width=ClayWidgets__Clamp(isfinite(size->width)?size->width:minW,minW,fmaxf(minW,options.maxWidth>0?options.maxWidth:ctx->layoutDimensions.width));
     size->height=ClayWidgets__Clamp(isfinite(size->height)?size->height:minH,minH,fmaxf(minH,options.maxHeight>0?options.maxHeight:ctx->layoutDimensions.height));
-    ClayWidgets__BeginElement(id,(Clay_ElementDeclaration){ .layout = {
+    ClayWidgets__BeginElement(id,CLAY__INIT(Clay_ElementDeclaration) { .layout = {
         .sizing = { .width = CLAY_SIZING_FIXED(size->width), .height = CLAY_SIZING_FIXED(size->height) },
         .padding = { .right=14,.bottom=14 }, .layoutDirection=CLAY_TOP_TO_BOTTOM },
         .backgroundColor=ctx->theme.surfaceAltColor, .clip={.horizontal=true,.vertical=true} });

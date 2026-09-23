@@ -124,7 +124,7 @@ bool ClayWidgets_Stepper(
                 .childAlignment = { .x = CLAY_ALIGN_X_CENTER, .y = CLAY_ALIGN_Y_CENTER },
             },
             .backgroundColor = beveled ? ctx->theme.fieldColor : buttonFace,
-            .border = ClayWidgets__EdgeBorder(ctx, ctx->theme.borderColor, CLAY__INIT(Clay_BorderWidth){ 1, 1, 0, 0, 0 }),
+            .border = ClayWidgets__EdgeBorder(ctx, ctx->theme.borderColor, CLAY__INIT(Clay_BorderWidth) { 1, 1, 0, 0, 0 }),
         }) {
             CLAY_TEXT(ClayWidgets__ScratchInt(ctx, *value), {
                 .textColor = glyphColor,

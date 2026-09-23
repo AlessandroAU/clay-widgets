@@ -53,7 +53,7 @@ Clay_ElementId ClayWidgets_BeginScrollPanel(
     uint16_t scrollbarGutter = (uint16_t)(CLAY_WIDGETS_SCROLLBAR_WIDTH + ctx->theme.spacing.sm);
 
     // Outer surface: draws the background and provides the fade margin via padding.
-    ClayWidgets__BeginElement(id, CLAY__INIT(Clay_ElementDeclaration){
+    ClayWidgets__BeginElement(id, CLAY__INIT(Clay_ElementDeclaration) {
         .layout = {
             .sizing = { .width = options.width, .height = options.height },
             .padding = { .left = padding, .right = padding, .top = fadeMargin, .bottom = fadeMargin },
@@ -67,7 +67,7 @@ Clay_ElementId ClayWidgets_BeginScrollPanel(
     // this element's box, which is inset from the surface by the fade margin, so
     // content disappears before the panel edge. The scroll-aware Begin stamps
     // clip.childOffset from this element's own scroll offset after opening it.
-    ClayWidgets__BeginScrollElement(contentId, CLAY__INIT(Clay_ElementDeclaration){
+    ClayWidgets__BeginScrollElement(contentId, CLAY__INIT(Clay_ElementDeclaration) {
         .layout = {
             .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_GROW(0) },
             .padding = { .right = scrollbarGutter },

@@ -99,7 +99,7 @@ bool ClayWidgets_SelectRowEx(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_C
 }
 
 bool ClayWidgets_SelectRow(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_Color swatch, Clay_String text, bool selected) {
-    return ClayWidgets_SelectRowEx(ctx, id, swatch, text, (Clay_String){0}, selected);
+    return ClayWidgets_SelectRowEx(ctx, id, swatch, text, CLAY__INIT(Clay_String) {0}, selected);
 }
 
 #endif

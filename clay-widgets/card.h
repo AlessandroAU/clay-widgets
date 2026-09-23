@@ -30,7 +30,7 @@ void ClayWidgets_BeginCardEx(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_S
     // A card is the panel a classic dialog groups its controls on: raised out
     // of the window surface rather than outlined on it.
     ClayWidgets_SetEdge(ctx, id, CLAY_WIDGETS_EDGE_RAISED);
-    ClayWidgets__BeginElement(id, CLAY__INIT(Clay_ElementDeclaration){
+    ClayWidgets__BeginElement(id, CLAY__INIT(Clay_ElementDeclaration) {
         .layout = {
             .sizing = { .width = width, .height = height },
             .padding = CLAY_PADDING_ALL(ctx->theme.spacing.lg),

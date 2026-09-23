@@ -162,7 +162,7 @@ bool ClayWidgets_BeginMenu(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_Str
     // The panel is a raised plate floating over the window, shadow and all.
     ClayWidgets_SetEdge(ctx, dropdownId, CLAY_WIDGETS_EDGE_RAISED);
     ClayWidgets_SetShadow(ctx, dropdownId);
-    ClayWidgets__BeginScrollElement(dropdownId, CLAY__INIT(Clay_ElementDeclaration){
+    ClayWidgets__BeginScrollElement(dropdownId, CLAY__INIT(Clay_ElementDeclaration) {
         .layout = {
             .sizing = { .width = CLAY_SIZING_FIT(180, ctx->layoutDimensions.width), .height = CLAY_SIZING_FIT(0, maxHeight) },
             .padding = CLAY_PADDING_ALL(ctx->theme.spacing.xs),
@@ -170,7 +170,7 @@ bool ClayWidgets_BeginMenu(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_Str
             .layoutDirection = CLAY_TOP_TO_BOTTOM,
         },
         .backgroundColor = ctx->theme.surfaceAltColor,
-        .cornerRadius = (Clay_CornerRadius){ r, r, r, r },
+        .cornerRadius = CLAY__INIT(Clay_CornerRadius) { r, r, r, r },
         .floating = {
             .offset = { .x = xOffset, .y = up ? -4.0f : 4.0f },
             .parentId = id.id,
@@ -325,7 +325,7 @@ bool ClayWidgets_BeginContextMenu(ClayWidgets_Context *ctx, Clay_ElementId menuI
         ctx->contextMenuX = ClayWidgets__Clamp(ctx->contextMenuX,0,fmaxf(0,ctx->layoutDimensions.width-previous.boundingBox.width));
         ctx->contextMenuY = ClayWidgets__Clamp(ctx->contextMenuY,0,fmaxf(0,ctx->layoutDimensions.height-previous.boundingBox.height));
     }
-    ClayWidgets__BeginScrollElement(panelId, CLAY__INIT(Clay_ElementDeclaration){
+    ClayWidgets__BeginScrollElement(panelId, CLAY__INIT(Clay_ElementDeclaration) {
         .layout = {
             .sizing = { .width = CLAY_SIZING_FIT(180, ctx->layoutDimensions.width), .height = CLAY_SIZING_FIT(0, fmaxf(1,ctx->layoutDimensions.height-ctx->contextMenuY)) },
             .padding = CLAY_PADDING_ALL(ctx->theme.spacing.xs),
@@ -333,7 +333,7 @@ bool ClayWidgets_BeginContextMenu(ClayWidgets_Context *ctx, Clay_ElementId menuI
             .layoutDirection = CLAY_TOP_TO_BOTTOM,
         },
         .backgroundColor = ctx->theme.surfaceAltColor,
-        .cornerRadius = (Clay_CornerRadius){ r, r, r, r },
+        .cornerRadius = CLAY__INIT(Clay_CornerRadius) { r, r, r, r },
         .floating = {
             .offset = { .x = ctx->contextMenuX, .y = ctx->contextMenuY },
             .zIndex = ClayWidgets__OverlayZ(ctx, 0),

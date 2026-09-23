@@ -62,17 +62,17 @@ static void TestColorPickerNavigation(void) {
     ClayWidgets_Input input = MakeInput(); input.keyEnd = true; picker.Run(input);
     CHECK(!picker.changed); // arrows move the highlight; activation selects
     input = MakeInput(); input.keyEnter = true; picker.Run(input);
-    CHECK(picker.changed && SameColor(picker.color, (Clay_Color){255,255,255,128}));
+    CHECK(picker.changed && SameColor(picker.color, CLAY__INIT(Clay_Color) {255,255,255,128}));
     input = MakeInput(); input.keyHome = true; picker.Run(input);
     input = MakeInput(); input.keyDown = true; picker.Run(input);
     input = MakeInput(); input.keySpace = true; picker.Run(input);
-    CHECK(picker.changed && SameColor(picker.color, (Clay_Color){255,0,0,128}));
+    CHECK(picker.changed && SameColor(picker.color, CLAY__INIT(Clay_Color) {255,0,0,128}));
     input = MakeInput(); input.keyTab = true; picker.Run(input);
     CHECK(ui.focusedId == picker.Child("Spectrum").id);
     input.shiftDown = true; picker.Run(input);
     CHECK(ui.focusedId == picker.Child("Palette").id);
     picker.Click(picker.Child("Swatch", 9));
-    CHECK(picker.changed && SameColor(picker.color, (Clay_Color){255,255,0,128}));
+    CHECK(picker.changed && SameColor(picker.color, CLAY__INIT(Clay_Color) {255,255,0,128}));
     CHECK(ui.focusedId == picker.Child("Palette").id);
     ui.focusedId = picker.Child("Channel", 0).id;
     input = MakeInput(); input.keyDown = true; picker.Run(input);
@@ -108,7 +108,7 @@ static void TestColorPickerDisabled(void) {
 
 static void TestColorPickerDialog(void) {
     PickerFixture picker("PickerDialog"); picker.options.inlinePanel = false;
-    picker.color = (Clay_Color){80,140,220,128};
+    picker.color = CLAY__INIT(Clay_Color) {80,140,220,128};
     Clay_Color original = picker.color;
     picker.Run(); picker.Open();
     Clay_ElementId panel = picker.Child("Panel");
@@ -119,11 +119,11 @@ static void TestColorPickerDialog(void) {
     picker.Run(); picker.Open();
     picker.Click(ClayWidgets__ChildId(panel, CLAY_STRING("Swatch"), 8));
     picker.Click(picker.Child("OK"));
-    CHECK(picker.changed && SameColor(picker.color, (Clay_Color){255,0,0,128}));
+    CHECK(picker.changed && SameColor(picker.color, CLAY__INIT(Clay_Color) {255,0,0,128}));
     picker.Run(); CHECK(!picker.changed);
     picker.Open(); picker.Click(ClayWidgets__ChildId(panel, CLAY_STRING("Swatch"), 9));
     ClayWidgets_Input input = MakeInput(); input.keyEscape = true; picker.Run(input);
-    CHECK(!picker.changed && SameColor(picker.color, (Clay_Color){255,0,0,128}));
+    CHECK(!picker.changed && SameColor(picker.color, CLAY__INIT(Clay_Color) {255,0,0,128}));
     CHECK(g_errors.empty());
 }
 
@@ -136,14 +136,14 @@ static void TestColorPickerEntry(void) {
         input = MakeInput(); input.textUtf8 = text; input.textUtf8Length = (int32_t)strlen(text); picker.Run(input);
     };
     type(picker.Child("Hex"), "#12345678");
-    CHECK(picker.changed && SameColor(picker.color, (Clay_Color){18,52,86,120}));
+    CHECK(picker.changed && SameColor(picker.color, CLAY__INIT(Clay_Color) {18,52,86,120}));
     type(picker.Child("Hex"), "#xyz");
-    CHECK(!picker.changed && SameColor(picker.color, (Clay_Color){18,52,86,120}));
+    CHECK(!picker.changed && SameColor(picker.color, CLAY__INIT(Clay_Color) {18,52,86,120}));
     type(picker.Child("Hex"), "#ab"); CHECK(!picker.changed);
     type(picker.Child("Channel", 0), "200"); CHECK(picker.changed && picker.color.r == 200);
     picker.options.showAlpha = false; picker.Run();
     type(picker.Child("Hex"), "00FF00");
-    CHECK(picker.changed && SameColor(picker.color, (Clay_Color){0,255,0,120}));
+    CHECK(picker.changed && SameColor(picker.color, CLAY__INIT(Clay_Color) {0,255,0,120}));
     type(picker.Child("HSL", 0), "240");
     CHECK(picker.changed && picker.color.b > 254 && picker.color.g < 1 && picker.color.a == 120);
     type(picker.Child("HSL", 2), "0");

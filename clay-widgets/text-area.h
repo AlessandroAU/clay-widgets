@@ -625,7 +625,7 @@ bool ClayWidgets_TextArea(
             // The content element is a genuine Clay scroll container on both
             // axes; the scroll-aware Begin stamps clip.childOffset from its
             // own retained offset after opening.
-            ClayWidgets__BeginScrollElement(contentId, CLAY__INIT(Clay_ElementDeclaration){
+            ClayWidgets__BeginScrollElement(contentId, CLAY__INIT(Clay_ElementDeclaration) {
                 .layout = {
                     .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_GROW(0) },
                     .layoutDirection = CLAY_TOP_TO_BOTTOM,
@@ -793,7 +793,7 @@ bool ClayWidgets_TextArea(
 
     ClayWidgets_SemanticNode semantic = {0};
     semantic.id = id; semantic.role = CLAY_WIDGETS_ROLE_TEXT_FIELD; semantic.label = label;
-    semantic.value = (Clay_String){ .length = length, .chars = buffer };
+    semantic.value = CLAY__INIT(Clay_String) { .length = length, .chars = buffer };
     semantic.disabled = options.disabled; semantic.readOnly = options.readOnly;
     ClayWidgets_Semantic(ctx, semantic);
     if (focused && !options.readOnly) {

@@ -47,7 +47,7 @@ static Clay_ElementId ClayWidgets__ModalDialogId(Clay_ElementId id) {
 }
 
 bool ClayWidgets_BeginModal(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_String title, bool *open) {
-    return ClayWidgets_BeginModalEx(ctx,id,title,open,(ClayWidgets_ModalOptions){0});
+    return ClayWidgets_BeginModalEx(ctx,id,title,open,CLAY__INIT(ClayWidgets_ModalOptions) {0});
 }
 
 typedef struct ClayWidgets__ModalDragState {
@@ -116,7 +116,7 @@ bool ClayWidgets_BeginModalEx(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_
         if (overTitle || ctx->activeId == titleId.id) ClayWidgets__SetCursor(ctx,CLAY_WIDGETS_CURSOR_POINTER);
         if (overTitle && ctx->input.pointerPressed) {
             ClayWidgets__CapturePointer(ctx, titleId.id);
-            drag->startPointer = (Clay_Vector2){ctx->input.mouseX,ctx->input.mouseY};
+            drag->startPointer = CLAY__INIT(Clay_Vector2) {ctx->input.mouseX,ctx->input.mouseY};
             drag->startOffset = drag->offset;
         }
         if (ctx->activeId == titleId.id && ctx->input.pointerDown) {
@@ -134,7 +134,7 @@ bool ClayWidgets_BeginModalEx(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_
 
     // Scrim: full-screen, centers the dialog, captures the pointer so the UI
     // behind it is inert.
-    ClayWidgets__BeginElement(scrimId, CLAY__INIT(Clay_ElementDeclaration){
+    ClayWidgets__BeginElement(scrimId, CLAY__INIT(Clay_ElementDeclaration) {
         .layout = {
             .sizing = { .width = CLAY_SIZING_FIXED(screenW), .height = CLAY_SIZING_FIXED(screenH) },
             .padding = CLAY_PADDING_ALL(ctx->theme.spacing.lg),
@@ -160,7 +160,7 @@ bool ClayWidgets_BeginModalEx(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_
     uint16_t frameInset = beveled ? 3 : ctx->theme.spacing.lg;
     ClayWidgets_SetEdge(ctx, dialogId, CLAY_WIDGETS_EDGE_RAISED);
     ClayWidgets_SetShadow(ctx, dialogId);
-    ClayWidgets__BeginElement(dialogId, CLAY__INIT(Clay_ElementDeclaration){
+    ClayWidgets__BeginElement(dialogId, CLAY__INIT(Clay_ElementDeclaration) {
         .layout = {
             .sizing = { .width = CLAY_SIZING_FIXED(dialogWidth), .height = CLAY_SIZING_FIT(0, maxHeight) },
             .padding = CLAY_PADDING_ALL(frameInset),
@@ -184,8 +184,8 @@ bool ClayWidgets_BeginModalEx(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_
         .layout = {
             .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_FIT(0, 0) },
             .padding = beveled
-                ? (Clay_Padding){ ctx->theme.spacing.xs, ctx->theme.spacing.xs, 2, 2 }
-                : (Clay_Padding){ 0, 0, 0, 0 },
+                ? CLAY__INIT(Clay_Padding) { ctx->theme.spacing.xs, ctx->theme.spacing.xs, 2, 2 }
+                : CLAY__INIT(Clay_Padding) { 0, 0, 0, 0 },
             .childGap = ctx->theme.spacing.sm,
             .childAlignment = { .x = CLAY_ALIGN_X_LEFT, .y = CLAY_ALIGN_Y_CENTER },
             .layoutDirection = CLAY_LEFT_TO_RIGHT,
@@ -234,7 +234,7 @@ bool ClayWidgets_BeginModalEx(ClayWidgets_Context *ctx, Clay_ElementId id, Clay_
     ctx->scrollPanelDepth++;
     uint16_t bodyInset = beveled ? ctx->theme.spacing.md : 0;
     ClayWidgets__BeginScrollElement(bodyId,
-        CLAY__INIT(Clay_ElementDeclaration){
+        CLAY__INIT(Clay_ElementDeclaration) {
             .layout = {
                 .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_FIT(0, 0) },
                 .padding = { bodyInset, (uint16_t)(bodyInset + CLAY_WIDGETS_SCROLLBAR_WIDTH + ctx->theme.spacing.sm), bodyInset, bodyInset },

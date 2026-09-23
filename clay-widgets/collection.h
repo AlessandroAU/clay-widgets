@@ -64,7 +64,7 @@ static ClayWidgets__VisibleRows ClayWidgets__BeginVirtualRows(ClayWidgets_Contex
     int32_t first = ClayWidgets__MaxI32(0, (int32_t)(-y / rowHeight) - 1);
     first = ClayWidgets__MinI32(first, count);
     int32_t end = ClayWidgets__MinI32(count, first + (int32_t)(height / rowHeight) + 3);
-    ClayWidgets__BeginScrollElement(id, (Clay_ElementDeclaration){
+    ClayWidgets__BeginScrollElement(id, CLAY__INIT(Clay_ElementDeclaration) {
         .layout = { .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_FIXED(height) },
             .padding = { .right = CLAY_WIDGETS_SCROLLBAR_WIDTH + 4 }, .layoutDirection = CLAY_TOP_TO_BOTTOM },
         .clip = { .horizontal = true, .vertical = true },
@@ -76,7 +76,7 @@ static ClayWidgets__VisibleRows ClayWidgets__BeginVirtualRows(ClayWidgets_Contex
     if (bottom >= count || bottom < first || bottom >= end) {
         bottom = -1;
     }
-    return (ClayWidgets__VisibleRows){first, end, bottom, rowHeight};
+    return CLAY__INIT(ClayWidgets__VisibleRows) {first, end, bottom, rowHeight};
 }
 static void ClayWidgets__EndVirtualRows(ClayWidgets_Context *ctx, Clay_ElementId id, int32_t count, ClayWidgets__VisibleRows rows, bool tableColumn) {
     ClayWidgets__Spacer((count - rows.end) * rows.rowHeight);
@@ -245,7 +245,7 @@ bool ClayWidgets_DataTable(ClayWidgets_Context *ctx, Clay_ElementId id,
     const float frameRadius = fmaxf(0.0f, radius - (float)frameInset);
     ClayWidgets_SetEdge(ctx, id, CLAY_WIDGETS_EDGE_SUNKEN);
     ClayWidgets_SetEdge(ctx, headerRow, CLAY_WIDGETS_EDGE_RAISED_THIN);
-    ClayWidgets__BeginElement(id, (Clay_ElementDeclaration){ .layout = {
+    ClayWidgets__BeginElement(id, CLAY__INIT(Clay_ElementDeclaration) { .layout = {
         .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_FIT(0) },
         .padding = CLAY_PADDING_ALL(frameInset), .layoutDirection = CLAY_TOP_TO_BOTTOM },
         .backgroundColor = ctx->theme.fieldColor,
@@ -260,7 +260,7 @@ bool ClayWidgets_DataTable(ClayWidgets_Context *ctx, Clay_ElementId id,
         // a square block outside the frame's arc.
         .cornerRadius = { .topLeft = frameRadius, .topRight = frameRadius, .bottomLeft = 0, .bottomRight = 0 },
         .clip = { .horizontal = true, .vertical = true, .childOffset = {horizontalOffset,0} },
-        .border = ClayWidgets__EdgeBorder(ctx, ctx->theme.borderColor, CLAY__INIT(Clay_BorderWidth){ 0, 0, 0, 1, 0 }) }) {
+        .border = ClayWidgets__EdgeBorder(ctx, ctx->theme.borderColor, CLAY__INIT(Clay_BorderWidth) { 0, 0, 0, 1, 0 }) }) {
         for (int32_t i=0;i<columnCount;++i) {
             Clay_ElementId header = ClayWidgets__ChildId(id, CLAY_STRING("TableHeader"), i);
             Clay_ElementId handle = ClayWidgets__ChildId(id, CLAY_STRING("TableResize"), i);
@@ -296,7 +296,7 @@ bool ClayWidgets_DataTable(ClayWidgets_Context *ctx, Clay_ElementId id,
                 .backgroundColor = overHeader && compare ? ctx->theme.hoverColor : ctx->theme.surfaceAltColor,
                 .clip = { .horizontal = true, .vertical = true },
                 .border = ClayWidgets__EdgeBorder(ctx, headerFocused ? ctx->theme.focusRingColor : ctx->theme.borderColor,
-                    CLAY__INIT(Clay_BorderWidth){ 0, 1, 0, (uint16_t)(headerFocused ? 2 : 0), 0 }),
+                    CLAY__INIT(Clay_BorderWidth) { 0, 1, 0, (uint16_t)(headerFocused ? 2 : 0), 0 }),
             }) {
                 CLAY_TEXT(columns[i].title, { .textColor = disabled ? ctx->theme.textMutedColor : ctx->theme.textColor,
                     .fontId = ctx->theme.fontBody, .fontSize = ctx->theme.fontSizeBody, .wrapMode = CLAY_TEXT_WRAP_NONE });
@@ -365,10 +365,10 @@ bool ClayWidgets_DataTable(ClayWidgets_Context *ctx, Clay_ElementId id,
             .attachPoints = { .element = CLAY_ATTACH_POINT_RIGHT_TOP, .parent = CLAY_ATTACH_POINT_RIGHT_TOP },
             .pointerCaptureMode = CLAY_POINTER_CAPTURE_MODE_PASSTHROUGH,
             .attachTo = CLAY_ATTACH_TO_ELEMENT_WITH_ID, .clipTo = CLAY_CLIP_TO_ATTACHED_PARENT },
-        .border = ClayWidgets__EdgeBorder(ctx, ctx->theme.borderColor, CLAY__INIT(Clay_BorderWidth){ 1, 0, 0, 0, 0 })
+        .border = ClayWidgets__EdgeBorder(ctx, ctx->theme.borderColor, CLAY__INIT(Clay_BorderWidth) { 1, 0, 0, 0, 0 })
     }) {
         CLAY_AUTO_ID({ .layout = { .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_FIXED(headerHeight) } },
-            .border = ClayWidgets__EdgeBorder(ctx, ctx->theme.borderColor, CLAY__INIT(Clay_BorderWidth){ 0, 0, 0, 1, 0 }) }) {}
+            .border = ClayWidgets__EdgeBorder(ctx, ctx->theme.borderColor, CLAY__INIT(Clay_BorderWidth) { 0, 0, 0, 1, 0 }) }) {}
     }
     ClayWidgets__EndElement();
     return state->sortChanged || state->selectionChanged || state->widthChanged;

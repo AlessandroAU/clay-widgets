@@ -252,7 +252,7 @@ bool ClayWidgets_TextInput(
 
     Clay_String displayText;
     if (length > 0) {
-        displayText = (Clay_String){ .length = length, .chars = buffer };
+        displayText = CLAY__INIT(Clay_String) { .length = length, .chars = buffer };
     } else if (options.placeholder) {
         displayText = ClayWidgets__StringFromCString(options.placeholder);
     } else {
@@ -384,7 +384,7 @@ bool ClayWidgets_TextInput(
 
     ClayWidgets_SemanticNode semantic = {0};
     semantic.id = id; semantic.role = CLAY_WIDGETS_ROLE_TEXT_FIELD; semantic.label = label;
-    semantic.value = (Clay_String){ .length = length, .chars = buffer };
+    semantic.value = CLAY__INIT(Clay_String) { .length = length, .chars = buffer };
     semantic.disabled = options.disabled; semantic.readOnly = options.readOnly;
     ClayWidgets_Semantic(ctx, semantic);
     if (focused && !options.readOnly) {

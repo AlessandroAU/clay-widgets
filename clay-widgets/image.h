@@ -69,7 +69,7 @@ void ClayWidgets_ImageEx(ClayWidgets_Context *ctx, Clay_ElementId id, void *imag
 void ClayWidgets_Image(ClayWidgets_Context *ctx, Clay_ElementId id, void *imageData, float width, float height) {
     // Untinted: a zero tint packs to a null userData, which renderers read as
     // "draw the texture as-is".
-    ClayWidgets_ImageEx(ctx, id, imageData, width, height, (Clay_Color){0, 0, 0, 0});
+    ClayWidgets_ImageEx(ctx, id, imageData, width, height, CLAY__INIT(Clay_Color) {0, 0, 0, 0});
 }
 
 void ClayWidgets_Icon(ClayWidgets_Context *ctx, Clay_ElementId id, void *imageData, float size, Clay_Color tint) {

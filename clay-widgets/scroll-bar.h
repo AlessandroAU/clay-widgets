@@ -149,7 +149,7 @@ static void ClayWidgets__ScrollBarAt(
             // container has no enclosing clip and this is a no-op.
             .clipTo = CLAY_CLIP_TO_ATTACHED_PARENT,
         },
-        .border = ClayWidgets__EdgeBorder(ctx, ctx->theme.borderColor, CLAY__INIT(Clay_BorderWidth){
+        .border = ClayWidgets__EdgeBorder(ctx, ctx->theme.borderColor, CLAY__INIT(Clay_BorderWidth) {
             // The table gutter owns the shared left edge.
             (uint16_t)(tableColumn ? 0 : 1), (uint16_t)(tableColumn ? 0 : 1),
             1, (uint16_t)(tableColumn ? 0 : 1), 0 }),

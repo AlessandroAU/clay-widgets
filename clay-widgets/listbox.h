@@ -115,7 +115,7 @@ bool ClayWidgets_ListBox(
             if (outer < (float)ctx->theme.radiusSm) {
                 outer = (float)ctx->theme.radiusSm;
             }
-            Clay_CornerRadius rowRadius = CLAY__INIT(Clay_CornerRadius){
+            Clay_CornerRadius rowRadius = CLAY__INIT(Clay_CornerRadius) {
                 (float)ctx->theme.radiusSm, (float)ctx->theme.radiusSm,
                 (float)ctx->theme.radiusSm, (float)ctx->theme.radiusSm };
             if (i == 0) {

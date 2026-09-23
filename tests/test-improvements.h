@@ -165,7 +165,7 @@ static void TestCollectionsAndPanels() {
 static void TestWheelMomentum() {
     auto a=CLAY_ID("MomentumA"),b=CLAY_ID("MomentumB");
     auto body=[&]{for(auto id:{a,b}) {
-        ClayWidgets__BeginScrollElement(id,(Clay_ElementDeclaration){
+        ClayWidgets__BeginScrollElement(id,CLAY__INIT(Clay_ElementDeclaration) {
             .layout={.sizing={CLAY_SIZING_FIXED(300),CLAY_SIZING_FIXED(100)}},
             .clip={.horizontal=true,.vertical=true}});
         CLAY_AUTO_ID({.layout={.sizing={CLAY_SIZING_FIXED(900),CLAY_SIZING_FIXED(1000)}}}) {}
